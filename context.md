@@ -253,3 +253,15 @@ REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijala
   `packages/adapters/src/index.ts`; helper evaluasi diekspor dari `packages/core`.
 - Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (106/106), `eslint .`
   hijau. `pnpm turbo ...` masih belum tersedia di PATH sandbox.
+
+## Update T-051 2026-07-04 (Codex)
+
+- T-051 dimulai tipis setelah T-050 foundation: tool pertama dibuat tanpa MCP SDK
+  dulu agar tetap offline-testable dan tidak menambah dependency.
+- File baru: `packages/core/src/agent/builtin-tools.ts` dan testnya.
+- Tool awal: `sitebuilder_get_site_outline`, `sitebuilder_apply_patch`, dan
+  `ops_get_job_status`. Semua bergantung pada port kecil (`SitebuilderToolPort`,
+  `OpsToolPort`), validasi input manual, inject `tenantId` dari `AgentToolContext`,
+  dan return `Result`.
+- Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (111/111),
+  `eslint .` hijau. `pnpm turbo ...` masih belum tersedia di PATH sandbox.

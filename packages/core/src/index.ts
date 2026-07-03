@@ -15,6 +15,17 @@ export type WebsiteStatus =
   | 'ARCHIVED';
 
 export {
+  createOpsGetJobStatusTool,
+  createSitebuilderApplyPatchTool,
+  createSitebuilderGetSiteOutlineTool,
+  type AgentJobStatusView,
+  type OpsToolPort,
+  type RevisionPatchResult,
+  type SiteOutline,
+  type SitebuilderToolPort,
+} from './agent/builtin-tools.js';
+
+export {
   InMemoryAgentToolRegistry,
   createAgentToolRegistry,
 } from './agent/tool-registry.js';

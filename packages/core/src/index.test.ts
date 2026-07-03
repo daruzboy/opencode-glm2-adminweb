@@ -3,6 +3,7 @@ import {
   LLM_GOLDEN_PROMPTS,
   createAgentToolRegistry,
   createLlmEvaluationReport,
+  createOpsGetJobStatusTool,
   recommendLlmProvider,
   tenantId,
 } from './index.js';
@@ -25,5 +26,6 @@ describe('core domain', () => {
 
   it('exports agent tool registry factory', () => {
     expect(createAgentToolRegistry([]).name).toBe('AgentToolRegistry');
+    expect(typeof createOpsGetJobStatusTool).toBe('function');
   });
 });
