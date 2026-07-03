@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { ok, err, domainEvent, type LlmJsonPort, type LlmJsonSchema } from './index.js';
+import {
+  domainEvent,
+  err,
+  ok,
+  toOpenAiToolDefinition,
+  type LlmJsonPort,
+  type LlmJsonSchema,
+} from './index.js';
 
 describe('shared kernel', () => {
   it('ok() wraps a value', () => {
@@ -24,5 +31,13 @@ describe('shared kernel', () => {
 
     expect(schema.safeParse({}).success).toBe(true);
     expect(port.name).toBe('llm:test');
+  });
+
+  it('exports agent tool bridge helper', () => {
+    expect(toOpenAiToolDefinition({
+      name: 'ops_get_job_status',
+      description: 'status',
+      inputSchema: { type: 'object', properties: {} },
+    }).type).toBe('function');
   });
 });

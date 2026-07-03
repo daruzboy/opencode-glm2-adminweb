@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   LLM_GOLDEN_PROMPTS,
+  createAgentToolRegistry,
   createLlmEvaluationReport,
   recommendLlmProvider,
   tenantId,
@@ -20,5 +21,9 @@ describe('core domain', () => {
 
   it('exports LLM golden prompt set', () => {
     expect(LLM_GOLDEN_PROMPTS).toHaveLength(20);
+  });
+
+  it('exports agent tool registry factory', () => {
+    expect(createAgentToolRegistry([]).name).toBe('AgentToolRegistry');
   });
 });

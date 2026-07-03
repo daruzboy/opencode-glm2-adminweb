@@ -15,6 +15,11 @@ export type WebsiteStatus =
   | 'ARCHIVED';
 
 export {
+  InMemoryAgentToolRegistry,
+  createAgentToolRegistry,
+} from './agent/tool-registry.js';
+
+export {
   LLM_GOLDEN_PROMPTS,
   getLlmGoldenPrompt,
   type LlmGoldenPrompt,
