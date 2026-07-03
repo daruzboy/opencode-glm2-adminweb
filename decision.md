@@ -136,9 +136,17 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
 - `GLM_API_KEY`, `DEEPSEEK_API_KEY`: ⏳ belum diisi.
 - WABA / Xendit / cPanel / S3 / Umami / n8n: ⏳ belum (EPIC-00).
 - `.env.example` ada (template, tanpa nilai). Produksi via secret manager, bukan `.env`.
+- **Relokasi `.git` (2026-07-04):** worktree tetap di
+  `...\Documents\A_PROJECT\02_digimaestro\glm2-adminweb` (ter-sync Google Drive,
+  OK), tapi `gitdir` dipindah ke **`C:\dev\glm2-adminweb.git`** (di luar Drive)
+  via separate-git-dir. Sebab: Google Drive menyuntik `desktop.ini` ke subfolder
+  `.git/` → ref rusak (`gh pr merge --delete-branch` gagal 2×) + `git fsck`
+  "bad sha1 file" (97 file). Post-relokasi `git fsck` bersih. Detail & watch-item
+  di `context.md` §"Catatan teknis penting".
 - Env quirik lokal: pnpm 11.9.0 dipasang via `npm i -g pnpm` (corepack EPERM);
-  Node lokal v24 (CI pin 22); build esbuild sudah di-approve (tersimpan di
-  `pnpm-workspace.yaml`); `.npmrc`: `verify-deps-before-run=false`.
+  Node lokal v24 (CI pin 22); **gh CLI v2.96.0 terpasang & ter-autentikasi
+  (`daruzboy`, scope `repo`/`workflow`)**; build esbuild sudah di-approve (tersimpan
+  di `pnpm-workspace.yaml`); `.npmrc`: `verify-deps-before-run=false`.
 
 ---
 
