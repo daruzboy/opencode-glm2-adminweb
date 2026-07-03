@@ -1,14 +1,33 @@
-// apps/api — Fastify v5 (webhook WABA/Xendit, REST tenant, WS web chat). SRS §9.
-// Fastify & plugin dipasang saat EPIC-03 (Sprint 0.2). Untuk T-010 ini skeleton komposisi root.
+// apps/api — Fastify v5 (composition root). SRS §9. Web chat WS (T-040/FR-CHN-003),
+// REST riwayat, healthz. Adapter disuntikkan di sini (SOLID-D).
+
+import { pathToFileURL } from 'node:url';
+import { createChatDeps } from './composition.js';
+import { registerChatRoutes } from './chat/routes.js';
+import type { ChatDeps } from './chat/handle-incoming.js';
+import Fastify, { type FastifyInstance } from 'fastify';
+import websocket from '@fastify/websocket';
 
 export const APP_NAME = 'digimaestro-api';
 
-export interface ServerHandle {
-  readonly name: string;
-  readonly ready: boolean;
+export interface BuildServerOptions {
+  deps?: ChatDeps;
+  logger?: boolean;
 }
 
-// Composition root sementara — nantinya menyuntikkan adapter ke use case via DI container.
-export function buildServer(name: string = APP_NAME): ServerHandle {
-  return { name, ready: true };
+export async function buildServer(opts: BuildServerOptions = {}): Promise<FastifyInstance> {
+  const app = Fastify({ logger: opts.logger ?? false });
+  await app.register(websocket);
+  registerChatRoutes(app, opts.deps ?? createChatDeps());
+  app.get('/healthz', async () => ({ status: 'ok', name: APP_NAME }));
+  return app;
 }
+
+export async function start(): Promise<void> {
+  const app = await buildServer();
+  const port = Number(process.env.PORT ?? '3000');
+  await app.listen({ port, host: '0.0.0.0' });
+}
+
+const entryUrl = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
+if (import.meta.url === entryUrl) void start();

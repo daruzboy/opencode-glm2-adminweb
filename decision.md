@@ -116,9 +116,19 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   kaller). `pnpm turbo lint test build` 21/21 hijau. Extension di-wire di composition
   root apps/* (EPIC-03+); repo lain menyusul per use case pemakai.
 
-### EPIC-03..08 (Sprint 0.2–0.4): semua ⏳
-- CHN (WABA gateway, web chat), AGT (LLM+MCP), slice builder, ops (n8n/Umami/billing
-  sandbox), QA otomatis (T-080 TestSprite plan), demo end-to-end (T-083).
+### EPIC-03..08 (Sprint 0.2–0.4)
+- 🔧 **T-040** Web Chat (EPIC-04, FR-CHN-003) — **backend slice** terimplementasi
+  di branch `feature/t-040-web-chat-backend`: `MessageRepository` (Port+impl, mirror
+  T-021) + `createPrismaClient()` (Prisma `$extends(tenantGuardExtension)` ter-wire
+  pertama kali) + `apps/api` Fastify v5 composition root (`/healthz`, `GET
+  /api/chat/:id/messages` riwayat tenant-scoped, `WS /api/chat` realtime) + use case
+  `handleIncoming` (persist IN/OUT, stub reply v0; agent AI nyata EPIC-05). Test
+  DB-free (handle-incoming + REST via inject) hijau; gate 21/21. Deps: `fastify`,
+  `@fastify/websocket`, `zod`, `@digimaestro/adapters`. Tenant resolusi v0 via header
+  `x-tenant-id`/query (auth T-002 menyusul). **Widget portal (frontend slice) menunggu
+  PR lanjutan T-040.**
+- ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
+  (T-050..052), slice builder (T-060..064), ops (T-070..073), QA (T-080..083).
 
 ---
 
