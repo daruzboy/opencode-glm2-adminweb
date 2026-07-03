@@ -1,0 +1,258 @@
+// Prisma schema — digimaestro (T-020). SRS §8 (indikatif), Backlog Fase 0 T-020.
+// Vendor SDK (@prisma/client) hanya boleh dipakai di packages/adapters (SOLID-D).
+// Setiap tabel domain bawa tenantId (NFR-09, ADR-5) + timestamps.
+// brandId di Tenant: bantuanpajak.id menumpang platform yg sama di masa depan
+// (Backlog §1) — biaya nol sekarang; default "digimaestro".
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ───────────────────────────────────────────────────────────────────
+
+enum TenantStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELED
+  ARCHIVED
+}
+
+enum UserRole {
+  OWNER
+  STAFF
+}
+
+enum Channel {
+  WA
+  WEB
+}
+
+enum ConversationState {
+  ONBOARDING
+  INTERVIEW
+  BUILDING
+  REVIEW
+  IDLE
+  SUPPORT
+}
+
+enum MessageDirection {
+  IN
+  OUT
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  LOCATION
+  INTERACTIVE
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum WebsiteStatus {
+  DRAFTING
+  PREVIEW_READY
+  APPROVED
+  PUBLISHED
+  SUSPENDED
+  ARCHIVED
+}
+
+enum RevisionStatus {
+  DRAFT
+  PREVIEW
+  APPROVED
+  PUBLISHED
+  REJECTED
+}
+
+enum AgentJobKind {
+  BUILD
+  EDIT
+  ARTICLE
+  CATALOG
+  DOMAIN
+}
+
+enum AgentJobStatus {
+  QUEUED
+  RUNNING
+  NEEDS_INFO
+  DONE
+  FAILED
+}
+
+// ── Models (T-020: 9 model inti) ────────────────────────────────────────────
+
+model Tenant {
+  id        String       @id @default(cuid())
+  brandId   String       @default("digimaestro")
+  name      String
+  slug      String       @unique
+  status    TenantStatus @default(TRIALING)
+  waNumbers String[]
+  planId    String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users         User[]
+  conversations Conversation[]
+  messages      Message[]
+  websites      Website[]
+  agentJobs     AgentJob[]
+  llmUsages     LlmUsage[]
+
+  @@index([brandId])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  tenantId  String
+  role      UserRole
+  name      String
+  phone     String?
+  email     String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model Conversation {
+  id          String            @id @default(cuid())
+  tenantId    String
+  channel     Channel
+  state       ConversationState @default(ONBOARDING)
+  escalatedAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([tenantId])
+}
+
+model Message {
+  id             String          @id @default(cuid())
+  tenantId       String
+  conversationId String
+  direction      MessageDirection
+  type           MessageType
+  text           String?
+  mediaId        String?
+  providerMsgId  String          @unique
+  status         MessageStatus   @default(QUEUED)
+  createdAt      DateTime        @default(now())
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([conversationId])
+}
+
+model Website {
+  id                  String        @id @default(cuid())
+  tenantId            String        @unique
+  slug                String        @unique
+  status              WebsiteStatus @default(DRAFTING)
+  publishedRevisionId String?
+  themeId             String?
+  deploymentTargetId  String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  revisions Revision[]
+
+  @@index([tenantId])
+}
+
+model Revision {
+  id        String         @id @default(cuid())
+  websiteId String
+  number    Int
+  siteDoc   Json
+  summary   String?
+  status    RevisionStatus @default(DRAFT)
+  createdBy String
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@unique([websiteId, number])
+  @@index([websiteId])
+}
+
+model AgentJob {
+  id           String         @id @default(cuid())
+  tenantId     String
+  kind         AgentJobKind
+  status       AgentJobStatus @default(QUEUED)
+  input        Json
+  output       Json?
+  error        String?
+  attempts     Int            @default(0)
+  tokenIn      Int            @default(0)
+  tokenOut     Int            @default(0)
+  costEstimate Decimal        @default(0) @db.Decimal(12, 6)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  llmUsage LlmUsage[]
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+model LlmUsage {
+  id        String   @id @default(cuid())
+  tenantId  String
+  jobId     String?
+  provider  String
+  task      String
+  tokenIn   Int      @default(0)
+  tokenOut  Int      @default(0)
+  cost      Decimal  @default(0) @db.Decimal(12, 6)
+  createdAt DateTime @default(now())
+
+  tenant Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  job    AgentJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([jobId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actor     String
+  tenantId  String?
+  action    String
+  meta      Json
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([actor])
+}
