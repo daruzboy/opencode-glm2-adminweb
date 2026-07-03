@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./apps/api" },
+    { "path": "./apps/worker" },
+    { "path": "./apps/portal" },
+    { "path": "./packages/core" },
+    { "path": "./packages/shared" },
+    { "path": "./packages/adapters" },
+    { "path": "./packages/sites-kit" }
+  ]
+}
