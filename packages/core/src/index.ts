@@ -26,6 +26,12 @@ export {
 } from './agent/builtin-tools.js';
 
 export {
+  executeFunctionToolCalls,
+  type OpenAiFunctionToolCall,
+  type ToolCallResultMessage,
+} from './agent/function-call-bridge.js';
+
+export {
   InMemoryAgentToolRegistry,
   createAgentToolRegistry,
 } from './agent/tool-registry.js';

@@ -263,5 +263,8 @@ REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijala
   `ops_get_job_status`. Semua bergantung pada port kecil (`SitebuilderToolPort`,
   `OpsToolPort`), validasi input manual, inject `tenantId` dari `AgentToolContext`,
   dan return `Result`.
-- Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (111/111),
+  `executeFunctionToolCalls()` menambahkan bridge OpenAI-compatible: parse JSON
+  arguments dari model tool call, panggil registry, lalu keluarkan tool result
+  message dengan content JSON `{ ok, value/error }`.
+- Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (114/114),
   `eslint .` hijau. `pnpm turbo ...` masih belum tersedia di PATH sandbox.

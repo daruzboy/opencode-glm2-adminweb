@@ -4,6 +4,7 @@ import {
   createAgentToolRegistry,
   createLlmEvaluationReport,
   createOpsGetJobStatusTool,
+  executeFunctionToolCalls,
   recommendLlmProvider,
   tenantId,
 } from './index.js';
@@ -27,5 +28,6 @@ describe('core domain', () => {
   it('exports agent tool registry factory', () => {
     expect(createAgentToolRegistry([]).name).toBe('AgentToolRegistry');
     expect(typeof createOpsGetJobStatusTool).toBe('function');
+    expect(typeof executeFunctionToolCalls).toBe('function');
   });
 });

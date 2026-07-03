@@ -224,9 +224,11 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `sitebuilder_apply_patch`, dan `ops_get_job_status`. Tiap tool bergantung pada
   port kecil (`SitebuilderToolPort`, `OpsToolPort`), memvalidasi input di boundary,
   menyuntik `tenantId` dari `AgentToolContext`, dan mengembalikan `Result`.
-  Implementasi DB/MCP SDK nyata menyusul, tetapi kontrak tool sudah dapat masuk
-  registry dan bridge OpenAI-compatible. Verifikasi lokal alternatif terakhir:
-  `tsc -b`, `vitest run` (111/111), `eslint .` hijau.
+  `executeFunctionToolCalls()` menambahkan bridge OpenAI-compatible untuk menerima
+  tool call model, parse JSON arguments, memanggil registry, dan mengembalikan tool
+  result message terstruktur. Implementasi DB/MCP SDK nyata menyusul, tetapi kontrak
+  tool sudah dapat masuk registry dan bridge OpenAI-compatible. Verifikasi lokal alternatif terakhir:
+  `tsc -b`, `vitest run` (114/114), `eslint .` hijau.
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
   (lanjutan T-051..052), slice builder (T-060..064), ops (T-070..073), QA
   (T-080..083).
