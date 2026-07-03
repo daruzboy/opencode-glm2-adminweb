@@ -103,7 +103,18 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   ke `main` via PR #2** (squash `883ab29`, 2026-07-03). CI hijau: `migrate deploy`
   (`00000000000000_init` applied) + `db seed` (`Seeded tenant warung-demo`) jalan
   pada service Postgres 16 — kriteria terima terpenuhi.
-- ⏳ **T-021** Repository layer + tenant guard + uji kebocoran lintas tenant (NFR-09) — _berikutnya_
+- ✅ **T-021** Repository layer + tenant guard + uji kebocoran lintas tenant
+  (NFR-09). `packages/shared/src/ports/repository.ts`: Port `ConversationRepository`
+  (semua method wajib arg `tenantId: TenantId` → **compile-time guard**) + entity/error.
+  `packages/adapters/src/prisma/tenant-guard.ts`: `assertTenantScoped` (validator murni,
+  throw `TenantGuardError` bila tenantId hilang) + `tenantGuardExtension` (Prisma
+  `$extends` top-level `$allOperations` → **runtime guard** untuk raw prisma).
+  `packages/adapters/src/prisma/conversation-repo-prisma.ts`: implementasi Port
+  (tiap method menyuntik tenantId ke where/data). `TenantId` dipindah core→shared
+  kernel. Kriteria terima ("query tanpa tenantId gagal kompilasi/runtime") terbukti:
+  13 test tenant-guard + 6 test repo (cross-tenant leak: where SELALU berisi tenantId
+  kaller). `pnpm turbo lint test build` 21/21 hijau. Extension di-wire di composition
+  root apps/* (EPIC-03+); repo lain menyusul per use case pemakai.
 
 ### EPIC-03..08 (Sprint 0.2–0.4): semua ⏳
 - CHN (WABA gateway, web chat), AGT (LLM+MCP), slice builder, ops (n8n/Umami/billing
