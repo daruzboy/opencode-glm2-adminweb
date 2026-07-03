@@ -24,3 +24,15 @@ export function domainEvent(type: string, occurredAt: string = new Date().toISOS
 export interface Port {
   readonly name: string;
 }
+
+// TenantId — branding type (kernel). Mencegah tertukar dgn string biasa; dipakai
+// Port repository (arg wajib) maupun use case. Dulu di core, kini di kernel agar
+// shared/ports bisa memakainya tanpa import core (dependency rule: core → shared).
+export type TenantId = string & { readonly __tenant: unique symbol };
+
+export function tenantId(value: string): TenantId {
+  return value as TenantId;
+}
+
+// Port layer — repository (SRS §4.1 shared/ports, §9.1).
+export * from './ports/repository.js';

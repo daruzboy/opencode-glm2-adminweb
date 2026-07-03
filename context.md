@@ -3,19 +3,17 @@
 > **Baca paling awal** (bersama `decision.md` & `AGENTS.md`) agar tidak kehilangan
 > konteks saat memulai sesi baru. Perbarui di akhir tiap sesi kerja berarti.
 
-- Sesi: T-020 wrap-up + TestSprite connect · Tanggal: 2026-07-04
-- Cabang aktif: `main` (kembali ke trunk; branch feature terhapus post-merge)
-- Status umum: **PR #2 (T-020 Prisma schema + migrasi + seed) sudah merged ke `main`
-  (squash `883ab29`, 2026-07-03). CI hijau: `migrate deploy` + `db seed` jalan di
-  service Postgres 16. Cabang feature terhapus. Berikutnya: T-021 (repository +
-  tenant guard).**
+- Sesi: T-021 implement (tenant guard) · Tanggal: 2026-07-04
+- Cabang aktif: `feature/t-021-tenant-guard` (PR ke `main`)
+- Status umum: **T-021 (repository layer + tenant guard, NFR-09) selesai di branch,
+  gerbang `pnpm turbo lint test build` 21/21 hijau (22 test adapter). Menunggu PR +
+  CI. TestSprite key sudah valid (perlu restart opencode agar 8 tool termuat).**
 
 ## Di mana kita sekarang
-Fase 0 — Sprint 0.1. EPIC-01 (T-010/T-011/T-013) & **EPIC-02 T-020 selesai &
-merged** ke `main`. Branch protection `main` aktif; repo public. Schema Prisma 9
-model + migrasi awal + seed tenant uji (`warung-demo`) hidup di
-`packages/adapters/prisma` (SOLID-D — vendor SDK hanya di adapters), terbukti
-jalan di CI. T-021 (repository layer + tenant guard) belum dimulai.
+Fase 0 — Sprint 0.1. EPIC-01 (T-010/T-011/T-013) & EPIC-02 T-020 selesai & merged
+ke `main`. **T-021 (repository + tenant guard) selesai di `feature/t-021-tenant-guard`**.
+Branch protection `main` aktif; repo public. `.git` sudah direlokasi keluar Google
+Drive (`C:\dev\glm2-adminweb.git`).
 
 ## Yang baru saja terjadi
 - **PR #2 (T-020) di-merge** ke `main` (squash commit `883ab29`, 2026-07-03T17:34Z),
@@ -50,6 +48,22 @@ jalan di CI. T-021 (repository layer + tenant guard) belum dimulai.
   ditulis ke file ter-track (repo public) — memakai referensi `{env:...}`.
   _Catatan:_ menjalankan tes terhadap endpoint butuh app API hidup (EPIC-03+);
   tool berbasis repo (`bootstrap`, `code_summary`, `*_test_plan`) sudah pakai.
+- **T-021 diimplementasi** di `feature/t-021-tenant-guard` (NFR-09):
+  - `packages/shared/src/ports/repository.ts` — Port `ConversationRepository` +
+    `ConversationEntity`/`RepositoryError`/filter/input. Semua method wajib arg
+    `tenantId: TenantId` → **compile-time guard** (query tanpa tenantId = type error).
+  - `packages/adapters/src/prisma/tenant-guard.ts` — `assertTenantScoped` (validator
+    murni, throw `TenantGuardError` bila tenantId hilang pada 7 model ter-scope),
+    `guardOperation` (DB tak tercapai bila violasi), `tenantGuardExtension` (Prisma
+    `$extends` top-level `$allOperations` → runtime guard utk raw prisma).
+  - `packages/adapters/src/prisma/conversation-repo-prisma.ts` — `ConversationRepositoryPrisma`
+    + `ConversationDelegate` (interface sempit → fake di test). Tiap method menyuntik
+    tenantId ke where/data; map Date→ISO.
+  - `TenantId`/`tenantId` **dipindah core→shared kernel** (agar `shared/ports` bisa
+    pakai tanpa import core); core re-export.
+  - Refactor: `adapters/src/index.ts` barrel-export prisma/*.
+  - `pnpm turbo lint test build` → **21/21 hijau** (adapter 22 test: tenant-guard 13 +
+    conversation-repo 6 + index 3). DB-free (mock/fake delegate).
 
 ## Keputusan desain T-020 (catatan)
 - **Penempatan Prisma**: schema + client + migrasi + seed di `packages/adapters/prisma`.
@@ -61,16 +75,33 @@ jalan di CI. T-021 (repository layer + tenant guard) belum dimulai.
 - **ID**: `cuid()`. **brandId**: `String @default("digimaestro")` (bantuanpajak.id
   menumpang di masa depan tanpa migrasi enum).
 
+## Keputusan desain T-021 (catatan)
+- **Dua lapis guard**: (1) compile-time via signature Port (arg `tenantId` wajib);
+  (2) runtime via `assertTenantScoped` + Prisma `$extends` (anti raw-prisma bypass).
+  Repo sendiri juga menyuntik tenantId (primary guard). Sesuai kriteria terima
+  backlog: "Test membuktikan query tanpa tenantId gagal kompilasi/runtime" → keduanya.
+- **`TenantId` pindah ke shared kernel** (bukan core) supaya `shared/ports` memakainya
+  tanpa melanggar dependency rule (core→shared, bukan sebaliknya). Core re-export
+  agar konsumen lama tak rusak.
+- **Pola satu repo per agregat** (SRS §4.2-I): T-021 buat `ConversationRepository`
+  sebagai kanonik + infrastruktur guard global. Repo agregat lain (Message, Website,
+  Revision-via-Website, AgentJob, dll.) menyusul saat use case pemakai dibuat
+  (EPIC-03 CHN dst.) — bukan blocker kriteria terima T-021.
+- **Delegate interface sempit** (`ConversationDelegate`) di adapters: repo bergantung
+  ke interface, bukan PrismaClient penuh → fake di test tanpa DB + kompatibel
+  struktural dgn `prisma.conversation` (method bivariance).
+- **`tenantGuardExtension` belum di-wire** (composition root apps/* belum ada).
+  Saat apps dibuat (EPIC-03+): `const prisma = new PrismaClient().$extends(tenantGuardExtension())`.
+
 ## Langkah segera berikutnya
-1. **Mulai T-021** (repository layer + tenant guard + uji kebocoran lintas tenant,
-   NFR-09) di branch `feature/t-021-tenant-guard`. Implementasi repository Prisma di
-   `packages/adapters` mengikuti Port di `packages/shared/ports`; setiap query wajib
-   scoped `tenantId`. Uji: happy path + upaya akses data tenant lain ditolak.
+1. **Push `feature/t-021-tenant-guard` → buka PR → CI hijau → merge.**
 2. (Paralel, non-kode) **Restart opencode** → tool MCP TestSprite (8 tool) termuat
    ke toolbelt agent. Lalu jalankan `testsprite_bootstrap` + `testsprite_generate_
    code_summary` (berbasis repo; tidak butuh staging). Uji endpoint nyata (T-014)
    menyusul setelah app API hidup (EPIC-03+).
-3. (Jalur kritis EPIC-00) Dorong PO: verifikasi Meta+WABA (T-001), kumpulkan kredensial (T-002).
+3. Setelah T-021 merged, EPIC-02 selesai. Lanjut **EPIC-03 (CHN)**: T-030 webhook
+   WABA / T-031 pengirim pesan keluar — akan memakai `ConversationRepository`/guard.
+4. (Jalur kritis EPIC-00) Dorong PO: verifikasi Meta+WABA (T-001), kumpulkan kredensial (T-002).
 
 ## Hal yang ditunggu dari PO (jalur kritis, EPIC-00)
 - Ajukan verifikasi Meta + WABA (T-001) — lead time terpanjang.

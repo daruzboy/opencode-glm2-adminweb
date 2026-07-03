@@ -36,3 +36,7 @@ export function isKnownAdapter(name: string): name is AdapterName {
 export function defineAdapter<T extends Port>(adapter: T): T {
   return adapter;
 }
+
+// Repository layer + tenant guard (T-021, NFR-09). Lihat prisma/* .
+export * from './prisma/tenant-guard.js';
+export * from './prisma/conversation-repo-prisma.js';
