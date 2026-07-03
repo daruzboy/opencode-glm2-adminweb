@@ -12,7 +12,7 @@
 - Lokal: `C:\Users\daruzboy\Documents\A_PROJECT\02_digimaestro\glm2-adminweb`
 - Produk: **digimaestro.id** (platform website builder chatbot & agentic AI untuk UMKM)
 - Pemilik/PO: Darusman · Model coding agent: GLM 5.2 · QA: TestSprite
-- Terakhir diperbarui: 2026-07-03
+- Terakhir diperbarui: 2026-07-04
 
 ---
 
@@ -95,14 +95,15 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   1 endpoint.
 
 ### EPIC-02 — Skema Data & Tenant Guard
-- 🔧 **T-020** Prisma schema inti (9 model: Tenant+`brandId`, User, Conversation,
+- ✅ **T-020** Prisma schema inti (9 model: Tenant+`brandId`, User, Conversation,
   Message, Website, Revision, AgentJob, LlmUsage, AuditLog; +enum, tenantId &
   timestamps di semua tabel domain), migrasi awal (`00000000000000_init`), seed
-  tenant uji. Schema+client di `packages/adapters/prisma` (vendor SDK `@prisma/client`
-  hanya di sini — SOLID-D, dijaga ESLint). **Di branch `feature/t-020-prisma-schema`,
-  menunggu CI** (service Postgres 16 di CI menjalankan `migrate deploy` + `db seed` =
-  kriteria terima "migrate jalan di CI; seed tenant uji").
-- ⏳ **T-021** Repository layer + tenant guard + uji kebocoran lintas tenant (NFR-09)
+  tenant uji (`warung-demo` + OWNER). Schema+client di `packages/adapters/prisma`
+  (vendor SDK `@prisma/client` hanya di sini — SOLID-D, dijaga ESLint). **Ter-merge
+  ke `main` via PR #2** (squash `883ab29`, 2026-07-03). CI hijau: `migrate deploy`
+  (`00000000000000_init` applied) + `db seed` (`Seeded tenant warung-demo`) jalan
+  pada service Postgres 16 — kriteria terima terpenuhi.
+- ⏳ **T-021** Repository layer + tenant guard + uji kebocoran lintas tenant (NFR-09) — _berikutnya_
 
 ### EPIC-03..08 (Sprint 0.2–0.4): semua ⏳
 - CHN (WABA gateway, web chat), AGT (LLM+MCP), slice builder, ops (n8n/Umami/billing
