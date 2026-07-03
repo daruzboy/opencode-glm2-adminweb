@@ -202,11 +202,15 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   untuk merangkum hasil golden prompt (pass rate, kualitas, latensi, biaya) dan
   memberi rekomendasi deterministik; ini menjadi dasar laporan 20 prompt saat API key
   tersedia. `.env.example` diselaraskan dengan env composition root
-  (`DIGIMAESTRO_LLM_PROVIDER`, model, base URL opsional). Test kontrak adapter
+  (`DIGIMAESTRO_LLM_PROVIDER`, model, base URL opsional). Golden set 20 prompt
+  evaluasi (`LLM_GOLDEN_PROMPTS`) ditambahkan di core, mencakup brief UMKM,
+  revisi operator, dan NEEDS_INFO; `createLlmEvaluationReport()` merangkum coverage
+  prompt, provider count, missing prompt, dan rekomendasi provider. Test kontrak adapter
   menutup happy path, retry karena schema invalid, HTTP 5xx, usage/cost log,
   default base URL provider, logger Prisma, factory composition, dan mock
-  deterministik; test core menutup scoring provider. Verifikasi lokal alternatif
-  terakhir: `tsc -b`, `vitest run` (90/90), `eslint .` hijau.
+  deterministik; test core menutup golden prompt set, report, dan scoring provider.
+  Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (95/95), `eslint .`
+  hijau.
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
   (lanjutan T-050..052), slice builder (T-060..064), ops (T-070..073), QA
   (T-080..083).

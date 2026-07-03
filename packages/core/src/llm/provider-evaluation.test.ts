@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { recommendLlmProvider, type LlmPromptEvaluation } from './provider-evaluation.js';
+import {
+  createLlmEvaluationReport,
+  recommendLlmProvider,
+  type LlmPromptEvaluation,
+} from './provider-evaluation.js';
 
 function row(overrides: Partial<LlmPromptEvaluation>): LlmPromptEvaluation {
   return {
@@ -46,5 +50,19 @@ describe('recommendLlmProvider', () => {
       recommendedProvider: '',
       scores: [],
     });
+  });
+
+  it('creates an evaluation report with missing prompt ids', () => {
+    const result = createLlmEvaluationReport(
+      ['p1', 'p2', 'p3'],
+      [
+        row({ promptId: 'p1', provider: 'deepseek' }),
+        row({ promptId: 'p2', provider: 'glm' }),
+      ],
+    );
+
+    expect(result.promptCount).toBe(3);
+    expect(result.providerCount).toBe(2);
+    expect(result.missingPromptIds).toEqual(['p3']);
   });
 });

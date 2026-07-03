@@ -239,7 +239,10 @@ REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijala
   biaya total, dan rekomendasi provider dari hasil golden prompt.
   `.env.example` diselaraskan dengan composition root: `DIGIMAESTRO_LLM_PROVIDER`,
   `DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL`, `GLM_MODEL`, dan `GLM_BASE_URL`.
+  `LLM_GOLDEN_PROMPTS` berisi 20 brief evaluasi untuk UMKM, revisi operator, dan
+  NEEDS_INFO. `createLlmEvaluationReport()` membuat ringkasan coverage prompt,
+  jumlah provider, prompt yang belum dievaluasi, dan rekomendasi provider.
 - Export publik ditambahkan di `packages/shared/src/index.ts` dan
   `packages/adapters/src/index.ts`; helper evaluasi diekspor dari `packages/core`.
-- Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (90/90), `eslint .`
+- Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (95/95), `eslint .`
   hijau. `pnpm turbo ...` masih belum tersedia di PATH sandbox.

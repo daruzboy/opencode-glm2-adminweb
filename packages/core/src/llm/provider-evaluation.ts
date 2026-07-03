@@ -25,6 +25,12 @@ export interface LlmProviderRecommendation {
   readonly scores: readonly LlmProviderScore[];
 }
 
+export interface LlmEvaluationReport extends LlmProviderRecommendation {
+  readonly promptCount: number;
+  readonly providerCount: number;
+  readonly missingPromptIds: readonly string[];
+}
+
 export interface LlmProviderEvaluationWeights {
   readonly quality: number;
   readonly passRate: number;
@@ -59,6 +65,23 @@ export function recommendLlmProvider(
   return {
     recommendedProvider: scores[0]?.provider ?? '',
     scores,
+  };
+}
+
+export function createLlmEvaluationReport(
+  expectedPromptIds: readonly string[],
+  evaluations: readonly LlmPromptEvaluation[],
+  weights: LlmProviderEvaluationWeights = DEFAULT_WEIGHTS,
+): LlmEvaluationReport {
+  const recommendation = recommendLlmProvider(evaluations, weights);
+  const evaluatedPromptIds = new Set(evaluations.map((item) => item.promptId));
+  const providerIds = new Set(evaluations.map((item) => item.provider));
+
+  return {
+    ...recommendation,
+    promptCount: expectedPromptIds.length,
+    providerCount: providerIds.size,
+    missingPromptIds: expectedPromptIds.filter((id) => !evaluatedPromptIds.has(id)),
   };
 }
 
