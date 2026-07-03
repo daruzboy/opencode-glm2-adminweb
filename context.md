@@ -60,6 +60,18 @@ jalan di CI. T-021 (repository layer + tenant guard) belum dimulai.
 - Kumpulkan: akun Xendit, VPS DC Indonesia, SSH cPanel, API key DeepSeek+GLM (T-002).
 
 ## Catatan teknis penting (jangan lupa)
+- **`.git` direlokasi keluar Google Drive (2026-07-04).** Worktree tetap di
+  `...\Documents\A_PROJECT\02_digimaestro\glm2-adminweb` (ter-sync Google Drive,
+  OK untuk file kerja), tapi `gitdir` sebenarnya di **`C:\dev\glm2-adminweb.git`**
+  (di luar Drive). File `.git` di root worktree = pointer 1 baris:
+  `gitdir: C:/dev/glm2-adminweb.git`. Sebab: Google Drive menyuntik `desktop.ini`
+  ke tiap subfolder `.git/` → ref rusak (`refs/.../desktop.ini` menggagalkan
+  `gh pr merge --delete-branch`) + `git fsck` melapor `bad sha1 file` di
+  `.git/objects/`. Setelah relokasi + pembersihan 97 `desktop.ini`, `git fsck`
+  bersih. Verify: `git rev-parse --git-dir` → `C:/dev/glm2-adminweb.git`.
+  _Watch-item:_ jika Drive pernah mengembalikan `.git` sebagai folder (menimpa
+  pointer), hapus lalu tulis ulang file pointer tsb. Konvensi `feature/<id>-...`
+  (nama branch berslash) AMAN kembali (folder `.git/refs/...` tak lagi di-sync).
 - Jangan push langsung ke `main` → selalu PR dari `feature/*`.
 - Konflik pnpm di CI sudah selesai: biarkan `packageManager` (package.json) yang
   menentukan versi; jangan tambah `version` di `pnpm/action-setup`.
@@ -70,9 +82,10 @@ jalan di CI. T-021 (repository layer + tenant guard) belum dimulai.
   folder `prisma/` tidak ikut dikompilasi (seed = script terpisah via `tsx`).
 - SOLID-D dijaga ESLint: `core`/`shared` dilarang import adapter/app/vendor
   (termasuk `@prisma/client`).
-- Env lokal: Node 24 (CI 22), pnpm 11.9.0 via `npm i -g pnpm`. Docker Desktop ada CLI-
-  nya tapi daemon **tidak berjalan** → verifikasi DB lokal belum dilakukan; andalkan
-  service Postgres di CI.
+- Env lokal: Node 24 (CI 22), pnpm 11.9.0 via `npm i -g pnpm`. **gh CLI v2.96.0
+  terpasang & ter-autentikasi** (`daruzboy`, scope `repo`/`workflow`). Docker Desktop
+  ada CLI-nya tapi daemon **tidak berjalan** → verifikasi DB lokal belum dilakukan;
+  andalkan service Postgres di CI.
 
 ## Cara melanjutkan sesi baru
 1. Baca `decision.md` → `context.md` → `AGENTS.md` (sudah auto-load via
