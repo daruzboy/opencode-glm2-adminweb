@@ -117,8 +117,8 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   root apps/* (EPIC-03+); repo lain menyusul per use case pemakai.
 
 ### EPIC-03..08 (Sprint 0.2–0.4)
-- 🔧 **T-040** Web Chat (EPIC-04, FR-CHN-003) — **backend slice** terimplementasi
-  di branch `feature/t-040-web-chat-backend`: `MessageRepository` (Port+impl, mirror
+- 🔧 **T-040** Web Chat (EPIC-04, FR-CHN-003) — **backend slice ter-merge ke `main`**
+  (PR #8, squash `f508e1b`, 2026-07-04): `MessageRepository` (Port+impl, mirror
   T-021) + `createPrismaClient()` (Prisma `$extends(tenantGuardExtension)` ter-wire
   pertama kali) + `apps/api` Fastify v5 composition root (`/healthz`, `GET
   /api/chat/:id/messages` riwayat tenant-scoped, `WS /api/chat` realtime) + use case

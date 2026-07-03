@@ -3,18 +3,20 @@
 > **Baca paling awal** (bersama `decision.md` & `AGENTS.md`) agar tidak kehilangan
 > konteks saat memulai sesi baru. Perbarui di akhir tiap sesi kerja berarti.
 
-- Sesi: T-040 backend slice (web chat) · Tanggal: 2026-07-04
-- Cabang aktif: `feature/t-040-web-chat-backend` (PR ke `main`)
-- Status umum: **T-021 merged (PR #7). T-040 backend slice (apps/api Fastify + WS
-  chat + MessageRepository + createPrismaClient) selesai di branch, gate 21/21 hijau
-  (api 8 test, adapters 25). Menunggu PR + CI. Widget portal = PR lanjutan T-040.**
+- Sesi: T-040 backend merged → siap restart · Tanggal: 2026-07-04
+- Cabang aktif: `main` (kembali ke trunk; branch `feature/t-040-web-chat-backend`
+  dihapus post-merge)
+- Status umum: **T-040 backend slice (apps/api Fastify + WS chat + MessageRepository
+  + createPrismaClient) SUDAH MERGED ke `main` (PR #8, squash `f508e1b`). EPIC-01/02 &
+  T-040-backend selesai. Berikutnya: T-040 frontend slice (widget portal). TestSprite
+  key valid (perlu restart opencode agar 8 tool termuat).**
 
 ## Di mana kita sekarang
-Fase 0 — Sprint 0.2 mulai. EPIC-01 (T-010/011/013) & EPIC-02 (T-020/021) selesai &
-merged ke `main`. **T-040 web chat (EPIC-04) — backend slice** di branch ini (Fastify
-composition root pertama, guard T-021 ter-wire via `createPrismaClient`). EPIC-03 (WABA)
-terblokir T-001 (verifikasi Meta+WABA belum dijalan PO). `.git` sudah di luar Google
-Drive (`C:\dev\glm2-adminweb.git`).
+Fase 0 — Sprint 0.2. EPIC-01 (T-010/011/013) & EPIC-02 (T-020/021) merged ke `main`.
+**T-040 web chat (EPIC-04) — backend slice MERGED** (Fastify composition root pertama,
+guard T-021 ter-wire via `createPrismaClient`; endpoint `/healthz`, WS `/api/chat`,
+REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijalan PO).
+`.git` sudah di luar Google Drive (`C:\dev\glm2-adminweb.git`).
 
 ## Yang baru saja terjadi
 - **PR #2 (T-020) di-merge** ke `main` (squash commit `883ab29`, 2026-07-03T17:34Z),
@@ -114,12 +116,11 @@ Drive (`C:\dev\glm2-adminweb.git`).
   smoke manual; REST riwayat teruji via `app.inject()`.
 
 ## Langkah segera berikutnya
-1. **Push `feature/t-040-web-chat-backend` → buka PR → CI hijau → merge.**
-2. **T-040 frontend slice (lanjutan)**: widget minimal di `apps/portal` (React 19 +
+1. **T-040 frontend slice (lanjutan)**: widget minimal di `apps/portal` (React 19 +
    Vite 6) → connect `WS /api/chat` + muat riwayat. Selesai → T-040 penuh.
-3. (Paralel, non-kode) **Restart opencode** → tool MCP TestSprite termuat; sekarang
-   `apps/api` punya endpoint (`/healthz`, WS chat) untuk diuji TestSprite (T-014).
-4. (Jalur kritis EPIC-00) **Dorong PO**: verifikasi Meta+WABA (T-001), kumpulkan
+2. (Non-kode) **Restart opencode** → tool MCP TestSprite termuat; kini `apps/api`
+   punya endpoint (`/healthz`, WS chat) untuk diuji TestSprite (T-014).
+3. (Jalur kritis EPIC-00) **Dorong PO**: verifikasi Meta+WABA (T-001), kumpulkan
    kredensial (T-002) — agar EPIC-03 (T-030..033) tak tersendat.
 
 ## Hal yang ditunggu dari PO (jalur kritis, EPIC-00)
