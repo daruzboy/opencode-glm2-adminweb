@@ -64,3 +64,56 @@ export interface ConversationRepository extends Port {
     input: ConversationCreateInput,
   ): Promise<Result<ConversationEntity, RepositoryError>>;
 }
+
+// ── Message ───────────────────────────────────────────────────────────────────
+// SRS §8 Message; tenantId terdenormalisasi (T-020) agar guard anti-kebocoran
+// lintas-tenant bisa ditegakkan per-baris (NFR-09). providerMsgId @unique = dasar
+// idempotensi webhook (FR-CHN-005) & dedup web chat.
+
+export type MessageDirection = 'IN' | 'OUT';
+
+export type MessageType =
+  | 'TEXT'
+  | 'IMAGE'
+  | 'VIDEO'
+  | 'AUDIO'
+  | 'DOCUMENT'
+  | 'LOCATION'
+  | 'INTERACTIVE';
+
+export type MessageStatus = 'QUEUED' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
+
+export interface MessageEntity {
+  id: string;
+  tenantId: string;
+  conversationId: string;
+  direction: MessageDirection;
+  type: MessageType;
+  text: string | null;
+  mediaId: string | null;
+  providerMsgId: string;
+  status: MessageStatus;
+  createdAt: string;
+}
+
+export interface MessageCreateInput {
+  conversationId: string;
+  direction: MessageDirection;
+  type: MessageType;
+  text?: string | null;
+  mediaId?: string | null;
+  providerMsgId: string;
+  status?: MessageStatus;
+}
+
+export interface MessageRepository extends Port {
+  readonly name: 'MessageRepository';
+  findManyByConversation(
+    tenantId: TenantId,
+    conversationId: string,
+  ): Promise<Result<MessageEntity[], RepositoryError>>;
+  create(
+    tenantId: TenantId,
+    input: MessageCreateInput,
+  ): Promise<Result<MessageEntity, RepositoryError>>;
+}

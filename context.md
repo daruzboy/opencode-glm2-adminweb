@@ -3,16 +3,17 @@
 > **Baca paling awal** (bersama `decision.md` & `AGENTS.md`) agar tidak kehilangan
 > konteks saat memulai sesi baru. Perbarui di akhir tiap sesi kerja berarti.
 
-- Sesi: T-021 implement (tenant guard) · Tanggal: 2026-07-04
-- Cabang aktif: `feature/t-021-tenant-guard` (PR ke `main`)
-- Status umum: **T-021 (repository layer + tenant guard, NFR-09) selesai di branch,
-  gerbang `pnpm turbo lint test build` 21/21 hijau (22 test adapter). Menunggu PR +
-  CI. TestSprite key sudah valid (perlu restart opencode agar 8 tool termuat).**
+- Sesi: T-040 backend slice (web chat) · Tanggal: 2026-07-04
+- Cabang aktif: `feature/t-040-web-chat-backend` (PR ke `main`)
+- Status umum: **T-021 merged (PR #7). T-040 backend slice (apps/api Fastify + WS
+  chat + MessageRepository + createPrismaClient) selesai di branch, gate 21/21 hijau
+  (api 8 test, adapters 25). Menunggu PR + CI. Widget portal = PR lanjutan T-040.**
 
 ## Di mana kita sekarang
-Fase 0 — Sprint 0.1. EPIC-01 (T-010/T-011/T-013) & EPIC-02 T-020 selesai & merged
-ke `main`. **T-021 (repository + tenant guard) selesai di `feature/t-021-tenant-guard`**.
-Branch protection `main` aktif; repo public. `.git` sudah direlokasi keluar Google
+Fase 0 — Sprint 0.2 mulai. EPIC-01 (T-010/011/013) & EPIC-02 (T-020/021) selesai &
+merged ke `main`. **T-040 web chat (EPIC-04) — backend slice** di branch ini (Fastify
+composition root pertama, guard T-021 ter-wire via `createPrismaClient`). EPIC-03 (WABA)
+terblokir T-001 (verifikasi Meta+WABA belum dijalan PO). `.git` sudah di luar Google
 Drive (`C:\dev\glm2-adminweb.git`).
 
 ## Yang baru saja terjadi
@@ -90,18 +91,36 @@ Drive (`C:\dev\glm2-adminweb.git`).
 - **Delegate interface sempit** (`ConversationDelegate`) di adapters: repo bergantung
   ke interface, bukan PrismaClient penuh → fake di test tanpa DB + kompatibel
   struktural dgn `prisma.conversation` (method bivariance).
-- **`tenantGuardExtension` belum di-wire** (composition root apps/* belum ada).
-  Saat apps dibuat (EPIC-03+): `const prisma = new PrismaClient().$extends(tenantGuardExtension())`.
+- **`tenantGuardExtension` sudah di-wire** di T-040: `createPrismaClient()` (adapters)
+  = `new PrismaClient().$extends(tenantGuardExtension)`, dipakai composition root
+  `apps/api/src/composition.ts`.
+
+## Keputusan desain T-040 backend (catatan)
+- **Pemisahan transport vs otak**: rute WS/REST hanya resolve tenant + persist IN/OUT
+  via repository; balasan = stub (persona ID, PRD). Otak LLM/agent hadir EPIC-05/06
+  (ganti `stubReply` dgn use case nyata, transport tak berubah).
+- **DI di composition root**: `buildServer({ deps })` — handler bergantung pada Port
+  (`ChatDeps`), test menyuntik fake → tanpa DB. `createChatDeps()` (Prisma) hanya
+  dipanggil saat server nyata berjalan (butuh `DATABASE_URL`).
+- **Tenant resolusi v0**: header `x-tenant-id` (REST) / query `tenantId` (WS). Bukan
+  auth — guard T-021 tetap mencegah query lintas-tenant; resiko v0 = impersonasi
+  tenantId, ditutup oleh auth T-002 (session/JWT) nanti.
+- **Cast `as unknown as Delegate`** di `composition.ts`: delegate Prisma (enum literal)
+  tak assignable struktural ke interface sempit repo (string) — beda tipe enumer saja.
+  Aman di batas adapter; repo tetap menginject tenantId & teruji.
+- **zod v4 (^4.4)** terpasang (bukan v3) — API `z.object/.parse` sama. `@fastify/
+  websocket` v11 (raw `WebSocket` socket: `.on/.send/.close`).
+- **WS belum diuji otomatis** (butuh WS client) — dicakup lewat use-case test +
+  smoke manual; REST riwayat teruji via `app.inject()`.
 
 ## Langkah segera berikutnya
-1. **Push `feature/t-021-tenant-guard` → buka PR → CI hijau → merge.**
-2. (Paralel, non-kode) **Restart opencode** → tool MCP TestSprite (8 tool) termuat
-   ke toolbelt agent. Lalu jalankan `testsprite_bootstrap` + `testsprite_generate_
-   code_summary` (berbasis repo; tidak butuh staging). Uji endpoint nyata (T-014)
-   menyusul setelah app API hidup (EPIC-03+).
-3. Setelah T-021 merged, EPIC-02 selesai. Lanjut **EPIC-03 (CHN)**: T-030 webhook
-   WABA / T-031 pengirim pesan keluar — akan memakai `ConversationRepository`/guard.
-4. (Jalur kritis EPIC-00) Dorong PO: verifikasi Meta+WABA (T-001), kumpulkan kredensial (T-002).
+1. **Push `feature/t-040-web-chat-backend` → buka PR → CI hijau → merge.**
+2. **T-040 frontend slice (lanjutan)**: widget minimal di `apps/portal` (React 19 +
+   Vite 6) → connect `WS /api/chat` + muat riwayat. Selesai → T-040 penuh.
+3. (Paralel, non-kode) **Restart opencode** → tool MCP TestSprite termuat; sekarang
+   `apps/api` punya endpoint (`/healthz`, WS chat) untuk diuji TestSprite (T-014).
+4. (Jalur kritis EPIC-00) **Dorong PO**: verifikasi Meta+WABA (T-001), kumpulkan
+   kredensial (T-002) — agar EPIC-03 (T-030..033) tak tersendat.
 
 ## Hal yang ditunggu dari PO (jalur kritis, EPIC-00)
 - Ajukan verifikasi Meta + WABA (T-001) — lead time terpanjang.
