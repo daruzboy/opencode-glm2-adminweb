@@ -3,35 +3,39 @@
 > **Baca paling awal** (bersama `decision.md` & `AGENTS.md`) agar tidak kehilangan
 > konteks saat memulai sesi baru. Perbarui di akhir tiap sesi kerja berarti.
 
-- Sesi: T-020 Prisma schema inti · Tanggal: 2026-07-03
-- Cabang aktif: `feature/t-020-prisma-schema` (PR ke `main`)
-- Status umum: **PR #1 (fondasi) sudah merged ke `main`; T-020 (schema+migrasi+seed)
-  selesai di branch, gerbang lokal hijau, menunggu CI (service Postgres menjalankan
-  migrate deploy + db seed).**
+- Sesi: T-020 wrap-up (merge + bookkeeping) · Tanggal: 2026-07-04
+- Cabang aktif: `main` (kembali ke trunk; branch feature terhapus post-merge)
+- Status umum: **PR #2 (T-020 Prisma schema + migrasi + seed) sudah merged ke `main`
+  (squash `883ab29`, 2026-07-03). CI hijau: `migrate deploy` + `db seed` jalan di
+  service Postgres 16. Cabang feature terhapus. Berikutnya: T-021 (repository +
+  tenant guard).**
 
 ## Di mana kita sekarang
-Fase 0 — Sprint 0.1. EPIC-01 (T-010/T-011/T-013) **selesai & merged** ke `main`
-(commit `50ebd50`, PR #1). Branch protection `main` aktif; repo public. T-020
-(EPIC-02) sedang dikerjakan: Prisma schema 9 model + migrasi awal + seed, schema &
-client hidup di `packages/adapters/prisma` (SOLID-D — vendor SDK hanya di adapters).
+Fase 0 — Sprint 0.1. EPIC-01 (T-010/T-011/T-013) & **EPIC-02 T-020 selesai &
+merged** ke `main`. Branch protection `main` aktif; repo public. Schema Prisma 9
+model + migrasi awal + seed tenant uji (`warung-demo`) hidup di
+`packages/adapters/prisma` (SOLID-D — vendor SDK hanya di adapters), terbukti
+jalan di CI. T-021 (repository layer + tenant guard) belum dimulai.
 
 ## Yang baru saja terjadi
-- **PR #1 di-merge** ke `main` (konflik versi pnpm di CI lama sudah diselesaikan sebelumnya).
-- **T-020** diimplementasi di `feature/t-020-prisma-schema`:
-  - `packages/adapters/prisma/schema.prisma` — 9 model (Tenant+`brandId`, User,
-    Conversation, Message, Website, Revision, AgentJob, LlmUsage, AuditLog) + enum;
-    semua tabel domain bawa `tenantId` + timestamps (NFR-09, ADR-5).
-  - `packages/adapters/prisma/migrations/00000000000000_init/migration.sql` di-generate
-    via `prisma migrate diff` (tanpa DB), tanpa-BOM; + `migration_lock.toml`.
-  - `packages/adapters/prisma/seed.ts` — seed 1 tenant uji (`warung-demo`) + 1 user OWNER.
-  - `packages/adapters/package.json`: deps `@prisma/client`/`prisma`/`tsx` + script
-    `db:generate|migrate|seed|validate` + `prisma.seed`.
-  - `pnpm-workspace.yaml`: `allowBuilds` Prisma di-set `true` (pnpm 11 di mesin ini
-    memakai `allowBuilds` map, bukan hanya `onlyBuiltDependencies`).
-  - `.github/workflows/ci.yml`: tambah service container Postgres 16 + langkah
-    `prisma generate` + `migrate deploy` + `db seed` (memenuhi kriteria terima T-020).
-  - `decision.md` + `context.md` diperbarui.
-- `pnpm exec turbo run lint build test` → **21/21 task sukses, exit 0** lokal.
+- **PR #2 (T-020) di-merge** ke `main` (squash commit `883ab29`, 2026-07-03T17:34Z),
+  cabang `feature/t-020-prisma-schema` dihapus. CI PR hijau dalam ~1 menit:
+  `lint + typecheck + vitest` SUCCESS, lalu langkah "DB migration & seed (T-020
+  acceptance)" → `prisma generate` (Client v6.19.3) → `migrate deploy`
+  (`Applying migration 00000000000000_init` → `All migrations have been
+  successfully applied`) → `db seed` (`Seeded tenant warung-demo ... OWNER Bu Demo`).
+  Semua kriteria terima T-020 terpenuhi.
+- gh CLI **kini terpasang** (v2.96.0) & ter-autentikasi sebagai `daruzboy` → blokir
+  "buka PR via web" teratasi.
+- **Catatan teknis**: ada ref lokal rusak `refs/heads/feature/desktop.ini`
+  (Windows `desktop.ini` tertangkap sebagai nama branch) yang sempat menggagalkan
+  langkah `gh pr merge --delete-branch`; sudah dibersihkan (file ref dihapus).
+  Perhatikan agar `desktop.ini` tidak ikut sebagai ref saat branch baru dibuat.
+- T-020 implementasi (sebagaimana sudah di-merge): `packages/adapters/prisma/`
+  berisi `schema.prisma` (9 model + enum, `tenantId`+timestamps), migrasi
+  `00000000000000_init` (tanpa-BOM, via `migrate diff`), `seed.ts` (tenant uji),
+  + deps & script `db:*` di `packages/adapters/package.json`, `allowBuilds` Prisma
+  di `pnpm-workspace.yaml`, service Postgres 16 di `.github/workflows/ci.yml`.
 
 ## Keputusan desain T-020 (catatan)
 - **Penempatan Prisma**: schema + client + migrasi + seed di `packages/adapters/prisma`.
@@ -44,11 +48,12 @@ client hidup di `packages/adapters/prisma` (SOLID-D — vendor SDK hanya di adap
   menumpang di masa depan tanpa migrasi enum).
 
 ## Langkah segera berikutnya
-1. Push `feature/t-020-prisma-schema` → buka PR → tunggu CI hijau (migrate+seed di
-   Postgres service) → merge. (`gh` CLI belum terpasang; buka PR via web atau pasang gh.)
-2. **Restart opencode** → TestSprite MCP ter-load; uji 1 endpoint (T-014).
-3. Mulai **T-021** (repository layer + tenant guard + uji kebocoran lintas tenant)
-   di branch `feature/t-021-tenant-guard`.
+1. **Mulai T-021** (repository layer + tenant guard + uji kebocoran lintas tenant,
+   NFR-09) di branch `feature/t-021-tenant-guard`. Implementasi repository Prisma di
+   `packages/adapters` mengikuti Port di `packages/shared/ports`; setiap query wajib
+   scoped `tenantId`. Uji: happy path + upaya akses data tenant lain ditolak.
+2. (Paralel, non-kode) **Restart opencode** → TestSprite MCP ter-load; uji 1 endpoint (T-014).
+3. (Jalur kritis EPIC-00) Dorong PO: verifikasi Meta+WABA (T-001), kumpulkan kredensial (T-002).
 
 ## Hal yang ditunggu dari PO (jalur kritis, EPIC-00)
 - Ajukan verifikasi Meta + WABA (T-001) — lead time terpanjang.
