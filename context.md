@@ -246,7 +246,10 @@ REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijala
   vendor-neutral serta helper `toOpenAiToolDefinition()`. `packages/core/src/agent/
   tool-registry.ts` menambahkan registry in-memory dengan guard scope tenant
   (`NOT_FOUND`/`FORBIDDEN`) sebagai fondasi MCP/function-calling T-051.
+  `AuditLogPort` + `AuditLogPrisma` menambahkan pencatatan tenant-scoped ke tabel
+  `AuditLog`; registry mencatat outcome `ok/error/forbidden/not_found` dan fail-closed
+  jika audit gagal.
 - Export publik ditambahkan di `packages/shared/src/index.ts` dan
   `packages/adapters/src/index.ts`; helper evaluasi diekspor dari `packages/core`.
-- Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (102/102), `eslint .`
+- Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (106/106), `eslint .`
   hijau. `pnpm turbo ...` masih belum tersedia di PATH sandbox.

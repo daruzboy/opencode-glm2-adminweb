@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ok, tenantId, type AgentToolDefinition } from '@digimaestro/shared';
+import { err, ok, tenantId, type AgentToolDefinition, type AuditLogPort } from '@digimaestro/shared';
 
 import { createAgentToolRegistry } from './tool-registry.js';
 
@@ -47,5 +47,53 @@ describe('InMemoryAgentToolRegistry', () => {
     if (!missing.ok) expect(missing.error.code).toBe('NOT_FOUND');
     expect(forbidden.ok).toBe(false);
     if (!forbidden.ok) expect(forbidden.error.code).toBe('FORBIDDEN');
+  });
+
+  it('records every tool invocation to audit log when configured', async () => {
+    const records: unknown[] = [];
+    const auditLog: AuditLogPort = {
+      name: 'audit:test',
+      record: async (record) => {
+        records.push(record);
+        return ok(undefined);
+      },
+    };
+    const registry = createAgentToolRegistry([tool('ops_get_job_status', 'ops')], auditLog);
+
+    await registry.callTool('ops_get_job_status', {}, context);
+    await registry.callTool('missing', {}, context);
+
+    expect(records).toEqual([
+      {
+        actor: 'agent',
+        tenantId: 'tA',
+        action: 'agent.tool.call',
+        meta: { toolName: 'ops_get_job_status', scope: 'ops', outcome: 'ok' },
+      },
+      {
+        actor: 'agent',
+        tenantId: 'tA',
+        action: 'agent.tool.call',
+        meta: { toolName: 'missing', scope: undefined, outcome: 'not_found' },
+      },
+    ]);
+  });
+
+  it('fails closed when audit log cannot be recorded', async () => {
+    const auditLog: AuditLogPort = {
+      name: 'audit:test',
+      record: async () => err({ code: 'UNKNOWN', message: 'audit down' }),
+    };
+    const registry = createAgentToolRegistry([tool('ops_get_job_status', 'ops')], auditLog);
+
+    const result = await registry.callTool('ops_get_job_status', {}, context);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatchObject({
+        code: 'UNKNOWN',
+        message: 'gagal mencatat audit tool: audit down',
+      });
+    }
   });
 });

@@ -3,6 +3,7 @@ import {
   createDeepSeekJsonAdapter,
   createDeterministicLlmJsonAdapter,
   createGlmJsonAdapter,
+  AuditLogPrisma,
   isKnownAdapter,
   KNOWN_ADAPTERS,
   LlmUsageLoggerPrisma,
@@ -28,5 +29,6 @@ describe('adapters registry', () => {
     expect(typeof createDeterministicLlmJsonAdapter).toBe('function');
     expect(typeof createGlmJsonAdapter).toBe('function');
     expect(LlmUsageLoggerPrisma).toBeDefined();
+    expect(AuditLogPrisma).toBeDefined();
   });
 });
