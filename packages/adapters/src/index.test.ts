@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { isKnownAdapter, KNOWN_ADAPTERS } from './index.js';
+import {
+  createDeepSeekJsonAdapter,
+  createDeterministicLlmJsonAdapter,
+  createGlmJsonAdapter,
+  isKnownAdapter,
+  KNOWN_ADAPTERS,
+  LlmUsageLoggerPrisma,
+} from './index.js';
 
 describe('adapters registry', () => {
   it('knows vendor adapters', () => {
@@ -14,5 +21,12 @@ describe('adapters registry', () => {
   it('includes deploy targets (NFR-12 portabilitas)', () => {
     expect(KNOWN_ADAPTERS).toContain('cpanel-ssh');
     expect(KNOWN_ADAPTERS).toContain('cf-pages');
+  });
+
+  it('exports LLM adapter factories', () => {
+    expect(typeof createDeepSeekJsonAdapter).toBe('function');
+    expect(typeof createDeterministicLlmJsonAdapter).toBe('function');
+    expect(typeof createGlmJsonAdapter).toBe('function');
+    expect(LlmUsageLoggerPrisma).toBeDefined();
   });
 });

@@ -125,10 +125,91 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `handleIncoming` (persist IN/OUT, stub reply v0; agent AI nyata EPIC-05). Test
   DB-free (handle-incoming + REST via inject) hijau; gate 21/21. Deps: `fastify`,
   `@fastify/websocket`, `zod`, `@digimaestro/adapters`. Tenant resolusi v0 via header
-  `x-tenant-id`/query (auth T-002 menyusul). **Widget portal (frontend slice) menunggu
-  PR lanjutan T-040.**
+  `x-tenant-id`/query (auth T-002 menyusul). **Frontend controller slice sudah dibuat
+  di working tree Codex (belum PR/merge):** `apps/portal/src/chat-widget.ts`
+  menambahkan `ChatWidgetController`, `ChatTransport`, browser REST/WS transport,
+  parser event murni, optimistic local IN message, dan export dari portal index.
+  `apps/portal/src/chat-widget-view-model.ts` menambahkan mapping presentation murni
+  untuk copy/status/message list sebelum UI React dipasang. `chat-widget-session.ts`
+  menambahkan facade headless + `ChatWidgetStorage` port untuk menyimpan
+  `conversationId` per tenant. `chat-widget-presenter.ts` menambahkan lapis form
+  presenter untuk draft input, submit label, placeholder, dan `canSubmit`, termasuk
+  factory `createBrowserChatWidgetPresenter()` untuk pemakaian browser siap pakai.
+  Storage `conversationId` bersifat best-effort: read/write error (private mode,
+  quota, blocked storage) tidak mematikan chat. Session `stop()` idempoten dan
+  melepas listener persist agar cleanup ganda tidak menutup socket/menulis storage
+  berulang.
+  `chat-widget-dom.ts` menambahkan DOM mount adapter minimal (`mountBrowserChatWidget`)
+  tanpa dependency React/Vite, dengan runtime DOM diinjeksi, plus
+  `mountBrowserChatWidgetFromDataset()` untuk root element berbasis `data-*` dan
+  `mountAllBrowserChatWidgets()` untuk auto-mount banyak root dengan callback
+  `onMountError` opsional. DOM adapter juga menambahkan atribut aksesibilitas dasar:
+  status live region, error alert, form/input labels, `aria-busy`, dan `maxlength=4000`
+  selaras schema backend. `CHAT_MESSAGE_MAX_LENGTH` diekspor sebagai kontrak bersama;
+  controller menolak pesan >4000 karakter dan presenter menonaktifkan submit + memberi
+  helper hitung karakter; saat melewati limit, helper menampilkan alasan eksplisit.
+  DOM mount bersifat idempoten per-root (WeakMap registry)
+  agar HMR/partial reload tidak membuat double listener; `destroy()` juga idempoten
+  sehingga cleanup ganda tidak menutup socket berulang. Helper
+  `destroyBrowserChatWidgetMounts()` membersihkan hasil `mountAllBrowserChatWidgets()`
+  sebagai grup tanpa menambah dependency UI.
+  Message view-model membawa `dateTime` asli; DOM message item menulis `data-tone`,
+  `aria-label`, dan `<time datetime="...">` untuk semantik aksesibilitas/styling.
+  View-model juga membawa `status` key stabil; DOM `data-status` memakai key
+  (`open`, `connecting`, dst.) bukan label copy Indonesia.
+  Desain SOLID: controller hanya state/use-case UI, transport hanya I/O, parser murni,
+  runtime browser diinjeksi agar testable tanpa React/Vite. Test baru
+  `apps/portal/src/chat-widget.test.ts` menutup load history, payload WS, reply event,
+  pending conversation normalization, invalid payload, error koneksi, derivasi URL
+  WebSocket, dan REST header `x-tenant-id`. `chat-widget-view-model.test.ts`
+  menutup copy Indonesia, enable send, arah pesan, dan label error.
+  `chat-widget-session.test.ts` menutup start/load/connect, submit, persist
+  conversation id, browser storage adapter, storage read/write failure, dan stop
+  idempotent + detach persistence listener.
+  `chat-widget-presenter.test.ts`
+  menutup draft state, submit trim/reset, disable blank submit, dan unsubscribe.
+  `chat-widget-dom.test.ts` menutup render shell, input event, submit, destroy,
+  dataset config, error tenant kosong, dan auto-mount multi-root yang melewati root
+  invalid + melaporkan error mount, termasuk atribut aksesibilitas DOM.
+  Test controller/presenter menutup guard panjang pesan >4000 dan helper karakter.
+  Test DOM menutup double mount, double destroy, dan remount setelah destroy.
+  Test DOM juga menutup submit form hingga payload WS backend-compatible
+  (`conversationId` + `text`).
+  Test view-model/DOM menutup status key stabil, timestamp asli, dan atribut semantik pesan.
+  Test DOM menutup cleanup kolektif auto-mounted widgets.
+  `apps/portal/src/index.test.ts` menutup export publik API web chat.
+  Verifikasi lokal alternatif (karena `pnpm` tidak tersedia di PATH sandbox):
+  `tsc -b`, `vitest run`, `eslint .` hijau. Frontend slice dinilai cukup untuk MVP
+  T-040: teks, riwayat, WS, tenant header/query, session persistence, aksesibilitas
+  dasar, dan lifecycle mount sudah tertutup.
+- 🔧 **T-050** LLM Abstraction + MCP Skeleton (EPIC-05, FR-AGT-008/010) — **mulai
+  working tree Codex (belum PR/merge):** `packages/shared/src/ports/llm.ts`
+  menambahkan Port `LlmJsonPort`, `LlmUsageLoggerPort`, tipe `LlmJsonRequest`,
+  `LlmError`, dan `LlmUsageRecord`. Schema menggunakan interface struktural
+  `safeParse()` yang kompatibel dengan Zod tanpa shared mengimpor runtime `zod`,
+  menjaga dependency rule dan tetap offline-testable. `packages/adapters/src/llm/
+  openai-compatible-json-adapter.ts` menambahkan adapter JSON OpenAI-compatible
+  generik untuk DeepSeek/GLM: runtime `fetch` diinjeksi, `response_format:
+  json_object`, validasi schema, retry/self-repair maks. 3 percobaan, usage logging
+  opsional via Port, dan estimasi biaya token. Factory `createDeepSeekJsonAdapter()`
+  dan `createGlmJsonAdapter()` diekspor dari `@digimaestro/adapters`.
+  `LlmUsageLoggerPrisma` mencatat `LlmUsage` tenant-scoped (token in/out + cost)
+  via delegate sempit. `apps/api/src/composition.ts` menambahkan factory
+  `createLlmJsonPort()` untuk memilih DeepSeek/GLM via env
+  `DIGIMAESTRO_LLM_PROVIDER` tanpa mengubah chat stub. `DeterministicLlmJsonAdapter`
+  ditambahkan untuk test/dev agent flow tanpa jaringan/API key. `packages/core/src/
+  llm/provider-evaluation.ts` menambahkan helper murni `recommendLlmProvider()`
+  untuk merangkum hasil golden prompt (pass rate, kualitas, latensi, biaya) dan
+  memberi rekomendasi deterministik; ini menjadi dasar laporan 20 prompt saat API key
+  tersedia. `.env.example` diselaraskan dengan env composition root
+  (`DIGIMAESTRO_LLM_PROVIDER`, model, base URL opsional). Test kontrak adapter
+  menutup happy path, retry karena schema invalid, HTTP 5xx, usage/cost log,
+  default base URL provider, logger Prisma, factory composition, dan mock
+  deterministik; test core menutup scoring provider. Verifikasi lokal alternatif
+  terakhir: `tsc -b`, `vitest run` (90/90), `eslint .` hijau.
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
-  (T-050..052), slice builder (T-060..064), ops (T-070..073), QA (T-080..083).
+  (lanjutan T-050..052), slice builder (T-060..064), ops (T-070..073), QA
+  (T-080..083).
 
 ---
 
