@@ -1,31 +1,32 @@
-# Windows
-desktop.ini
-Thumbs.db
-ehthumbs.db
-$RECYCLE.BIN/
-
-# Archives
-*.zip
-*.rar
-*.7z
-*.tar
-*.gz
-
-# OS
-.DS_Store
-
-# Editors
-.vscode/
-.idea/
-*.swp
-*.swo
-
 # Dependencies
 node_modules/
-__pycache__/
-*.pyc
+.pnpm-store/
 
-# Build output
+# Build outputs
 dist/
 build/
+.turbo/
+*.tsbuildinfo
+
+# Coverage & test artifacts
+coverage/
+test-results/
+playwright-report/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
 *.log
+npm-debug.log*
+pnpm-debug.log*

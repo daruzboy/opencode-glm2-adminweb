@@ -1,0 +1,70 @@
+name: QA Gate
+
+# T-014 / T-080 — gerbang QA akhir sprint (TestSprite + e2e terhadap staging).
+# Dijalankan MANUAL (workflow_dispatch) sebelum sebuah sprint dinyatakan selesai.
+# Lihat docs/qa/README.md untuk proses loop QA.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sprint:
+        description: 'Sprint (mis. 0.3)'
+        required: true
+        default: '0.x'
+      staging_url:
+        description: 'URL staging yang diuji'
+        required: true
+        default: 'https://staging.digimaestro.id'
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+
+jobs:
+  qa:
+    name: TestSprite QA suite
+    runs-on: ubuntu-latest
+    # Hanya jalankan QA bila CI pemicunya sukses (untuk trigger workflow_run).
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Unit & adapter tests
+        run: pnpm test
+
+      - name: Info — QA TestSprite (TestSprite MCP)
+        if: ${{ env.TESTSPRITE_API_KEY == '' }}
+        run: |
+          echo "::warning::TESTSPRITE_API_KEY belum diset sebagai secret repo."
+          echo "QA TestSprite (T-014/T-080) dijalankan dari opencode via MCP — lihat docs/qa/README.md."
+          echo "Set secret TESTSPRITE_API_KEY untuk mengaktifkan langkah TestSprite di workflow ini."
+        env:
+          TESTSPRITE_API_KEY: ${{ secrets.TESTSPRITE_API_KEY }}
+
+      # TODO(T-080): panggil TestSprite terhadap staging_url sesuai test-plan-template.md.
+      # TestSprite dipicu via MCP dari opencode (lihat docs/qa/README.md §3); langkah CI ini
+      # diisi setelah runner/CLI TestSprite final dikonfirmasi (DevSetup: rujuk docs resmi).
+      - name: TestSprite suite (placeholder)
+        if: ${{ env.TESTSPRITE_API_KEY != '' }}
+        run: echo "TestSprite akan dijalankan terhadap ${{ github.event.inputs.staging_url || 'staging' }} (sprint ${{ github.event.inputs.sprint || 'n/a' }})."
+        env:
+          TESTSPRITE_API_KEY: ${{ secrets.TESTSPRITE_API_KEY }}
+
+      - name: Gate
+        run: echo "Gerbang QA: suite unit hijau. Temuan TestSprite Kritis = blocker sprint (lihat laporan)."
