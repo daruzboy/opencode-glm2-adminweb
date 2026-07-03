@@ -15,7 +15,15 @@ export type WebsiteStatus =
   | 'ARCHIVED';
 
 export {
+  LLM_GOLDEN_PROMPTS,
+  getLlmGoldenPrompt,
+  type LlmGoldenPrompt,
+} from './llm/golden-prompts.js';
+
+export {
+  createLlmEvaluationReport,
   recommendLlmProvider,
+  type LlmEvaluationReport,
   type LlmPromptEvaluation,
   type LlmProviderEvaluationWeights,
   type LlmProviderRecommendation,
