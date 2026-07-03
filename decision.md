@@ -131,8 +131,13 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
 ---
 
 ## 5. Environment & Secrets (status, BUKAN nilai)
-- `TESTSPRITE_API_KEY`: ✅ set (secret repo `TESTSPRITE_API_KEY` + env user lokal).
-  Butuh **restart opencode** agar MCP TestSprite ter-load.
+- `TESTSPRITE_API_KEY`: ✅ **valid (dirotasi 2026-07-04)**. Sebelumnya env lokal
+  memuat key lama invalid (`sk-user-03w3e...`); kini dirotasi ke key valid
+  (`sk-user-gvm7n...`, account `daruzboy`). Diset di **env user lokal** + **secret
+  repo** `TESTSPRITE_API_KEY` (CI qa-gate). MCP terverifikasi: `opencode mcp list`
+  → `✓ TestSprite connected`; probe `tools/call testsprite_check_account_info` →
+  `firstName: daruzboy`. **Butuh restart opencode** agar 8 tool MCP termuat ke
+  toolbelt agent (load hanya saat startup).
 - `GLM_API_KEY`, `DEEPSEEK_API_KEY`: ⏳ belum diisi.
 - WABA / Xendit / cPanel / S3 / Umami / n8n: ⏳ belum (EPIC-00).
 - `.env.example` ada (template, tanpa nilai). Produksi via secret manager, bukan `.env`.
