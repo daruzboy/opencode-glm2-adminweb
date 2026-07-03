@@ -3,7 +3,7 @@
 > **Baca paling awal** (bersama `decision.md` & `AGENTS.md`) agar tidak kehilangan
 > konteks saat memulai sesi baru. Perbarui di akhir tiap sesi kerja berarti.
 
-- Sesi: T-020 wrap-up (merge + bookkeeping) · Tanggal: 2026-07-04
+- Sesi: T-020 wrap-up + TestSprite connect · Tanggal: 2026-07-04
 - Cabang aktif: `main` (kembali ke trunk; branch feature terhapus post-merge)
 - Status umum: **PR #2 (T-020 Prisma schema + migrasi + seed) sudah merged ke `main`
   (squash `883ab29`, 2026-07-03). CI hijau: `migrate deploy` + `db seed` jalan di
@@ -36,6 +36,20 @@ jalan di CI. T-021 (repository layer + tenant guard) belum dimulai.
   `00000000000000_init` (tanpa-BOM, via `migrate diff`), `seed.ts` (tenant uji),
   + deps & script `db:*` di `packages/adapters/package.json`, `allowBuilds` Prisma
   di `pnpm-workspace.yaml`, service Postgres 16 di `.github/workflows/ci.yml`.
+- **TestSprite MCP dikonfigurasi & terverifikasi (T-014 sebagian).** Ditemukan: env
+  lokal berisi key **lama invalid** (`sk-user-03w3e...j4Qmw`) → `testsprite_check_
+  account_info` membalas "Invalid TestSprite API Key". Fix: key valid (`sk-user-
+  gvm7n...`, account `daruzboy`) diset ke **User env** `TESTSPRITE_API_KEY` +
+  di-mirror ke **secret repo** (CI qa-gate). Verifikasi end-to-end via probe MCP
+  stdio (initialize → `tools/call check_account_info`) → `firstName: daruzboy`.
+  `opencode mcp list` → `✓ TestSprite connected` (8 tool: `testsprite_bootstrap`,
+  `generate_code_summary`, `generate_standardized_prd`, `generate_frontend/
+  backend_test_plan`, `generate_code_and_execute`, `open_test_result_dashboard`,
+  `check_account_info`). **BUTUH RESTART opencode** agar tool-termuat ke toolbelt
+  agent (MCP hanya load saat startup). `opencode.json` sudah benar; key TIDAK
+  ditulis ke file ter-track (repo public) — memakai referensi `{env:...}`.
+  _Catatan:_ menjalankan tes terhadap endpoint butuh app API hidup (EPIC-03+);
+  tool berbasis repo (`bootstrap`, `code_summary`, `*_test_plan`) sudah pakai.
 
 ## Keputusan desain T-020 (catatan)
 - **Penempatan Prisma**: schema + client + migrasi + seed di `packages/adapters/prisma`.
@@ -52,7 +66,10 @@ jalan di CI. T-021 (repository layer + tenant guard) belum dimulai.
    NFR-09) di branch `feature/t-021-tenant-guard`. Implementasi repository Prisma di
    `packages/adapters` mengikuti Port di `packages/shared/ports`; setiap query wajib
    scoped `tenantId`. Uji: happy path + upaya akses data tenant lain ditolak.
-2. (Paralel, non-kode) **Restart opencode** → TestSprite MCP ter-load; uji 1 endpoint (T-014).
+2. (Paralel, non-kode) **Restart opencode** → tool MCP TestSprite (8 tool) termuat
+   ke toolbelt agent. Lalu jalankan `testsprite_bootstrap` + `testsprite_generate_
+   code_summary` (berbasis repo; tidak butuh staging). Uji endpoint nyata (T-014)
+   menyusul setelah app API hidup (EPIC-03+).
 3. (Jalur kritis EPIC-00) Dorong PO: verifikasi Meta+WABA (T-001), kumpulkan kredensial (T-002).
 
 ## Hal yang ditunggu dari PO (jalur kritis, EPIC-00)
