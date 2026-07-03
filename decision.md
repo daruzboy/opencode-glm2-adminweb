@@ -62,7 +62,10 @@ Setiap workspace: `build` (tsc) · `test` (Vitest) · `lint` (ESLint 9 flat).
 ### 1.6 Konvensi kerja
 - Satu backlog ID = satu sesi agent; konteks kecil = akurat.
 - Commit: `<ID-TUGAS>: ringkasan` (mis. `T-021: tenant guard`).
-- Branch: `feature/*` → PR ke `main`. Tidak push langsung ke `main`.
+- Branch: `feature/*` → PR ke `main`. Push langsung ke `main` **diblok** mesin
+  (branch protection: require `lint + typecheck + vitest`, strict, enforce_admins).
+- Repo **public** (dipilih PO agar branch protection jalan di akun free; secret
+  tetap tersembunyi).
 - Gerbang: `pnpm turbo lint build test` wajib hijau sebelum PR/merge.
 - Keputusan permanen → tulis ke sini/SRS/AGENTS.md, bukan prompt ad-hoc.
 - File kontrak agent: **`AGENTS.md`** (wajib ada & ter-commit).
@@ -81,8 +84,9 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
 
 ### EPIC-01 — Monorepo, CI, AI Dev Tooling
 - ✅ **T-010** Monorepo pnpm+Turborepo (commit `a30d0e1`)
-- 🔧 **T-011** CI GitHub Actions (lint+typecheck+vitest) — workflow dibuat; sedang
-  diperbaiki (konflik versi pnpm) & diverifikasi hijau di PR #1
+- 🔧 **T-011** CI GitHub Actions (lint+typecheck+vitest) — **hijau di PR #1** (38s).
+  Branch protection `main` aktif: require `lint + typecheck + vitest`, strict
+  (up-to-date), wajib via PR, linear history, enforce_admins.
 - ✅ **T-012** _(parsial)_ Docker Compose — **belum dibuat** (dev/prod compose
   postgres/redis/caddy/api/worker/n8n/umami). Status: ⏳
 - ✅ **T-013** Harness agent GLM 5.2 + `AGENTS.md` + template prompt

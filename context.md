@@ -11,8 +11,9 @@
 ## Di mana kita sekarang
 Fase 0 — Sprint 0.1. Fondasi teknis (T-010) selesai: monorepo pnpm+Turborepo,
 clean architecture skeleton, gerbang `pnpm turbo lint build test` hijau lokal
-(21/21), CI & QA-gate workflow dibuat. Sekarang fokus mengunci CI hijau di PR,
-lalu branch protection, sebelum mulai tugas fitur (T-020/T-021).
+(21/21) & **CI hijau di PR #1** (38s). **Branch protection `main` sudah aktif**
+(require CI, wajib via PR, strict, linear, enforce_admins); repo dijadikan **public**.
+PR #1 siap di-merge; setelah itu mulai tugas fitur (T-020/T-021).
 
 ## Yang baru saja terjadi
 - Membaca BRD/FRD/PRD/SRS + DevSetup (09) + Backlog Fase 0 (07).
@@ -29,13 +30,10 @@ lalu branch protection, sebelum mulai tugas fitur (T-020/T-021).
   `instructions` agar auto-dibaca di awal sesi.
 
 ## Langkah segera berikutnya
-1. Commit perbaikan CI + `decision.md` + `context.md` + update `opencode.json` ke
-   `feature/initial-setup`; push → CI re-run. Pastikan **hijau**.
-2. Aktifkan **branch protection** `main`: require status check
-   `CI / lint + typecheck + vitest`, strict (up-to-date), wajib via PR.
-3. Merge PR #1 (setelah CI hijau).
-4. **Restart opencode** → TestSprite MCP ter-load; uji 1 endpoint (T-014).
-5. Mulai **T-020** (Prisma schema inti) lalu **T-021** (tenant guard repository).
+1. **Merge PR #1** (CI hijau, branch protection aktif) → lanjut kerja di `main`/branch baru.
+2. **Restart opencode** → TestSprite MCP ter-load; uji 1 endpoint (T-014).
+3. Mulai **T-020** (Prisma schema inti) lalu **T-021** (tenant guard repository),
+   masing-masing di branch `feature/*` terpisah.
 
 ## Hal yang ditunggu dari PO (jalur kritis, EPIC-00)
 - Ajukan verifikasi Meta + WABA (T-001) — lead time terpanjang.
