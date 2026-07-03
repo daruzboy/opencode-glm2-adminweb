@@ -242,7 +242,11 @@ REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijala
   `LLM_GOLDEN_PROMPTS` berisi 20 brief evaluasi untuk UMKM, revisi operator, dan
   NEEDS_INFO. `createLlmEvaluationReport()` membuat ringkasan coverage prompt,
   jumlah provider, prompt yang belum dievaluasi, dan rekomendasi provider.
+  `packages/shared/src/ports/agent-tool.ts` menambahkan kontrak tool agent
+  vendor-neutral serta helper `toOpenAiToolDefinition()`. `packages/core/src/agent/
+  tool-registry.ts` menambahkan registry in-memory dengan guard scope tenant
+  (`NOT_FOUND`/`FORBIDDEN`) sebagai fondasi MCP/function-calling T-051.
 - Export publik ditambahkan di `packages/shared/src/index.ts` dan
   `packages/adapters/src/index.ts`; helper evaluasi diekspor dari `packages/core`.
-- Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (95/95), `eslint .`
+- Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (102/102), `eslint .`
   hijau. `pnpm turbo ...` masih belum tersedia di PATH sandbox.
