@@ -209,12 +209,14 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   src/ports/agent-tool.ts` menambahkan kontrak tool agent vendor-neutral +
   `toOpenAiToolDefinition()` untuk bridge function-calling tanpa SDK vendor.
   `InMemoryAgentToolRegistry` di core menambahkan list/call tool dengan guard scope
-  tenant sebagai fondasi T-051. Test kontrak adapter
+  tenant sebagai fondasi T-051. `AuditLogPort` + `AuditLogPrisma` ditambahkan agar
+  setiap invokasi tool agent bisa dicatat ke tabel `AuditLog`; registry fail-closed
+  bila audit gagal, sesuai kebutuhan traceability SRS §5.4. Test kontrak adapter
   menutup happy path, retry karena schema invalid, HTTP 5xx, usage/cost log,
   default base URL provider, logger Prisma, factory composition, dan mock
   deterministik; test core/shared menutup golden prompt set, report, scoring provider,
-  tool bridge, dan registry scope guard.
-  Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (102/102), `eslint .`
+  tool bridge, registry scope guard, dan audit tool call.
+  Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (106/106), `eslint .`
   hijau.
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
   (lanjutan T-050..052), slice builder (T-060..064), ops (T-070..073), QA
