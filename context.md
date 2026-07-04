@@ -4,11 +4,10 @@
 > konteks saat memulai sesi baru. Perbarui di akhir tiap sesi kerja berarti.
 
 - Sesi: T-052 (router intent + state percakapan) · Tanggal: 2026-07-04
-- Cabang aktif: `feature/t-052-router-intent` (T-052 terimplementasi, gate hijau, **belum
-  commit/PR**). `main` = trunk (semua branch feature dihapus post-merge).
-- Status umum: **T-052 terimplementasi.** `pnpm` tak ada di PATH sandbox → verifikasi
-  alternatif `tsc -b` + `vitest run` (147/147, +23 tes) + `eslint .` semua hijau.
-  Berikutnya: commit + PR T-052 ke `main`, lalu T-053 (agent loop) atau T-060 (builder).
+- Cabang aktif: `main` (trunk). **T-052 ter-merge via PR #17** (squash `7e4eaf0`).
+  Semua branch feature dihapus post-merge.
+- Status umum: **T-052 SUDAH MERGED ke `main`.** Gate hijau: `tsc -b` + `vitest run`
+  (147/147, +23 tes) + `eslint .`. Berikutnya: T-053 (agent loop) atau T-060 (builder).
   EPIC-03 (WABA) tetap terblokir T-001. TestSprite key valid (perlu restart opencode).
 
 ## Di mana kita sekarang
@@ -116,17 +115,13 @@ REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijala
   smoke manual; REST riwayat teruji via `app.inject()`.
 
 ## Langkah segera berikutnya
-1. **Commit + PR T-052 ke `main`** — gate sudah hijau (147/147 tes, tsc 0, eslint 0).
-   Pesan commit sesuai konvensi `<ID>: ringkasan` → `T-052: router intent + state
-   percakapan`. Branch `feature/t-052-router-intent`. Setelah merge: hapus branch,
-   perbarui status T-052 di decision.md jadi ✅.
-2. **T-053+ (agent loop)** atau **T-060 (builder slice)** — tugas berikutnya setelah
+1. **T-053+ (agent loop)** atau **T-060 (builder slice)** — tugas berikutnya setelah
    T-052 merge (pilih satu per sesi). T-053: sambungkan router ke agent loop nyata
    (ganti `stubReply` di `handle-incoming` dgn use case CNV + tool registry T-051).
-3. (T-050 target final) **Isi `DEEPSEEK_API_KEY`/`GLM_API_KEY`** → jalankan
+2. (T-050 target final) **Isi `DEEPSEEK_API_KEY`/`GLM_API_KEY`** → jalankan
    `pnpm --filter @digimaestro/worker eval:llm` → putuskan default LLM produksi.
-4. (Non-kode) **Restart opencode** di VPS agar tool MCP TestSprite termuat (T-014).
-5. (Jalur kritis EPIC-00) **Dorong PO**: verifikasi Meta+WABA (T-001), kumpulkan
+3. (Non-kode) **Restart opencode** di VPS agar tool MCP TestSprite termuat (T-014).
+4. (Jalur kritis EPIC-00) **Dorong PO**: verifikasi Meta+WABA (T-001), kumpulkan
    kredensial (T-002) — agar EPIC-03 (T-030..033) tak tersendat.
 
 ## Hal yang ditunggu dari PO (jalur kritis, EPIC-00)
