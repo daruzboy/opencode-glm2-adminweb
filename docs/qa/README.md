@@ -50,8 +50,15 @@ didaftarkan di `opencode.json`:
 
 ```jsonc
 "mcp": { "TestSprite": { "command": ["npx","-y","@testsprite/testsprite-mcp@latest"],
-   "env": { "API_KEY": "{env:TESTSPRITE_API_KEY}" } } }
+   "environment": { "API_KEY": "{env:TESTSPRITE_API_KEY}" } } }
 ```
+
+> **Catatan field:** nama field env MCP lokal opencode adalah **`environment`**
+> (lihat `McpLocalConfig` di `https://opencode.ai/config.json`, `additionalProperties:
+> false`). Field `env` DIABAIKAN → MCP di-spawn tanpa `API_KEY` → selalu "No API Key".
+> Interpolasi `{env:VAR}` berlaku pada nilai string mana pun (termasuk di dalam
+> `environment`). Config dimuat sekali saat startup; **setiap perubahan `opencode.json`
+> wajib diikuti restart opencode** (tidak ada hot-reload).
 
 **Prasyarat** (sebelum loop jalan):
 
