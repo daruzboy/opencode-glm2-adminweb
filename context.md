@@ -38,16 +38,21 @@ REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijala
   di `pnpm-workspace.yaml`, service Postgres 16 di `.github/workflows/ci.yml`.
 - **TestSprite MCP dikonfigurasi & terverifikasi (T-014 sebagian).** Ditemukan: env
   lokal berisi key **lama invalid** (`sk-user-03w3e...j4Qmw`) → `testsprite_check_
-  account_info` membalas "Invalid TestSprite API Key". Fix: key valid (`sk-user-
-  gvm7n...`, account `daruzboy`) diset ke **User env** `TESTSPRITE_API_KEY` +
-  di-mirror ke **secret repo** (CI qa-gate). Verifikasi end-to-end via probe MCP
-  stdio (initialize → `tools/call check_account_info`) → `firstName: daruzboy`.
+  account_info` membalas "Invalid TestSprite API Key". Fix: key valid diset ke
+  **User env** `TESTSPRITE_API_KEY` + di-mirror ke **secret repo** (CI qa-gate).
+  Verifikasi end-to-end via probe MCP stdio (initialize →
+  `tools/call check_account_info`) → `firstName: daruzboy`.
   `opencode mcp list` → `✓ TestSprite connected` (8 tool: `testsprite_bootstrap`,
   `generate_code_summary`, `generate_standardized_prd`, `generate_frontend/
   backend_test_plan`, `generate_code_and_execute`, `open_test_result_dashboard`,
   `check_account_info`). **BUTUH RESTART opencode** agar tool-termuat ke toolbelt
   agent (MCP hanya load saat startup). `opencode.json` sudah benar; key TIDAK
   ditulis ke file ter-track (repo public) — memakai referensi `{env:...}`.
+  **Rotasi key (2026-07-04):** key dirotasi ulang ke `lgWuS15...` (key valid
+  terbaru). Riwayat: `03w3e...` (invalid) → `gvm7n...` → `lgWuS15...`. User env +
+  secret repo **sudah sinkron** ke key terbaru. Sesi yang berjalan saat rotasi
+  tetap melapor "No API Key" (env dirotasi setelah startup MCP) → **wajib restart
+  opencode** agar MCP re-spawn dgn env baru.
   _Catatan:_ menjalankan tes terhadap endpoint butuh app API hidup (EPIC-03+);
   tool berbasis repo (`bootstrap`, `code_summary`, `*_test_plan`) sudah pakai.
 - **T-021 diimplementasi** di `feature/t-021-tenant-guard` (NFR-09):
