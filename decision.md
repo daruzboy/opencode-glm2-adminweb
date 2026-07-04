@@ -239,8 +239,8 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   T-051 — eksekusi tool **paralel** (`Promise.all`, urutan hasil terjaga). Gate 21/21
   (124 tes). Tujuan T-050 (putuskan DeepSeek vs GLM) kini tinggal jalankan CLI setelah
   `DEEPSEEK_API_KEY`/`GLM_API_KEY` diisi.
-- 🔧 **T-052** Router intent + state percakapan (EPIC-05, FR-CNV-001/002; M) —
-  **terimplementasi, gate hijau, PR belum merge** (branch `feature/t-052-router-intent`):
+- ✅ **T-052** Router intent + state percakapan (EPIC-05, FR-CNV-001/002; M) —
+  **ter-merge ke `main` (PR #17, squash `7e4eaf0`, 2026-07-04):**
   `packages/core/src/conversation/intent.ts` klasifier **hybrid dua tahap** (SRS §5.3
   "cache frasa umum"): `classifyIntentKeyword` murni/deterministik/gratis (rules = data,
   urutan prioritas revision>status>interview) → fallback `LlmJsonPort` (task `intent`,
