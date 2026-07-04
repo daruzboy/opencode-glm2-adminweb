@@ -218,8 +218,19 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   tool bridge, registry scope guard, dan audit tool call.
   Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (106/106), `eslint .`
   hijau.
+- 🔧 **T-051** MCP server skeleton + bridge function-calling — **mulai working tree
+  Codex (belum PR/merge):** `packages/core/src/agent/builtin-tools.ts` menambahkan
+  tiga tool pertama sesuai backlog/SRS §5.4: `sitebuilder_get_site_outline`,
+  `sitebuilder_apply_patch`, dan `ops_get_job_status`. Tiap tool bergantung pada
+  port kecil (`SitebuilderToolPort`, `OpsToolPort`), memvalidasi input di boundary,
+  menyuntik `tenantId` dari `AgentToolContext`, dan mengembalikan `Result`.
+  `executeFunctionToolCalls()` menambahkan bridge OpenAI-compatible untuk menerima
+  tool call model, parse JSON arguments, memanggil registry, dan mengembalikan tool
+  result message terstruktur. Implementasi DB/MCP SDK nyata menyusul, tetapi kontrak
+  tool sudah dapat masuk registry dan bridge OpenAI-compatible. Verifikasi lokal alternatif terakhir:
+  `tsc -b`, `vitest run` (114/114), `eslint .` hijau.
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
-  (lanjutan T-050..052), slice builder (T-060..064), ops (T-070..073), QA
+  (lanjutan T-051..052), slice builder (T-060..064), ops (T-070..073), QA
   (T-080..083).
 
 ---
