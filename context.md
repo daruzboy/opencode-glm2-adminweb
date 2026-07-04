@@ -11,8 +11,9 @@
   terhapus via `gh pr merge --delete-branch` PR #9) → dipulihkan dari **reflog** →
   cherry-pick ke 3 PR → merge berurutan: #10 (T-040 frontend, squash `7278e28`), #13
   (T-050, squash `33d4edd`), #12 (T-051, squash `92fc0b2`). Gate 21/21 hijau (114 tes).
-  Berikutnya: T-052 (MCP SDK nyata) atau T-060 (builder). EPIC-03 (WABA) terblokir
-  T-001. TestSprite key valid (perlu restart opencode agar 8 tool termuat).
+  Berikutnya: T-052 (router intent + state percakapan, FR-CNV-001/002) atau T-060
+  (builder). EPIC-03 (WABA) terblokir T-001. TestSprite key valid (perlu restart
+  opencode agar 8 tool termuat).
 - Hardening (2026-07-04): T-040 (reconnect+ID unik+dedup tipe), T-050 (temperature
   per-task + evaluation runner + CLI `eval:llm`), T-051 (tool paralel). Gate 21/21
   (124 tes). T-050 tujuan belum final: butuh API key untuk jalanankan CLI.
@@ -122,11 +123,27 @@ REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijala
   smoke manual; REST riwayat teruji via `app.inject()`.
 
 ## Langkah segera berikutnya
-1. **T-040 frontend slice (lanjutan)**: widget minimal di `apps/portal` (React 19 +
-   Vite 6) → connect `WS /api/chat` + muat riwayat. Selesai → T-040 penuh.
-2. (Non-kode) **Restart opencode** → tool MCP TestSprite termuat; kini `apps/api`
-   punya endpoint (`/healthz`, WS chat) untuk diuji TestSprite (T-014).
-3. (Jalur kritis EPIC-00) **Dorong PO**: verifikasi Meta+WABA (T-001), kumpulkan
+1. **T-052 — Router intent + state percakapan** (EPIC-05, FR-CNV-001/002; M; kode-murni,
+   tak ada blocker). Kriteria terima: 20 kalimat uji terklasifikasi ≥ 90% benar.
+   Rencana (dipetakan dari backlog + FRD §3.2 + SRS §5.3):
+   - `core/conversation/intent.ts` — klasifier hybrid: keyword rules dulu (cepat, gratis,
+     deterministik = "cache frasa umum" SRS §5.3) → fallback `LlmJsonPort` (task `intent`)
+     bila keyword null. Intent dasar 4 kelas: `interview | revision | status | other`
+     (backlog T-052; FR-CNV-002 sebut lebih banyak — rinci disusul, dirancang ekstensible).
+   - `core/conversation/state-machine.ts` — transisi murni atas `ConversationState`
+     (ONBOARDING/INTERVIEW/BUILDING/REVIEW/IDLE/SUPPORT) berdasarkan (state, intent) →
+     `{ next, action }`.
+   - `core/conversation/router.ts` — use case `advanceConversation`: load state via
+     `ConversationRepository` → klasifikasi → state machine → persist state. **Perlu tambah
+     method `update(tenantId, id, { state })` di Port `ConversationRepository` + impl Prisma**
+     (ConversationDelegate + map row). FR-CNV-01 butuh persist state antar sesi.
+   - Tes: 20 kalimat uji (≥18 benar), LLM path pakai DeterministicLlmJsonAdapter,
+     state-machine transition, router orchestration (fake repo). DoD: happy + 1 error path.
+   - Deps sudah ada: `LlmJsonPort` (T-050), `ConversationRepository` (T-021), `ConversationState` (T-020).
+2. (T-050 target final) **Isi `DEEPSEEK_API_KEY`/`GLM_API_KEY`** → jalankan
+   `pnpm --filter @digimaestro/worker eval:llm` → putuskan default LLM produksi.
+3. (Non-kode) **Restart opencode** di VPS agar tool MCP TestSprite termuat (T-014).
+4. (Jalur kritis EPIC-00) **Dorong PO**: verifikasi Meta+WABA (T-001), kumpulkan
    kredensial (T-002) — agar EPIC-03 (T-030..033) tak tersendat.
 
 ## Hal yang ditunggu dari PO (jalur kritis, EPIC-00)
