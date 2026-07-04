@@ -10,6 +10,7 @@ import type {
   ConversationEntity,
   ConversationFilter,
   ConversationRepository,
+  ConversationUpdateInput,
   RepositoryError,
   Result,
   TenantId,
@@ -28,6 +29,14 @@ export interface ConversationDelegate {
   create(args: {
     data: { tenantId: string; channel: string; state?: string };
   }): Promise<PrismaConversation>;
+  // update tenant-scoped dipakai via updateMany (Prisma `update` menolak field
+  // non-unik di `where`, padahal tenantId wajib di where untuk guard NFR-09).
+  // updateMany menerima filter bebas + tetap lolos tenantGuardExtension. Re-read
+  // findFirst mengembalikan row terbaru ke pemanggil.
+  updateMany(args: {
+    where: { tenantId: string; id: string };
+    data: { state?: string };
+  }): Promise<{ count: number }>;
 }
 
 function toEntity(row: PrismaConversation): ConversationEntity {
@@ -85,6 +94,34 @@ export class ConversationRepositoryPrisma implements ConversationRepository {
       const row = await this.delegate.create({
         data: { tenantId, channel: input.channel, state: input.state },
       });
+      return ok(toEntity(row));
+    } catch (e) {
+      return err(toError(e));
+    }
+  }
+
+  async update(
+    tenantId: TenantId,
+    id: string,
+    input: ConversationUpdateInput,
+  ): Promise<Result<ConversationEntity, RepositoryError>> {
+    // Tidak ada field untuk diubah → tolak (mencegah no-op tersamar).
+    if (input.state === undefined) {
+      return err({ code: 'CONFLICT', message: 'Tidak ada field untuk diperbarui.' });
+    }
+    try {
+      const res = await this.delegate.updateMany({
+        where: { tenantId, id },
+        data: { state: input.state },
+      });
+      // count 0 = id tak ada ATAU milik tenant lain (isolasi tetap utuh, NFR-09).
+      if (res.count === 0) {
+        return err({ code: 'NOT_FOUND', message: `Conversation ${id} tidak ditemukan.` });
+      }
+      const row = await this.delegate.findFirst({ where: { tenantId, id } });
+      if (row === null) {
+        return err({ code: 'NOT_FOUND', message: `Conversation ${id} tidak ditemukan.` });
+      }
       return ok(toEntity(row));
     } catch (e) {
       return err(toError(e));

@@ -22,11 +22,13 @@ function makeDelegate(impl: {
   findFirst?: ReturnType<typeof vi.fn>;
   findMany?: ReturnType<typeof vi.fn>;
   create?: ReturnType<typeof vi.fn>;
+  updateMany?: ReturnType<typeof vi.fn>;
 }): ConversationDelegate {
   return {
     findFirst: impl.findFirst ?? vi.fn(),
     findMany: impl.findMany ?? vi.fn(),
     create: impl.create ?? vi.fn(),
+    updateMany: impl.updateMany ?? vi.fn(),
   } as unknown as ConversationDelegate;
 }
 
@@ -106,5 +108,46 @@ describe('ConversationRepositoryPrisma — NFR-09: tenantId always scoped', () =
       expect(r.error.code).toBe('UNKNOWN');
       expect(r.error.message).toContain('connection lost');
     }
+  });
+});
+
+describe('ConversationRepositoryPrisma.update — tenant-scoped (T-052)', () => {
+  it('update menginjeksi tenantId ke where updateMany + re-read findFirst (happy)', async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const findFirst = vi.fn().mockResolvedValue(row({ state: 'INTERVIEW' }));
+    const repo = new ConversationRepositoryPrisma(makeDelegate({ updateMany, findFirst }));
+
+    const r = await repo.update(tenantId('tA'), 'c1', { state: 'INTERVIEW' });
+
+    expect(r.ok).toBe(true);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { tenantId: 'tA', id: 'c1' },
+      data: { state: 'INTERVIEW' },
+    });
+    expect(findFirst).toHaveBeenCalledWith({ where: { tenantId: 'tA', id: 'c1' } });
+    if (r.ok) expect(r.value.state).toBe('INTERVIEW');
+  });
+
+  it('count 0 (id tak ada / milik tenant lain) → NOT_FOUND, no leak', async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const repo = new ConversationRepositoryPrisma(makeDelegate({ updateMany }));
+
+    const r = await repo.update(tenantId('tA'), 'foreign', { state: 'IDLE' });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('NOT_FOUND');
+    // where SELALU memuat tenantId kaller → tak ada update lintas tenant.
+    expect(updateMany.mock.calls[0]![0].where).toEqual({ tenantId: 'tA', id: 'foreign' });
+  });
+
+  it('input kosong (state undefined) → CONFLICT, delegate tak dipanggil', async () => {
+    const updateMany = vi.fn();
+    const repo = new ConversationRepositoryPrisma(makeDelegate({ updateMany }));
+
+    const r = await repo.update(tenantId('tA'), 'c1', {});
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('CONFLICT');
+    expect(updateMany).not.toHaveBeenCalled();
   });
 });
