@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { ok, tenantId, type AgentToolDefinition } from '@digimaestro/shared';
+import { ok, tenantId, type AgentToolDefinition, type OpenAiFunctionToolCall } from '@digimaestro/shared';
 
 import { createAgentToolRegistry } from './tool-registry.js';
-import { executeFunctionToolCalls, type OpenAiFunctionToolCall } from './function-call-bridge.js';
+import { executeFunctionToolCalls } from './function-call-bridge.js';
 
 const context = {
   tenantId: tenantId('tA'),

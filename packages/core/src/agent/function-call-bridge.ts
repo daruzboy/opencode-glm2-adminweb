@@ -1,16 +1,7 @@
 // T-051: bridge function-calling provider-compatible ke AgentToolRegistry.
 // Tetap murni dan offline-testable; MCP SDK/transport nyata menyusul di adapter/app.
 
-import type { AgentToolContext, AgentToolRegistry } from '@digimaestro/shared';
-
-export interface OpenAiFunctionToolCall {
-  readonly id: string;
-  readonly type: 'function';
-  readonly function: {
-    readonly name: string;
-    readonly arguments: string;
-  };
-}
+import type { AgentToolContext, AgentToolRegistry, OpenAiFunctionToolCall } from '@digimaestro/shared';
 
 export interface ToolCallResultMessage {
   readonly role: 'tool';

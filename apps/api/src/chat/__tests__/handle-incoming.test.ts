@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { err, ok, tenantId } from '@digimaestro/shared';
-import { handleIncoming } from '../handle-incoming.js';
+import { handleIncoming, stubReply } from '../handle-incoming.js';
 import { conv, makeFakeDeps } from './helpers.js';
 
 describe('handleIncoming — web chat use case (NFR-09: tenantId selalu scoped)', () => {
@@ -64,5 +64,50 @@ describe('handleIncoming — web chat use case (NFR-09: tenantId selalu scoped)'
     const r = await handleIncoming(f.deps, { tenantId: tenantId('tA'), text: 'hai' });
 
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('handleIncoming — agent replier (T-053)', () => {
+  it('memakai teks dari deps.reply saat disuntikkan', async () => {
+    const f = makeFakeDeps();
+    const reply = vi.fn().mockResolvedValue(ok({ text: 'balasan agent' }));
+
+    const r = await handleIncoming(
+      { ...f.deps, reply: { reply } },
+      { tenantId: tenantId('tA'), text: 'mau buat web' },
+    );
+
+    expect(r.ok).toBe(true);
+    expect(reply).toHaveBeenCalledWith(expect.objectContaining({ text: 'mau buat web' }));
+    // pesan OUT (call ke-2) memakai teks agent
+    expect((f.messages.create.mock.calls[1]![1] as { text: string }).text).toBe('balasan agent');
+  });
+
+  it('fallback ke stubReply saat deps.reply mengembalikan error', async () => {
+    const f = makeFakeDeps();
+    const reply = vi.fn().mockResolvedValue(err({ code: 'AGENT', message: 'loop gagal' }));
+
+    const r = await handleIncoming(
+      { ...f.deps, reply: { reply } },
+      { tenantId: tenantId('tA'), text: 'halo' },
+    );
+
+    expect(r.ok).toBe(true);
+    expect((f.messages.create.mock.calls[1]![1] as { text: string }).text).toBe(stubReply('halo'));
+  });
+
+  it('meneruskan tenantId & conversationId ke replier (NFR-09)', async () => {
+    const f = makeFakeDeps();
+    f.conversations.create.mockResolvedValueOnce(ok(conv('c-real')));
+    const reply = vi.fn().mockResolvedValue(ok({ text: 'ok' }));
+
+    await handleIncoming(
+      { ...f.deps, reply: { reply } },
+      { tenantId: tenantId('tB'), text: 'hai' },
+    );
+
+    expect(reply).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: tenantId('tB'), conversationId: 'c-real' }),
+    );
   });
 });

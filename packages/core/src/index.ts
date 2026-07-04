@@ -27,9 +27,18 @@ export {
 
 export {
   executeFunctionToolCalls,
-  type OpenAiFunctionToolCall,
   type ToolCallResultMessage,
 } from './agent/function-call-bridge.js';
+
+export {
+  AGENT_MAX_STEPS_REPLY,
+  DEFAULT_AGENT_MAX_STEPS,
+  DEFAULT_AGENT_MAX_TOKENS,
+  runAgentLoop,
+  type AgentLoopDeps,
+  type AgentLoopRequest,
+  type AgentLoopResult,
+} from './agent/agent-loop.js';
 
 export {
   InMemoryAgentToolRegistry,
@@ -82,3 +91,13 @@ export {
   type ConversationAdvance,
   type ConversationRouterDeps,
 } from './conversation/router.js';
+export {
+  AGENT_SYSTEM_PROMPTS,
+  composeAgentPlan,
+  createAgentReplier,
+  type AgentPlan,
+  type AgentReplierDeps,
+  type ConversationReplier,
+  type ConversationReplierError,
+  type ConversationReplierRequest,
+} from './conversation/replier.js';

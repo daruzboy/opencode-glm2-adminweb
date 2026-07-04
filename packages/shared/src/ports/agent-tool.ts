@@ -51,6 +51,17 @@ export interface OpenAiToolDefinition {
   };
 }
 
+// Tool call yang dikeluarkan provider OpenAI-compatible (function-calling). Dipakai
+// Port LlmAgentPort (keluaran) maupun bridge eksekusi tool di core (T-051/T-053).
+export interface OpenAiFunctionToolCall {
+  readonly id: string;
+  readonly type: 'function';
+  readonly function: {
+    readonly name: string;
+    readonly arguments: string;
+  };
+}
+
 export function toOpenAiToolDefinition(
   tool: Pick<AgentToolDefinition<unknown, unknown>, 'name' | 'description' | 'inputSchema'>,
 ): OpenAiToolDefinition {
