@@ -117,7 +117,7 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   root apps/* (EPIC-03+); repo lain menyusul per use case pemakai.
 
 ### EPIC-03..08 (Sprint 0.2–0.4)
-- 🔧 **T-040** Web Chat (EPIC-04, FR-CHN-003) — **backend slice ter-merge ke `main`**
+- ✅ **T-040** Web Chat (EPIC-04, FR-CHN-003) — **backend + frontend ter-merge ke `main`**
   (PR #8, squash `f508e1b`, 2026-07-04): `MessageRepository` (Port+impl, mirror
   T-021) + `createPrismaClient()` (Prisma `$extends(tenantGuardExtension)` ter-wire
   pertama kali) + `apps/api` Fastify v5 composition root (`/healthz`, `GET
@@ -125,8 +125,8 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `handleIncoming` (persist IN/OUT, stub reply v0; agent AI nyata EPIC-05). Test
   DB-free (handle-incoming + REST via inject) hijau; gate 21/21. Deps: `fastify`,
   `@fastify/websocket`, `zod`, `@digimaestro/adapters`. Tenant resolusi v0 via header
-  `x-tenant-id`/query (auth T-002 menyusul). **Frontend controller slice sudah dibuat
-  di working tree Codex (belum PR/merge):** `apps/portal/src/chat-widget.ts`
+  `x-tenant-id`/query (auth T-002 menyusul). **Frontend (widget) slice ter-merge ke
+  `main` (PR #10, squash `7278e28`, 2026-07-04):** `apps/portal/src/chat-widget.ts`
   menambahkan `ChatWidgetController`, `ChatTransport`, browser REST/WS transport,
   parser event murni, optimistic local IN message, dan export dari portal index.
   `apps/portal/src/chat-widget-view-model.ts` menambahkan mapping presentation murni
@@ -182,8 +182,8 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `tsc -b`, `vitest run`, `eslint .` hijau. Frontend slice dinilai cukup untuk MVP
   T-040: teks, riwayat, WS, tenant header/query, session persistence, aksesibilitas
   dasar, dan lifecycle mount sudah tertutup.
-- 🔧 **T-050** LLM Abstraction + MCP Skeleton (EPIC-05, FR-AGT-008/010) — **mulai
-  working tree Codex (belum PR/merge):** `packages/shared/src/ports/llm.ts`
+- ✅ **T-050** LLM Abstraction + MCP Skeleton (EPIC-05, FR-AGT-008/010) — **ter-merge
+  ke `main` (PR #13, squash `33d4edd`, 2026-07-04):** `packages/shared/src/ports/llm.ts`
   menambahkan Port `LlmJsonPort`, `LlmUsageLoggerPort`, tipe `LlmJsonRequest`,
   `LlmError`, dan `LlmUsageRecord`. Schema menggunakan interface struktural
   `safeParse()` yang kompatibel dengan Zod tanpa shared mengimpor runtime `zod`,
@@ -218,8 +218,8 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   tool bridge, registry scope guard, dan audit tool call.
   Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (106/106), `eslint .`
   hijau.
-- 🔧 **T-051** MCP server skeleton + bridge function-calling — **mulai working tree
-  Codex (belum PR/merge):** `packages/core/src/agent/builtin-tools.ts` menambahkan
+- ✅ **T-051** MCP server skeleton + bridge function-calling — **ter-merge ke `main`
+  (PR #12, squash `92fc0b2`, 2026-07-04):** `packages/core/src/agent/builtin-tools.ts` menambahkan
   tiga tool pertama sesuai backlog/SRS §5.4: `sitebuilder_get_site_outline`,
   `sitebuilder_apply_patch`, dan `ops_get_job_status`. Tiap tool bergantung pada
   port kecil (`SitebuilderToolPort`, `OpsToolPort`), memvalidasi input di boundary,
@@ -230,7 +230,7 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   tool sudah dapat masuk registry dan bridge OpenAI-compatible. Verifikasi lokal alternatif terakhir:
   `tsc -b`, `vitest run` (114/114), `eslint .` hijau.
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
-  (lanjutan T-051..052), slice builder (T-060..064), ops (T-070..073), QA
+  (T-052 MCP SDK nyata), slice builder (T-060..064), ops (T-070..073), QA
   (T-080..083).
 
 ---

@@ -3,13 +3,16 @@
 > **Baca paling awal** (bersama `decision.md` & `AGENTS.md`) agar tidak kehilangan
 > konteks saat memulai sesi baru. Perbarui di akhir tiap sesi kerja berarti.
 
-- Sesi: T-040 backend merged → siap restart · Tanggal: 2026-07-04
-- Cabang aktif: `main` (kembali ke trunk; branch `feature/t-040-web-chat-backend`
-  dihapus post-merge)
-- Status umum: **T-040 backend slice (apps/api Fastify + WS chat + MessageRepository
-  + createPrismaClient) SUDAH MERGED ke `main` (PR #8, squash `f508e1b`). EPIC-01/02 &
-  T-040-backend selesai. Berikutnya: T-040 frontend slice (widget portal). TestSprite
-  key valid (perlu restart opencode agar 8 tool termuat).**
+- Sesi: recovery T-040fe/T-050/T-051 → merge · Tanggal: 2026-07-04
+- Cabang aktif: `main` (trunk; semua branch feature dihapus post-merge). Branch
+  `recovery/t040-frontend-t050-t051` (→ `78fbdd1`) tetap sebagai cadangan.
+- Status umum: **T-040 (frontend+backend), T-050 (LLM abstraction), T-051 (agent
+  tools) SUDAH MERGED ke `main`.** Ketiganya dulu hilang (commit tak ter-push; branch
+  terhapus via `gh pr merge --delete-branch` PR #9) → dipulihkan dari **reflog** →
+  cherry-pick ke 3 PR → merge berurutan: #10 (T-040 frontend, squash `7278e28`), #13
+  (T-050, squash `33d4edd`), #12 (T-051, squash `92fc0b2`). Gate 21/21 hijau (114 tes).
+  Berikutnya: T-052 (MCP SDK nyata) atau T-060 (builder). EPIC-03 (WABA) terblokir
+  T-001. TestSprite key valid (perlu restart opencode agar 8 tool termuat).
 
 ## Di mana kita sekarang
 Fase 0 — Sprint 0.2. EPIC-01 (T-010/011/013) & EPIC-02 (T-020/021) merged ke `main`.
@@ -162,12 +165,12 @@ REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijala
 3. Ambil **satu** backlog ID; buat branch `feature/<id>-<ringkas>`; kerjakan sesuai
    AGENTS.md; `pnpm turbo lint build test` hijau; PR ke `main`.
 
-## Update terbaru 2026-07-04 (Codex)
+## Update terbaru 2026-07-04 (Codex) — kini SUDAH MERGED
 
-- T-040 frontend controller slice sudah dibuat di working tree Codex, belum PR/merge.
-- Cabang aktif menurut sandbox Codex saat pekerjaan ini: `docs/post-t040-merge-status`.
-  Cek/switch branch sebelum commit/PR final karena bagian lama dokumen ini masih
-  menyebut `main`.
+- T-040 frontend controller slice: awalnya dibuat di working tree Codex (komit tak
+  ter-push → hilang → dipulihkan dari reflog) → **ter-merge ke `main` via PR #10**.
+- Catatan lama "cabang `docs/post-t040-merge-status`" sudah tidak relevan; kerjaan
+  ini kini di trunk `main` (PR #10/#13/#12).
 - File baru: `apps/portal/src/chat-widget.ts`, `apps/portal/src/chat-widget.test.ts`,
   `apps/portal/src/chat-widget-view-model.ts`, dan
   `apps/portal/src/chat-widget-view-model.test.ts`, `apps/portal/src/chat-widget-session.ts`,
