@@ -15,5 +15,8 @@
     "build": "tsc",
     "test": "vitest run",
     "lint": "eslint ."
+  },
+  "dependencies": {
+    "@digimaestro/shared": "workspace:*"
   }
 }

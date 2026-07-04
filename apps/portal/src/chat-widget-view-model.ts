@@ -55,6 +55,8 @@ function statusLabel(status: ChatWidgetState['status']): string {
       return 'Siap dihubungkan';
     case 'connecting':
       return 'Menghubungkan...';
+    case 'reconnecting':
+      return 'Menghubungkan ulang...';
     case 'open':
       return 'Online';
     case 'closed':

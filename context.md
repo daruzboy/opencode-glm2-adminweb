@@ -13,6 +13,9 @@
   (T-050, squash `33d4edd`), #12 (T-051, squash `92fc0b2`). Gate 21/21 hijau (114 tes).
   Berikutnya: T-052 (MCP SDK nyata) atau T-060 (builder). EPIC-03 (WABA) terblokir
   T-001. TestSprite key valid (perlu restart opencode agar 8 tool termuat).
+- Hardening (2026-07-04): T-040 (reconnect+ID unik+dedup tipe), T-050 (temperature
+  per-task + evaluation runner + CLI `eval:llm`), T-051 (tool paralel). Gate 21/21
+  (124 tes). T-050 tujuan belum final: butuh API key untuk jalanankan CLI.
 
 ## Di mana kita sekarang
 Fase 0 — Sprint 0.2. EPIC-01 (T-010/011/013) & EPIC-02 (T-020/021) merged ke `main`.

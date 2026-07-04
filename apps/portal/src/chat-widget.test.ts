@@ -145,6 +145,76 @@ describe('ChatWidgetController', () => {
       message: 'payload chat tidak valid',
     });
   });
+
+  it('assigns unique ids to optimistic local messages', () => {
+    const f = makeTransport();
+    const controller = new ChatWidgetController({ tenantId: 'tA', conversationId: 'c1' }, f.transport);
+
+    controller.connect();
+    f.open();
+    controller.sendText('a');
+    controller.sendText('b');
+
+    const ids = controller.snapshot().messages.map((m) => m.id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
+  it('reconnects with backoff after an unexpected close', async () => {
+    vi.useFakeTimers();
+    const f = makeTransport();
+    const controller = new ChatWidgetController({ tenantId: 'tA', conversationId: 'c1' }, f.transport);
+
+    controller.connect();
+    f.open();
+    expect(controller.snapshot().status).toBe('open');
+
+    f.close();
+    expect(controller.snapshot().status).toBe('reconnecting');
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(f.transport.connect).toHaveBeenCalledTimes(2);
+    f.open();
+    expect(controller.snapshot().status).toBe('open');
+    vi.useRealTimers();
+  });
+
+  it('does not reconnect after an explicit disconnect', async () => {
+    vi.useFakeTimers();
+    const f = makeTransport();
+    const controller = new ChatWidgetController({ tenantId: 'tA' }, f.transport);
+
+    controller.connect();
+    f.open();
+    controller.disconnect();
+    f.close();
+
+    expect(controller.snapshot().status).toBe('closed');
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(f.transport.connect).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('gives up reconnecting after max attempts', async () => {
+    vi.useFakeTimers();
+    const f = makeTransport();
+    const controller = new ChatWidgetController(
+      { tenantId: 'tA', conversationId: 'c1', maxReconnectAttempts: 1 },
+      f.transport,
+    );
+
+    controller.connect();
+    f.open();
+    f.close();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(f.transport.connect).toHaveBeenCalledTimes(2);
+    f.close();
+    await vi.advanceTimersByTimeAsync(30000);
+
+    expect(controller.snapshot().status).toBe('error');
+    vi.useRealTimers();
+  });
 });
 
 describe('createBrowserChatTransport', () => {

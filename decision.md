@@ -229,6 +229,16 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   result message terstruktur. Implementasi DB/MCP SDK nyata menyusul, tetapi kontrak
   tool sudah dapat masuk registry dan bridge OpenAI-compatible. Verifikasi lokal alternatif terakhir:
   `tsc -b`, `vitest run` (114/114), `eslint .` hijau.
+- 🔧 **Hardening T-040/T-050/T-051** (PR hardening, 2026-07-04): T-040 — ID lokal pakai
+  `crypto.randomUUID()` (anti-tabrakan), **auto-reconnect WS + backoff eksponensial**
+  (status `reconnecting`, max attempt), dedup union `direction`/`status` dari
+  `@digimaestro/shared` (anti-drift). T-050 — `temperature` default **per-task**
+  (`DEFAULT_TEMPERATURE_BY_TASK`), **evaluation runner** `runLlmEvaluation` di core
+  (quality scorer via `requiredSignals`, cost via usage logger) + CLI
+  `pnpm --filter @digimaestro/worker eval:llm` (siap jalan begitu API key diisi).
+  T-051 — eksekusi tool **paralel** (`Promise.all`, urutan hasil terjaga). Gate 21/21
+  (124 tes). Tujuan T-050 (putuskan DeepSeek vs GLM) kini tinggal jalankan CLI setelah
+  `DEEPSEEK_API_KEY`/`GLM_API_KEY` diisi.
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
   (T-052 MCP SDK nyata), slice builder (T-060..064), ops (T-070..073), QA
   (T-080..083).

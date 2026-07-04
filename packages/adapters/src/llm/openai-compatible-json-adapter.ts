@@ -2,6 +2,7 @@
 // No vendor SDK import here: runtime fetch is injected for tests and composition roots.
 
 import {
+  defaultTemperatureForTask,
   err,
   ok,
   type LlmChatMessage,
@@ -144,7 +145,7 @@ export class OpenAiCompatibleJsonAdapter implements LlmJsonPort {
             ...repairHints,
           ],
           max_tokens: request.maxTokens,
-          temperature: request.temperature ?? 0.2,
+          temperature: request.temperature ?? defaultTemperatureForTask(request.task),
           response_format: { type: 'json_object' },
         }),
       });

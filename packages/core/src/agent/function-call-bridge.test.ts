@@ -70,4 +70,22 @@ describe('executeFunctionToolCalls', () => {
       error: { code: 'NOT_FOUND' },
     });
   });
+
+  it('preserves call order when executing multiple calls in parallel', async () => {
+    const registry = createAgentToolRegistry([tool]);
+    const calls = [
+      call({ id: 'call-a', function: { name: 'ops_get_job_status', arguments: '{"jobId":"a"}' } }),
+      call({ id: 'call-b', function: { name: 'ops_get_job_status', arguments: '{"jobId":"b"}' } }),
+      call({ id: 'call-c', function: { name: 'ops_get_job_status', arguments: '{"jobId":"c"}' } }),
+    ];
+
+    const results = await executeFunctionToolCalls(registry, calls, context);
+
+    expect(results.map((message) => message.toolCallId)).toEqual(['call-a', 'call-b', 'call-c']);
+    expect(results.map((message) => JSON.parse(message.content))).toEqual([
+      { ok: true, value: { input: { jobId: 'a' } } },
+      { ok: true, value: { input: { jobId: 'b' } } },
+      { ok: true, value: { input: { jobId: 'c' } } },
+    ]);
+  });
 });
