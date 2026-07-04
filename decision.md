@@ -240,8 +240,8 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   (124 tes). Tujuan T-050 (putuskan DeepSeek vs GLM) kini tinggal jalankan CLI setelah
   `DEEPSEEK_API_KEY`/`GLM_API_KEY` diisi.
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
-  (T-052 MCP SDK nyata), slice builder (T-060..064), ops (T-070..073), QA
-  (T-080..083).
+  (T-052 router intent + state percakapan), slice builder (T-060..064), ops
+  (T-070..073), QA (T-080..083).
 
 ---
 
