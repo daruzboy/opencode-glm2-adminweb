@@ -19,16 +19,14 @@ export interface ToolCallResultMessage {
   readonly content: string;
 }
 
+// Tool dieksekusi paralel (function-calling provider mengeluarkan banyak call sekaligus).
+// Promise.all mempertahankan urutan hasil = urutan input, sehingga toolCallId tetap cocok.
 export async function executeFunctionToolCalls(
   registry: AgentToolRegistry,
   calls: readonly OpenAiFunctionToolCall[],
   context: AgentToolContext,
 ): Promise<readonly ToolCallResultMessage[]> {
-  const results: ToolCallResultMessage[] = [];
-  for (const call of calls) {
-    results.push(await executeFunctionToolCall(registry, call, context));
-  }
-  return results;
+  return Promise.all(calls.map((call) => executeFunctionToolCall(registry, call, context)));
 }
 
 async function executeFunctionToolCall(

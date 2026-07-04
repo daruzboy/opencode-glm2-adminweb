@@ -185,7 +185,10 @@ function renderFrame(frame: WidgetFrame, view: ChatWidgetPresenterView): void {
   frame.status.textContent = view.statusLabel;
   frame.error.textContent = view.errorLabel ?? '';
   frame.container.setAttribute('data-status', view.status);
-  frame.messages.setAttribute('aria-busy', view.statusLabel === 'Menghubungkan...' ? 'true' : 'false');
+  frame.messages.setAttribute(
+    'aria-busy',
+    view.status === 'connecting' || view.status === 'reconnecting' ? 'true' : 'false',
+  );
   frame.input.value = view.draft;
   frame.input.placeholder = view.inputPlaceholder;
   frame.input.disabled = !view.canSend;

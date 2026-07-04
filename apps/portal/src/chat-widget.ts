@@ -1,7 +1,9 @@
 // T-040 frontend slice: web chat widget controller for the portal.
 // Transport is injected so the logic stays testable without a browser, React, or Vite.
 
-export type ChatDirection = 'IN' | 'OUT';
+import type { MessageDirection, MessageStatus } from '@digimaestro/shared';
+
+export type ChatDirection = MessageDirection;
 
 export const CHAT_MESSAGE_MAX_LENGTH = 4000;
 
@@ -14,11 +16,11 @@ export interface PortalChatMessage {
   readonly text: string | null;
   readonly mediaId: string | null;
   readonly providerMsgId: string;
-  readonly status: 'QUEUED' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
+  readonly status: MessageStatus;
   readonly createdAt: string;
 }
 
-export type ChatConnectionStatus = 'idle' | 'connecting' | 'open' | 'closed' | 'error';
+export type ChatConnectionStatus = 'idle' | 'connecting' | 'reconnecting' | 'open' | 'closed' | 'error';
 
 export interface ChatWidgetState {
   readonly tenantId: string;
@@ -69,6 +71,8 @@ export interface ChatWidgetConfig {
   readonly conversationId?: string;
   readonly apiBaseUrl?: string;
   readonly wsBaseUrl?: string;
+  readonly autoReconnect?: boolean;
+  readonly maxReconnectAttempts?: number;
 }
 
 type Listener = (state: ChatWidgetState) => void;
@@ -77,11 +81,19 @@ export class ChatWidgetController {
   private state: ChatWidgetState;
   private socket: ChatSocket | null = null;
   private readonly listeners = new Set<Listener>();
+  private readonly autoReconnect: boolean;
+  private readonly maxReconnectAttempts: number;
+  private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private generation = 0;
+  private stopped = false;
 
   constructor(
     config: ChatWidgetConfig,
     private readonly transport: ChatTransport = createBrowserChatTransport(config),
   ) {
+    this.autoReconnect = config.autoReconnect ?? true;
+    this.maxReconnectAttempts = Math.max(0, config.maxReconnectAttempts ?? 5);
     this.state = {
       tenantId: config.tenantId,
       conversationId: config.conversationId,
@@ -120,27 +132,66 @@ export class ChatWidgetController {
   }
 
   connect(): void {
+    this.stopped = false;
+    this.generation += 1;
+    const generation = this.generation;
+    this.clearReconnectTimer();
     this.socket?.close();
     this.setState({ status: 'connecting', error: undefined });
     try {
       this.socket = this.transport.connect({
         tenantId: this.state.tenantId,
         conversationId: this.state.conversationId,
-        onOpen: () => this.setState({ status: 'open', error: undefined }),
-        onClose: () => this.setState({ status: 'closed' }),
+        onOpen: () => {
+          this.reconnectAttempts = 0;
+          this.setState({ status: 'open', error: undefined });
+        },
+        onClose: () => this.handleUnexpectedClose(generation),
         onError: (message) => this.setState({ status: 'error', error: message }),
         onEvent: (event) => this.applyServerEvent(event),
       });
     } catch (e) {
       this.socket = null;
-      this.setState({ status: 'error', error: errorMessage(e) });
+      // Kegagalan membangun transport (mis. WebSocket tak tersedia) = hard error; reconnect tak membantu.
+      if (generation === this.generation) this.setState({ status: 'error', error: errorMessage(e) });
     }
   }
 
   disconnect(): void {
+    this.stopped = true;
+    this.generation += 1;
+    this.clearReconnectTimer();
     this.socket?.close();
     this.socket = null;
     this.setState({ status: 'closed' });
+  }
+
+  private handleUnexpectedClose(generation: number): void {
+    if (generation !== this.generation || this.stopped) {
+      if (generation === this.generation) this.setState({ status: 'closed' });
+      return;
+    }
+    if (!this.autoReconnect || this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.setState({
+        status: 'error',
+        error:
+          this.reconnectAttempts >= this.maxReconnectAttempts && this.maxReconnectAttempts > 0
+            ? 'chat tidak bisa dihubungkan ulang'
+            : this.state.error,
+      });
+      return;
+    }
+    this.reconnectAttempts += 1;
+    const delay = Math.min(1000 * 2 ** (this.reconnectAttempts - 1), 10000);
+    this.setState({ status: 'reconnecting', error: undefined });
+    this.reconnectTimer = setTimeout(() => this.connect(), delay);
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
   }
 
   sendText(text: string): boolean {
@@ -348,18 +399,26 @@ function makeLocalIncomingMessage(
   text: string,
 ): PortalChatMessage {
   const createdAt = new Date().toISOString();
+  const localId = `local-${randomId()}`;
   return {
-    id: `local-${createdAt}`,
+    id: localId,
     tenantId,
     conversationId,
     direction: 'IN',
     type: 'TEXT',
     text,
     mediaId: null,
-    providerMsgId: `local-${createdAt}`,
+    providerMsgId: localId,
     status: 'DELIVERED',
     createdAt,
   };
+}
+
+function randomId(): string {
+  const crypto = (globalThis as { readonly crypto?: { readonly randomUUID?: () => string } }).crypto;
+  const uuid = crypto?.randomUUID?.();
+  if (uuid) return uuid;
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function normalizeBaseUrl(value: string): string {

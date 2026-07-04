@@ -70,3 +70,19 @@ export interface LlmUsageLoggerPort extends Port {
 export interface LlmJsonPort extends Port {
   completeJson<T>(request: LlmJsonRequest<T>): Promise<Result<T, LlmError>>;
 }
+
+// Default temperature per task (T-050). Task kreatif (article/copy) butuh divergensi
+// tinggi; task presisi (intent/revision_patch) butuh determinisme rendah. Caller tetap
+// dapat override via LlmJsonRequest.temperature.
+export const DEFAULT_TEMPERATURE_BY_TASK: Readonly<Record<LlmTask, number>> = Object.freeze({
+  intent: 0,
+  revision_patch: 0.1,
+  site_plan: 0.3,
+  interview: 0.4,
+  section_copy: 0.5,
+  article: 0.7,
+});
+
+export function defaultTemperatureForTask(task: LlmTask): number {
+  return DEFAULT_TEMPERATURE_BY_TASK[task];
+}

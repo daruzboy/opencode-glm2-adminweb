@@ -15,9 +15,11 @@
     "build": "tsc",
     "test": "vitest run",
     "lint": "eslint .",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "eval:llm": "tsx src/llm-eval.ts"
   },
   "dependencies": {
+    "@digimaestro/adapters": "workspace:*",
     "@digimaestro/core": "workspace:*",
     "@digimaestro/shared": "workspace:*"
   }

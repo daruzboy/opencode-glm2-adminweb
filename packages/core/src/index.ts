@@ -51,3 +51,12 @@ export {
   type LlmProviderRecommendation,
   type LlmProviderScore,
 } from './llm/provider-evaluation.js';
+
+export {
+  runLlmEvaluation,
+  summarizeLlmEvaluationRun,
+  type LlmEvaluationFailure,
+  type LlmEvaluationProviderFactory,
+  type LlmEvaluationRun,
+  type LlmEvaluationRunOptions,
+} from './llm/evaluation-runner.js';
