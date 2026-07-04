@@ -8,14 +8,19 @@ import type {
   TenantId,
 } from '@digimaestro/shared';
 import { err, ok } from '@digimaestro/shared';
+import type { ConversationReplier } from '@digimaestro/core';
 
-// Use case web chat (T-040). Bergantung hanya pada Port (shared) → diuji dengan fake.
+// Use case web chat (T-040). Bergantung hanya pada Port (shared/core) → diuji dengan fake.
 // Menyuntik tenantId ke SETIAP panggilan repo (NFR-09). Kanal web & WA berbagi
 // Conversation/Message yang sama → riwayat terpadu per tenant (FR-CHN-003).
+//
+// T-053: deps.reply opsional (agent loop nyata). Bila tidak disuntik / gagal → fallback
+// stubReply agar chat tetap responsif. Otak LLM hidup di ConversationReplier (core).
 
 export interface ChatDeps {
   readonly conversations: ConversationRepository;
   readonly messages: MessageRepository;
+  readonly reply?: ConversationReplier;
 }
 
 export interface IncomingRequest {
@@ -29,8 +34,8 @@ export interface ChatReply {
   readonly outgoing: MessageEntity;
 }
 
-// Balasan v0 (belum LLM — agent hadir EPIC-05/06). Persona Indonesia santai-profesional
-// (PRD). Diinjeksi agar mudah diganti jawaban nyata tanpa sentuh transport.
+// Balasan fallback (tanpa agent). Persona Indonesia santai-profesional (PRD). Dipakai
+// bila deps.reply tidak disuntik ATAU replier mengembalikan error (chat tak pernah mati).
 export function stubReply(text: string): string {
   const snippet = text.length > 80 ? `${text.slice(0, 80)}…` : text;
   return `Siaaap, pesan kamu udah kecatat: "${snippet}". Balasan otomatis nih — agent AI beneran baru hadir di tahap berikutnya. 🚧`;
@@ -39,7 +44,6 @@ export function stubReply(text: string): string {
 export async function handleIncoming(
   deps: ChatDeps,
   req: IncomingRequest,
-  reply: (text: string) => string = stubReply,
 ): Promise<Result<ChatReply, RepositoryError>> {
   // 1) Resolve/buat percakapan (tenant-scoped).
   let conversationId = req.conversationId;
@@ -65,16 +69,28 @@ export async function handleIncoming(
   });
   if (!incoming.ok) return err(incoming.error);
 
-  // 3) Stub reply + persist pesan keluar.
+  // 3) Susun balasan (agent loop bila tersedia, fallback stub). Persist pesan keluar.
+  const replyText = await resolveReplyText(deps, req.tenantId, conversationId, req.text);
   const outgoing = await deps.messages.create(req.tenantId, {
     conversationId,
     direction: 'OUT',
     type: 'TEXT',
-    text: reply(req.text),
+    text: replyText,
     providerMsgId: `web-out-${randomUUID()}`,
     status: 'SENT',
   });
   if (!outgoing.ok) return err(outgoing.error);
 
   return ok({ conversationId, outgoing: outgoing.value });
+}
+
+async function resolveReplyText(
+  deps: ChatDeps,
+  tenantId: TenantId,
+  conversationId: string,
+  text: string,
+): Promise<string> {
+  if (!deps.reply) return stubReply(text);
+  const result = await deps.reply.reply({ tenantId, conversationId, text });
+  return result.ok ? result.value.text : stubReply(text);
 }

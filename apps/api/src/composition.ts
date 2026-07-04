@@ -3,6 +3,7 @@ import {
   LlmUsageLoggerPrisma,
   MessageRepositoryPrisma,
   createDeepSeekJsonAdapter,
+  createDeterministicLlmAgentAdapter,
   createGlmJsonAdapter,
   createPrismaClient,
   type ConversationDelegate,
@@ -10,13 +11,15 @@ import {
   type MessageDelegate,
   type RuntimeFetch,
 } from '@digimaestro/adapters';
-import type { LlmJsonPort, LlmUsageLoggerPort } from '@digimaestro/shared';
+import { createAgentReplier, createAgentToolRegistry, type ConversationReplier } from '@digimaestro/core';
+import type { ConversationRepository, LlmAgentResponse, LlmJsonPort, LlmUsageLoggerPort } from '@digimaestro/shared';
 import type { ChatDeps } from './chat/handle-incoming.js';
 
 export type LlmProviderName = 'deepseek' | 'glm';
 
 export interface LlmEnv {
   readonly DIGIMAESTRO_LLM_PROVIDER?: string;
+  readonly DIGIMAESTRO_AGENT_LOOP?: string;
   readonly DEEPSEEK_API_KEY?: string;
   readonly DEEPSEEK_MODEL?: string;
   readonly DEEPSEEK_BASE_URL?: string;
@@ -36,14 +39,56 @@ export interface CreateLlmJsonPortOptions {
 // buildServer tanpa deps eksplisit (server nyata, butuh DATABASE_URL); test menyuntik
 // deps fake sehingga tanpa DB.
 //
+// T-053: agent loop (ConversationReplier) digated env DIGIMAESTRO_AGENT_LOOP=1. Saat
+// OFF (default) → balasan memakai stubReply (perilaku lama tak berubah). Saat ON →
+// replier = router (intent keyword-only, tanpa API key) + agent loop dengan adapter
+// deterministik. Adapter HTTP tool-calling vendor nyata menyusul (butuh API key).
+//
 // Catatan cast: delegate Prisma (typed enum literal) tidak assignable struktural ke
 // interface sempit repo (string) — perbedaan tipe enumer saja, bukan perilaku. Cast
 // `as unknown as` di batas adapter ini aman: repo tetap menyuntik tenantId & teruji.
-export function createChatDeps(): ChatDeps {
+export function createChatDeps(options: CreateChatDepsOptions = {}): ChatDeps {
+  const env = options.env ?? process.env;
   const prisma = createPrismaClient();
+  const conversations = new ConversationRepositoryPrisma(
+    prisma.conversation as unknown as ConversationDelegate,
+  );
+  const messages = new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate);
+
+  const enableAgentLoop = options.enableAgentLoop ?? env.DIGIMAESTRO_AGENT_LOOP === '1';
+  if (!enableAgentLoop) return { conversations, messages };
+
+  const reply = createDeterministicAgentReplier(conversations);
+  return { conversations, messages, reply };
+}
+
+export interface CreateChatDepsOptions {
+  readonly env?: LlmEnv;
+  readonly enableAgentLoop?: boolean;
+}
+
+// Replier v0: router (intent keyword-only) + agent loop deterministik. Tidak butuh
+// API key/jaringan → cocok untuk dev/staging. Produksi nyata = ganti adapter
+// deterministik dengan adapter HTTP tool-calling vendor (follow-up T-053b setelah API
+// key DeepSeek/GLM tersedia).
+export function createDeterministicAgentReplier(conversations: ConversationRepository): ConversationReplier {
+  return createAgentReplier({
+    router: { conversations },
+    loop: {
+      llm: createDeterministicLlmAgentAdapter({ responder: deterministicAgentResponder }),
+      tools: createAgentToolRegistry([]),
+    },
+  });
+}
+
+// Responder deterministik dev: balas teks ringkas berdasarkan task. Bukan balasan
+// produksi — hanya membuktikan loop nyambung end-to-end tanpa vendor.
+function deterministicAgentResponder(): LlmAgentResponse {
   return {
-    conversations: new ConversationRepositoryPrisma(prisma.conversation as unknown as ConversationDelegate),
-    messages: new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate),
+    kind: 'text',
+    content:
+      'Hai! Aku udah catat pesan kamu. Agent AI produksi lagi disiapin — sementara ' +
+      'ini, cerita singkat ya: nama usaha dan website seperti apa yang kamu mau?',
   };
 }
 

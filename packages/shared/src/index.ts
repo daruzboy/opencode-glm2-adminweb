@@ -38,4 +38,5 @@ export function tenantId(value: string): TenantId {
 export * from './ports/agent-tool.js';
 export * from './ports/audit-log.js';
 export * from './ports/llm.js';
+export * from './ports/llm-agent.js';
 export * from './ports/repository.js';
