@@ -161,3 +161,95 @@ REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijala
 2. Cek `git status`, `git log --oneline -5`, dan status PR aktif.
 3. Ambil **satu** backlog ID; buat branch `feature/<id>-<ringkas>`; kerjakan sesuai
    AGENTS.md; `pnpm turbo lint build test` hijau; PR ke `main`.
+
+## Update terbaru 2026-07-04 (Codex)
+
+- T-040 frontend controller slice sudah dibuat di working tree Codex, belum PR/merge.
+- Cabang aktif menurut sandbox Codex saat pekerjaan ini: `docs/post-t040-merge-status`.
+  Cek/switch branch sebelum commit/PR final karena bagian lama dokumen ini masih
+  menyebut `main`.
+- File baru: `apps/portal/src/chat-widget.ts`, `apps/portal/src/chat-widget.test.ts`,
+  `apps/portal/src/chat-widget-view-model.ts`, dan
+  `apps/portal/src/chat-widget-view-model.test.ts`, `apps/portal/src/chat-widget-session.ts`,
+  `apps/portal/src/chat-widget-session.test.ts`, `apps/portal/src/chat-widget-presenter.ts`,
+  `apps/portal/src/chat-widget-presenter.test.ts`, `apps/portal/src/chat-widget-dom.ts`,
+  dan `apps/portal/src/chat-widget-dom.test.ts`. `apps/portal/src/index.ts`
+  mengekspor API chat widget.
+- Isi slice: `ChatWidgetController`, tipe `PortalChatMessage`, `ChatTransport`,
+  browser REST/WS transport, `parseServerEvent`, optimistic local IN message,
+  normalisasi conversation pending setelah reply pertama dari backend, dan view-model
+  presentation murni untuk copy/status/message list. Session facade menggabungkan
+  controller + view-model + `ChatWidgetStorage` port untuk persist `conversationId`
+  per tenant. Storage persist bersifat best-effort: read/write error (private mode,
+  quota, blocked storage) tidak mematikan chat. Session `stop()` idempoten dan melepas
+  listener persist agar cleanup ganda tidak menutup socket/menulis storage berulang.
+  Presenter menambahkan lapis form input: draft, placeholder, label kirim,
+  `canSubmit`, submit trim/reset, unsubscribe listener, dan factory
+  `createBrowserChatWidgetPresenter()` untuk pemakaian browser siap pakai. DOM adapter
+  minimal `mountBrowserChatWidget()` bisa render shell/input/message list tanpa
+  dependency React/Vite; runtime DOM tetap diinjeksi agar testable. Helper
+  `mountBrowserChatWidgetFromDataset()` membaca `data-tenant-id`,
+  `data-conversation-id`, `data-api-base-url`, dan `data-ws-base-url` dari root.
+  `mountAllBrowserChatWidgets()` auto-mount banyak root dan menerima callback
+  `onMountError` untuk root invalid. DOM adapter juga menambahkan atribut aksesibilitas
+  dasar: live status, alert error, aria label form/input/submit, `aria-busy`, dan
+  `maxlength=4000` sesuai schema backend. `CHAT_MESSAGE_MAX_LENGTH` diekspor sebagai
+  kontrak bersama; controller menolak pesan >4000 karakter dan presenter
+  menonaktifkan submit + menampilkan helper hitung karakter; saat limit terlampaui,
+  helper menjelaskan batas maksimal. DOM mount idempoten
+  per-root (WeakMap registry) agar HMR/partial reload tidak membuat double listener;
+  `destroy()` idempoten, menghapus registry sehingga root bisa di-mount ulang, dan
+  cleanup ganda tidak menutup socket berulang. Helper
+  `destroyBrowserChatWidgetMounts()` membersihkan hasil `mountAllBrowserChatWidgets()`
+  sebagai grup untuk lifecycle halaman/HMR.
+  Message view-model membawa `dateTime` asli; DOM message item menulis `data-tone`,
+  `aria-label`, dan `<time datetime="...">` untuk semantik aksesibilitas/styling.
+  View-model membawa `status` key stabil; DOM `data-status` memakai key
+  (`open`, `connecting`, dst.) bukan label copy Indonesia.
+  Test DOM mengunci submit form hingga payload WS backend-compatible
+  (`conversationId` + `text`).
+- Catatan SOLID: controller hanya state/use-case UI; transport hanya I/O REST/WS;
+  parser payload adalah fungsi murni; runtime browser (`fetch`/`WebSocket`) diinjeksi
+  agar testable tanpa React/Vite.
+- Verifikasi lokal alternatif: `tsc -b`, `vitest run`, `eslint .` hijau. T-040
+  frontend slice sudah cukup untuk MVP dasar; pengembangan dilanjutkan ke T-050
+  karena T-030..033 masih terblokir verifikasi WABA/T-001.
+  `pnpm turbo ...` belum bisa dijalankan di sandbox karena binary `pnpm` tidak ada di
+  PATH dan Turbo tidak menemukan package manager.
+
+## Update T-050 2026-07-04 (Codex)
+
+- Dipilih sebagai tugas berikutnya setelah T-040 karena sesuai backlog Sprint 0.3 dan
+  tidak bergantung pada WABA: LLM abstraction layer untuk FR-AGT-008.
+- File baru: `packages/shared/src/ports/llm.ts`,
+  `packages/adapters/src/llm/openai-compatible-json-adapter.ts`,
+  `packages/adapters/src/llm/deterministic-json-adapter.ts`,
+  `packages/adapters/src/prisma/llm-usage-logger-prisma.ts`, dan test terkait.
+- Isi v0: `LlmJsonPort`, `LlmUsageLoggerPort`, request/error/usage types,
+  schema `safeParse()` struktural yang kompatibel Zod tanpa import runtime `zod`,
+  adapter OpenAI-compatible untuk DeepSeek/GLM dengan injected `fetch`,
+  `response_format: json_object`, retry/self-repair untuk JSON/schema invalid,
+  usage logging via Port, dan estimasi biaya token. `LlmUsageLoggerPrisma` memetakan
+  usage ke tabel `LlmUsage` (`tenantId`, `jobId`, `provider`, `task`, `tokenIn`,
+  `tokenOut`, `cost`). `createLlmJsonPort()` di `apps/api/src/composition.ts`
+  memilih DeepSeek/GLM dari env dan memasang logger Prisma saat dipakai produksi.
+  `DeterministicLlmJsonAdapter` tersedia untuk test/dev agent flow tanpa API key.
+  `packages/core/src/llm/provider-evaluation.ts` menambahkan
+  `recommendLlmProvider()` untuk menghitung pass rate, kualitas rata-rata, latensi,
+  biaya total, dan rekomendasi provider dari hasil golden prompt.
+  `.env.example` diselaraskan dengan composition root: `DIGIMAESTRO_LLM_PROVIDER`,
+  `DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL`, `GLM_MODEL`, dan `GLM_BASE_URL`.
+  `LLM_GOLDEN_PROMPTS` berisi 20 brief evaluasi untuk UMKM, revisi operator, dan
+  NEEDS_INFO. `createLlmEvaluationReport()` membuat ringkasan coverage prompt,
+  jumlah provider, prompt yang belum dievaluasi, dan rekomendasi provider.
+  `packages/shared/src/ports/agent-tool.ts` menambahkan kontrak tool agent
+  vendor-neutral serta helper `toOpenAiToolDefinition()`. `packages/core/src/agent/
+  tool-registry.ts` menambahkan registry in-memory dengan guard scope tenant
+  (`NOT_FOUND`/`FORBIDDEN`) sebagai fondasi MCP/function-calling T-051.
+  `AuditLogPort` + `AuditLogPrisma` menambahkan pencatatan tenant-scoped ke tabel
+  `AuditLog`; registry mencatat outcome `ok/error/forbidden/not_found` dan fail-closed
+  jika audit gagal.
+- Export publik ditambahkan di `packages/shared/src/index.ts` dan
+  `packages/adapters/src/index.ts`; helper evaluasi diekspor dari `packages/core`.
+- Verifikasi lokal alternatif terakhir: `tsc -b`, `vitest run` (106/106), `eslint .`
+  hijau. `pnpm turbo ...` masih belum tersedia di PATH sandbox.

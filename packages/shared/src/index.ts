@@ -35,4 +35,7 @@ export function tenantId(value: string): TenantId {
 }
 
 // Port layer — repository (SRS §4.1 shared/ports, §9.1).
+export * from './ports/agent-tool.js';
+export * from './ports/audit-log.js';
+export * from './ports/llm.js';
 export * from './ports/repository.js';
