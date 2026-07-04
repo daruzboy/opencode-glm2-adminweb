@@ -50,6 +50,13 @@ export interface ConversationCreateInput {
   state?: ConversationState;
 }
 
+// Patch state percakapan (FR-CNV-001). Saat ini hanya `state`; field lain menyusul
+// per use case (mis. escalatedAt untuk FR-CNV-006). Dibuat parsial agar aman dipakai
+// ulang. Repo menolak update yang tidak mengubah apa pun → 'CONFLICT' bila kosong.
+export interface ConversationUpdateInput {
+  state?: ConversationState;
+}
+
 // ── Port ──────────────────────────────────────────────────────────────────────
 
 export interface ConversationRepository extends Port {
@@ -62,6 +69,11 @@ export interface ConversationRepository extends Port {
   create(
     tenantId: TenantId,
     input: ConversationCreateInput,
+  ): Promise<Result<ConversationEntity, RepositoryError>>;
+  update(
+    tenantId: TenantId,
+    id: string,
+    input: ConversationUpdateInput,
   ): Promise<Result<ConversationEntity, RepositoryError>>;
 }
 

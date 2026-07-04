@@ -239,9 +239,27 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   T-051 — eksekusi tool **paralel** (`Promise.all`, urutan hasil terjaga). Gate 21/21
   (124 tes). Tujuan T-050 (putuskan DeepSeek vs GLM) kini tinggal jalankan CLI setelah
   `DEEPSEEK_API_KEY`/`GLM_API_KEY` diisi.
+- 🔧 **T-052** Router intent + state percakapan (EPIC-05, FR-CNV-001/002; M) —
+  **terimplementasi, gate hijau, PR belum merge** (branch `feature/t-052-router-intent`):
+  `packages/core/src/conversation/intent.ts` klasifier **hybrid dua tahap** (SRS §5.3
+  "cache frasa umum"): `classifyIntentKeyword` murni/deterministik/gratis (rules = data,
+  urutan prioritas revision>status>interview) → fallback `LlmJsonPort` (task `intent`,
+  temp 0) bila keyword null; tanpa LLM, null dipetakan ke `other`. Intent 4 kelas
+  `interview|revision|status|other` (dirancang ekstensible via array `KEYWORD_RULES`).
+  `state-machine.ts` transisi murni `(ConversationState, Intent) → {state, action}`:
+  interview→INTERVIEW/START_INTERVIEW; revision sah saat ada situs (BUILDING/REVIEW→REVIEW/
+  HANDLE_REVISION) else FALLBACK; status→REPORT_STATUS (state tak berubah); other→FALLBACK.
+  `router.ts` use case `advanceConversation`: load (tenant-scoped) → klasifikasi → state
+  machine → persist state bila berubah. **Tambahan Port `update(tenantId,id,{state})`** di
+  `ConversationRepository` (compile-time guard) + impl Prisma via `updateMany({where:
+  {tenantId,id}})` + re-read findFirst (guard NFR-09; Prisma `update` menolak field non-
+  unik di where, jadi `updateMany`). Count 0 → NOT_FOUND; input kosong → CONFLICT.
+  Kriteria terima "20 kalimat uji ≥90% benar" terpenuhi (20/20 via keyword, path LLM
+  diuji dengan fake inline — core TIDAK import adapters, dependency rule dijaga ESLint).
+  Verifikasi lokal alternatif: `tsc -b`, `vitest run` (147/147, +23 tes), `eslint .` hijau.
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
-  (T-052 router intent + state percakapan), slice builder (T-060..064), ops
-  (T-070..073), QA (T-080..083).
+  (T-053+ penyempurnaan intent/agent loop setelah T-052 merge), slice builder
+  (T-060..064), ops (T-070..073), QA (T-080..083).
 
 ---
 

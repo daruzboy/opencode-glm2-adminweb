@@ -42,6 +42,7 @@ export interface FakeDeps {
     findById: ReturnType<typeof vi.fn>;
     findMany: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
   };
   messages: {
     findManyByConversation: ReturnType<typeof vi.fn>;
@@ -55,6 +56,7 @@ export function makeFakeDeps(): FakeDeps {
     findById: vi.fn().mockResolvedValue(ok<ConversationEntity | null>(null)),
     findMany: vi.fn().mockResolvedValue(ok<ConversationEntity[]>([])),
     create: vi.fn().mockResolvedValue(ok<ConversationEntity>(conv('c-new'))),
+    update: vi.fn().mockResolvedValue(ok<ConversationEntity>(conv('c-new'))),
   };
   const messages = {
     name: 'MessageRepository',

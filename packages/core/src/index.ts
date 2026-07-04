@@ -60,3 +60,25 @@ export {
   type LlmEvaluationRun,
   type LlmEvaluationRunOptions,
 } from './llm/evaluation-runner.js';
+
+// Conversation orchestrator (T-052, FR-CNV-001/002).
+export {
+  classifyIntent,
+  classifyIntentKeyword,
+  INTENTS,
+  type ClassifyIntentRequest,
+  type ClassifierError,
+  type Intent,
+  type IntentClassifierDeps,
+} from './conversation/intent.js';
+export {
+  advanceState,
+  type RouterAction,
+  type StateTransition,
+} from './conversation/state-machine.js';
+export {
+  advanceConversation,
+  type AdvanceConversationRequest,
+  type ConversationAdvance,
+  type ConversationRouterDeps,
+} from './conversation/router.js';
