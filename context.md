@@ -18,7 +18,13 @@
   `docker-compose.prod.yml`, `deploy/Caddyfile`, bootstrap long-running worker. Diverifikasi
   end-to-end di VPS (api healthy, `/healthz` ok, worker stabil, migrate exit 0) via host
   port 3300 karena **VPS ini menjalankan deploy asli `glm2-api`/`glm2-worker`/`glm2-postgres`
-  di 3000** (project compose terpisah, tak terganggu). Berikutnya: T-060 (builder).
+  di 3000** (project compose terpisah, tak terganggu).
+- **T-060 slice model SELESAI** (PR menyusul di sesi ini): `packages/sites-kit` kini punya
+  model Site Document tervalidasi Zod — `design-tokens.ts` (3 tema), `sections.ts` (13 tipe
+  di `SECTION_REGISTRY`, open/closed, ≥2 varian, props Zod, discriminated-union),
+  `site-document.ts` (Website→Pages→Sections + `parseSiteDocument`). zod ^4.4.3 ditambah ke
+  sites-kit (lockfile ter-update). Gate 21/21 hijau. Berikutnya: T-061 (render Astro/Tailwind
+  dari Site Document) atau T-062 preview.
 - _Sejarah_: **T-052 ter-merge via PR #17** (`7e4eaf0`), **T-053** agent loop via PR #21
   (`9e5a783`). Semua sebelum sesi ini.
 

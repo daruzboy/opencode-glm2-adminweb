@@ -1,38 +1,35 @@
-// packages/sites-kit — library komponen Astro + tema + skema Zod (SRS §2, FRD 3.4 CMP).
-// Komponen Astro & dependensi (astro, @astrojs/*, zod, tailwind) ditambahkan saat T-060.
-// Di sini disimpan model tipe section & design token yang netral framework.
+// packages/sites-kit — library model situs (Site Document), skema section & design token
+// (SRS §2/§8, FRD CMP). Komponen render Astro/Tailwind ditambahkan di slice T-06x berikutnya;
+// paket ini menyediakan kontrak tervalidasi Zod yang dipakai agent (FR-AGT-001/004) & renderer.
 
-export type SectionType =
-  | 'hero'
-  | 'about'
-  | 'services'
-  | 'product-grid'
-  | 'gallery'
-  | 'testimonials'
-  | 'features'
-  | 'cta-banner'
-  | 'faq'
-  | 'contact-map'
-  | 'catalog'
-  | 'article-list'
-  | 'footer';
+export {
+  colorTokensSchema,
+  typographyTokensSchema,
+  designTokensSchema,
+  themeSchema,
+  THEMES,
+  THEME_IDS,
+  findTheme,
+  type DesignTokens,
+  type Theme,
+} from './design-tokens.js';
 
-export interface SectionSchema {
-  readonly type: SectionType;
-  readonly variant: string;
-}
+export {
+  SECTION_REGISTRY,
+  SECTION_TYPES,
+  MVP_SECTION_TYPES,
+  sectionVariants,
+  sectionSchema,
+  type SectionType,
+  type Section,
+} from './sections.js';
 
-export interface DesignTokens {
-  readonly colors: Record<string, string>;
-  readonly radius: string;
-  readonly spacing: string;
-}
-
-export const MVP_SECTION_TYPES: readonly SectionType[] = Object.freeze([
-  'hero',
-  'about',
-  'services',
-  'gallery',
-  'testimonials',
-  'contact-map',
-]);
+export {
+  pageSchema,
+  siteDocumentSchema,
+  parseSiteDocument,
+  isSiteDocument,
+  type Page,
+  type SiteDocument,
+  type SiteDocumentParseResult,
+} from './site-document.js';
