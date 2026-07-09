@@ -44,7 +44,12 @@ export interface LlmEvaluationRunOptions {
   readonly tenantId?: TenantId;
   readonly task?: LlmTask;
   readonly signal?: AbortSignal;
+  // Ambang cakupan sinyal (0..1) agar sebuah output dianggap lulus. Default 0.6:
+  // cukup 1 sinyal saja terlalu longgar untuk memilih provider default produksi.
+  readonly passThreshold?: number;
 }
+
+export const DEFAULT_PASS_THRESHOLD = 0.6;
 
 interface EvalPlanOutput {
   readonly summary: string;
@@ -77,6 +82,7 @@ export async function runLlmEvaluation(
   const prompts = options.prompts ?? LLM_GOLDEN_PROMPTS;
   const tid = options.tenantId ?? tenantId('eval');
   const task = options.task ?? 'site_plan';
+  const passThreshold = options.passThreshold ?? DEFAULT_PASS_THRESHOLD;
 
   const evaluations: LlmPromptEvaluation[] = [];
   const failures: LlmEvaluationFailure[] = [];
@@ -100,7 +106,7 @@ export async function runLlmEvaluation(
       evaluations.push({
         promptId: prompt.id,
         provider: provider.name,
-        passed: qualityScore > 0,
+        passed: qualityScore >= passThreshold,
         qualityScore,
         latencyMs,
         estimatedCostUsd: usage?.estimatedCostUsd ?? 0,
@@ -136,11 +142,25 @@ function buildRequest(prompt: LlmGoldenPrompt, tid: TenantId, task: LlmTask): Ll
 
 // Skor kualitas berbasis cakupan sinyal wajib (requiredSignals) di output. Heuristik kasar
 // namun obyektif & reproducible; grading semantik penuh bisa ditambah kemudian tanpa ubah kontrak.
+// Pencocokan pakai batas kata (bukan substring polos) supaya "menu" tak dianggap cocok di "menuju".
 function scoreSignalCoverage(prompt: LlmGoldenPrompt, output: EvalPlanOutput): number {
   if (prompt.requiredSignals.length === 0) return 1;
   const haystack = `${output.summary} ${output.sections.join(' ')}`.toLowerCase();
-  const hits = prompt.requiredSignals.filter((signal) => haystack.includes(signal.toLowerCase())).length;
+  const hits = prompt.requiredSignals.filter((signal) => matchesSignal(haystack, signal)).length;
   return hits / prompt.requiredSignals.length;
+}
+
+// Cocok bila sinyal muncul sebagai kata/frasa utuh: batas kiri-kanan bukan huruf/angka.
+// Sadar Unicode (flag `u`) agar aksara & digit non-ASCII tetap dihitung sebagai bagian kata.
+function matchesSignal(haystack: string, signal: string): boolean {
+  const needle = signal.toLowerCase().trim();
+  if (needle.length === 0) return false;
+  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(needle)}([^\\p{L}\\p{N}]|$)`, 'u');
+  return pattern.test(haystack);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function createCapturingUsageLogger(): {

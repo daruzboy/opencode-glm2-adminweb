@@ -160,6 +160,95 @@ describe('OpenAiCompatibleJsonAdapter', () => {
     }
   });
 
+  it('retries on HTTP 429 rate limit', async () => {
+    const success = response('{"title":"Warung Bakso","sections":["Hero"]}');
+    const queued: Array<{ ok: boolean; status: number; json: ReturnType<typeof vi.fn> }> = [
+      { ok: false, status: 429, json: vi.fn() },
+      success,
+    ];
+    const fetch = vi.fn(async () => queued.shift() ?? success);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const adapter = new OpenAiCompatibleJsonAdapter({
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.test/v1',
+      fetch,
+      maxAttempts: 2,
+      sleep,
+    });
+
+    const result = await adapter.completeJson(request());
+
+    expect(result).toEqual(ok({ title: 'Warung Bakso', sections: ['Hero'] }));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it('backs off exponentially between transport retries and not after the last attempt', async () => {
+    const fetch = vi.fn(async () => ({ ok: false, status: 503, json: vi.fn() }));
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const adapter = new OpenAiCompatibleJsonAdapter({
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.test/v1',
+      fetch,
+      maxAttempts: 3,
+      retryInitialDelayMs: 100,
+      retryMaxDelayMs: 4000,
+      sleep,
+    });
+
+    const result = await adapter.completeJson(request());
+
+    expect(result.ok).toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    // Backoff hanya di antara percobaan (2×), bukan sesudah percobaan ke-3 (terakhir).
+    expect(sleep.mock.calls.map((call) => call[0])).toEqual([100, 200]);
+  });
+
+  it('does not retry permanent 4xx errors', async () => {
+    const fetch = vi.fn(async () => ({ ok: false, status: 400, json: vi.fn() }));
+    const adapter = new OpenAiCompatibleJsonAdapter({
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      apiKey: 'test-key',
+      baseUrl: 'https://llm.test/v1',
+      fetch,
+      maxAttempts: 3,
+    });
+
+    const result = await adapter.completeJson(request());
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatchObject({ code: 'HTTP', message: 'LLM HTTP 400' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts and returns a TIMEOUT error when the request exceeds timeoutMs', async () => {
+    const fetch: RuntimeFetch = vi.fn(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+    );
+    const adapter = new OpenAiCompatibleJsonAdapter({
+      provider: 'glm',
+      model: 'glm-4.5',
+      apiKey: 'test-key',
+      baseUrl: 'https://glm.test/v1',
+      fetch,
+      timeoutMs: 5,
+      maxAttempts: 1,
+    });
+
+    const result = await adapter.completeJson(request());
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('TIMEOUT');
+  });
+
   it('exposes provider-specific factories with default base urls', async () => {
     const deepSeekFetch = makeFetch('{"title":"DeepSeek","sections":["Hero"]}');
     const glmFetch = makeFetch('{"title":"GLM","sections":["Hero"]}');
