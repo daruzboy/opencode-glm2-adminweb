@@ -3,12 +3,18 @@
 > **Baca paling awal** (bersama `decision.md` & `AGENTS.md`) agar tidak kehilangan
 > konteks saat memulai sesi baru. Perbarui di akhir tiap sesi kerja berarti.
 
-- Sesi: T-052 (router intent + state percakapan) · Tanggal: 2026-07-04
-- Cabang aktif: `main` (trunk). **T-052 ter-merge via PR #17** (squash `7e4eaf0`).
-  Semua branch feature dihapus post-merge.
-- Status umum: **T-052 SUDAH MERGED ke `main`.** Gate hijau: `tsc -b` + `vitest run`
-  (147/147, +23 tes) + `eslint .`. Berikutnya: T-053 (agent loop) atau T-060 (builder).
-  EPIC-03 (WABA) tetap terblokir T-001. TestSprite key valid (perlu restart opencode).
+- Sesi: recovery branch lokal `setup/ai-workflow` → 3 PR · Tanggal: 2026-07-09
+- Cabang aktif: `main` (trunk). Branch feature dihapus post-merge.
+- Status umum: 4 commit lokal yang tadinya hanya ada di VPS (SPOF) sudah didaratkan ke
+  `main` lewat 3 PR: **#22** hardening T-050/T-051 lanjutan (`8dbc2e4`), **#23** Docker
+  staging image / T-012 sebagian (`cbae68f`), dan **PR docs** (workflow README + update
+  decision.md/context.md ini). Gate `pnpm turbo lint build test` **21/21 hijau** + CI
+  hijau di tiap PR; Docker diverifikasi `docker build` sukses di VPS. Lingkungan: `gh`
+  terautentikasi (`daruzboy`) & git credential helper terpasang di VPS ini.
+  Berikutnya: T-012 Docker **Compose** penuh, atau T-060 (builder). EPIC-03 (WABA) tetap
+  terblokir T-001.
+- _Sejarah_: **T-052 ter-merge via PR #17** (`7e4eaf0`), **T-053** agent loop via PR #21
+  (`9e5a783`). Semua sebelum sesi ini.
 
 ## Di mana kita sekarang
 Fase 0 — Sprint 0.2. EPIC-01 (T-010/011/013) & EPIC-02 (T-020/021) merged ke `main`.

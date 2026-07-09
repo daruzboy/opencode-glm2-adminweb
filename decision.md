@@ -12,7 +12,7 @@
 - Lokal: `C:\Users\daruzboy\Documents\A_PROJECT\02_digimaestro\glm2-adminweb`
 - Produk: **digimaestro.id** (platform website builder chatbot & agentic AI untuk UMKM)
 - Pemilik/PO: Darusman · Model coding agent: GLM 5.2 · QA: TestSprite
-- Terakhir diperbarui: 2026-07-04
+- Terakhir diperbarui: 2026-07-09
 
 ---
 
@@ -257,6 +257,21 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   Kriteria terima "20 kalimat uji ≥90% benar" terpenuhi (20/20 via keyword, path LLM
   diuji dengan fake inline — core TIDAK import adapters, dependency rule dijaga ESLint).
   Verifikasi lokal alternatif: `tsc -b`, `vitest run` (147/147, +23 tes), `eslint .` hijau.
+- ✅ **T-053** Agent loop orchestration + `ConversationReplier` (EPIC-05) — **ter-merge ke
+  `main` (PR #21, squash `9e5a783`, 2026-07-04).** `packages/core/src/agent/agent-loop.ts`
+  + `conversation/replier.ts` (+ `DeterministicAgentAdapter` di adapters, Port `llm-agent.ts`
+  di shared). Fondasi loop percakapan di atas router T-052.
+- ✅ **Hardening T-050/T-051 lanjutan** — **ter-merge ke `main` (PR #22, squash `8dbc2e4`,
+  2026-07-09):** T-050 — **retry pada 429/timeout dgn exponential backoff** di
+  `openai-compatible-json-adapter` + **ambang (threshold)** di `evaluation-runner`. T-051 —
+  hardening `tool-registry` & `function-call-bridge`. Gate lokal 21/21 hijau + CI hijau.
+  (Berbeda dari PR #15 yang mencakup temperature per-task + eval runner + tool paralel.)
+- 🔧 **T-012 (sebagian)** Docker **staging image** — **ter-merge ke `main` (PR #23, squash
+  `cbae68f`, 2026-07-09):** `Dockerfile` multi-stage (base→deps→builder→runner, `node:22-
+  bookworm-slim`, corepack `pnpm@11.9.0`, `prisma db:generate` + `pnpm build`, entrypoint
+  `node apps/api/dist/index.js`) + `.dockerignore`. Diverifikasi `docker build` sukses di
+  VPS. **Belum**: Docker **Compose** dev/prod penuh (postgres/redis/caddy/api/worker/n8n/
+  umami) → T-012 masih terbuka untuk compose.
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
   (T-053+ penyempurnaan intent/agent loop setelah T-052 merge), slice builder
   (T-060..064), ops (T-070..073), QA (T-080..083).
