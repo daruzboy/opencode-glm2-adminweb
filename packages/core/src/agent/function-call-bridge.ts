@@ -41,8 +41,12 @@ async function executeFunctionToolCall(
 function parseToolArguments(value: string):
   | { readonly ok: true; readonly value: unknown }
   | { readonly ok: false; readonly error: { readonly code: 'INVALID_INPUT'; readonly message: string } } {
+  // Provider function-calling kerap mengirim arguments "" untuk call tanpa argumen;
+  // untuk tool ber-input semua-opsional, itu sah dan setara dengan objek kosong.
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return { ok: true, value: {} };
   try {
-    return { ok: true, value: JSON.parse(value) as unknown };
+    return { ok: true, value: JSON.parse(trimmed) as unknown };
   } catch (e) {
     return {
       ok: false,

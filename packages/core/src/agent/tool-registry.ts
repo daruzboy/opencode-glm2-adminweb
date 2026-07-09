@@ -42,9 +42,26 @@ export class InMemoryAgentToolRegistry implements AgentToolRegistry {
       const audit = await this.auditToolCall(name, context, 'forbidden', tool.scope);
       return audit.ok ? result : audit;
     }
-    const result = await tool.execute(input, context);
+    const result = await this.runTool(tool, input, context);
     const audit = await this.auditToolCall(name, context, result.ok ? 'ok' : 'error', tool.scope);
     return audit.ok ? result : audit;
+  }
+
+  // Isolasi exception tak terduga dari tool nyata (Prisma/HTTP): tanpa ini, satu tool yang
+  // melempar akan me-reject Promise.all di function-call-bridge dan menjatuhkan seluruh batch.
+  private async runTool(
+    tool: AgentToolDefinition<unknown, unknown>,
+    input: unknown,
+    context: AgentToolContext,
+  ): Promise<Result<unknown, AgentToolError>> {
+    try {
+      return await tool.execute(input, context);
+    } catch (e) {
+      return err<AgentToolError>({
+        code: 'UNKNOWN',
+        message: `tool gagal dieksekusi: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
   }
 
   private async auditToolCall(

@@ -79,6 +79,29 @@ describe('InMemoryAgentToolRegistry', () => {
     ]);
   });
 
+  it('converts a thrown tool execution into an UNKNOWN error instead of rejecting', async () => {
+    const throwing: AgentToolDefinition<unknown, unknown> = {
+      name: 'ops_get_job_status',
+      description: 'meledak',
+      scope: 'ops',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      execute: async () => {
+        throw new Error('koneksi DB putus');
+      },
+    };
+    const registry = createAgentToolRegistry([throwing]);
+
+    const result = await registry.callTool('ops_get_job_status', {}, context);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatchObject({
+        code: 'UNKNOWN',
+        message: 'tool gagal dieksekusi: koneksi DB putus',
+      });
+    }
+  });
+
   it('fails closed when audit log cannot be recorded', async () => {
     const auditLog: AuditLogPort = {
       name: 'audit:test',
