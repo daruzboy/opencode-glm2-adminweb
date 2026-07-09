@@ -46,5 +46,12 @@ export {
   renderJsonLd,
   renderPage,
   renderSite,
+  absoluteUrl,
+  buildSitemap,
+  buildRobots,
+  buildStaticSite,
   type RenderedPage,
+  type RenderOptions,
+  type RobotsOptions,
+  type StaticFile,
 } from './render/index.js';
