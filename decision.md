@@ -289,7 +289,21 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `sectionSchema` discriminated-union. `site-document.ts`: `siteDocumentSchema`
   (Website→Pages→Sections, slug kebab-case unik, FR-CMP-004) + `parseSiteDocument()` (Result
   ringkas berlabel path). Gate 21/21 hijau (sites-kit +21 tes: tema, registry, union, doc
-  valid/invalid). **Belum**: komponen render Astro/Tailwind + JSON-LD/SEO (slice lanjutan).
+  valid/invalid). **Belum**: wiring build Astro/file-routing (slice lanjutan) — renderer
+  deterministik ada di T-061.
+- 🔧 **T-061 (slice renderer)** Site Document → HTML statis zero-JS + CSS token + JSON-LD
+  (EPIC-06, FR-CMP-004/FR-SEO-001/002, ADR-3) — **ter-merge ke `main` (PR #…, 2026-07-09):**
+  renderer murni deterministik di `packages/sites-kit/src/render/`. `escape.ts` (escapeHtml/
+  escapeAttr + `safeUrl` blok `javascript:`/`data:` — anti-XSS build-time). `tokens-css.ts`
+  (token → CSS custom properties `--dm-*` + stylesheet dasar; styling hanya via token).
+  `sections.ts` `renderSection()` — switch **exhaustive** atas discriminated union (tambah
+  tipe tanpa renderer = error kompilasi), semua konten di-escape, `<details>` untuk FAQ
+  (zero-JS). `json-ld.ts` `buildJsonLd()` — LocalBusiness (root), FAQPage, Product ItemList,
+  BreadcrumbList (non-root). `page.ts` `renderPage()`/`renderSite()` — dokumen HTML5
+  `lang="id"` (title unik, meta description, canonical, OG) → daftar file URL bersih.
+  **Diverifikasi**: render Site Document nyata → HTML5 valid, 3 node JSON-LD, 0 script
+  non-JSON-LD (zero-JS), tanpa `javascript:` URI. Gate 21/21 (sites-kit +22 tes render).
+  **Belum**: wiring Astro build + Tailwind utilities + audit schema.org di pipeline (slice ops).
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
   (T-053+ penyempurnaan intent/agent loop setelah T-052 merge), slice builder
   (T-061..064 render/preview/publish), ops (T-070..073), QA (T-080..083).

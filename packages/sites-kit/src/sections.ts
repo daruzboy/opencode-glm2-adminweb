@@ -189,30 +189,24 @@ export function sectionVariants(type: SectionType): readonly string[] {
   return SECTION_REGISTRY[type].variants;
 }
 
-// ── Skema section (discriminated union dari registry) ─────────────────────────
-function sectionMember<T extends SectionType>(type: T) {
-  const def = SECTION_REGISTRY[type];
-  return z.object({
-    type: z.literal(type),
-    variant: z.enum(def.variants),
-    props: def.props,
-  });
-}
-
+// ── Skema section (discriminated union) ──────────────────────────────────────
+// Anggota di-inline (bukan via helper generik) agar zod mengkorelasikan type↔props
+// sehingga narrowing `switch (section.type)` mempersempit `section.props` dgn benar.
+// Varian tetap bersumber dari registry (single source).
 export const sectionSchema = z.discriminatedUnion('type', [
-  sectionMember('hero'),
-  sectionMember('about'),
-  sectionMember('services'),
-  sectionMember('product-grid'),
-  sectionMember('gallery'),
-  sectionMember('testimonials'),
-  sectionMember('features'),
-  sectionMember('cta-banner'),
-  sectionMember('faq'),
-  sectionMember('contact-map'),
-  sectionMember('catalog'),
-  sectionMember('article-list'),
-  sectionMember('footer'),
+  z.object({ type: z.literal('hero'), variant: z.enum(SECTION_REGISTRY.hero.variants), props: heroProps }),
+  z.object({ type: z.literal('about'), variant: z.enum(SECTION_REGISTRY.about.variants), props: aboutProps }),
+  z.object({ type: z.literal('services'), variant: z.enum(SECTION_REGISTRY.services.variants), props: servicesProps }),
+  z.object({ type: z.literal('product-grid'), variant: z.enum(SECTION_REGISTRY['product-grid'].variants), props: productGridProps }),
+  z.object({ type: z.literal('gallery'), variant: z.enum(SECTION_REGISTRY.gallery.variants), props: galleryProps }),
+  z.object({ type: z.literal('testimonials'), variant: z.enum(SECTION_REGISTRY.testimonials.variants), props: testimonialsProps }),
+  z.object({ type: z.literal('features'), variant: z.enum(SECTION_REGISTRY.features.variants), props: featuresProps }),
+  z.object({ type: z.literal('cta-banner'), variant: z.enum(SECTION_REGISTRY['cta-banner'].variants), props: ctaBannerProps }),
+  z.object({ type: z.literal('faq'), variant: z.enum(SECTION_REGISTRY.faq.variants), props: faqProps }),
+  z.object({ type: z.literal('contact-map'), variant: z.enum(SECTION_REGISTRY['contact-map'].variants), props: contactMapProps }),
+  z.object({ type: z.literal('catalog'), variant: z.enum(SECTION_REGISTRY.catalog.variants), props: catalogProps }),
+  z.object({ type: z.literal('article-list'), variant: z.enum(SECTION_REGISTRY['article-list'].variants), props: articleListProps }),
+  z.object({ type: z.literal('footer'), variant: z.enum(SECTION_REGISTRY.footer.variants), props: footerProps }),
 ]);
 
 export type Section = z.infer<typeof sectionSchema>;

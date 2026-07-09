@@ -33,3 +33,18 @@ export {
   type SiteDocument,
   type SiteDocumentParseResult,
 } from './site-document.js';
+
+// Renderer statis (T-061): Site Document → HTML zero-JS + CSS token + JSON-LD.
+export {
+  escapeHtml,
+  escapeAttr,
+  safeUrl,
+  designTokensToCssVars,
+  renderStyles,
+  renderSection,
+  buildJsonLd,
+  renderJsonLd,
+  renderPage,
+  renderSite,
+  type RenderedPage,
+} from './render/index.js';

@@ -23,8 +23,13 @@
   model Site Document tervalidasi Zod — `design-tokens.ts` (3 tema), `sections.ts` (13 tipe
   di `SECTION_REGISTRY`, open/closed, ≥2 varian, props Zod, discriminated-union),
   `site-document.ts` (Website→Pages→Sections + `parseSiteDocument`). zod ^4.4.3 ditambah ke
-  sites-kit (lockfile ter-update). Gate 21/21 hijau. Berikutnya: T-061 (render Astro/Tailwind
-  dari Site Document) atau T-062 preview.
+  sites-kit (lockfile ter-update). Gate 21/21 hijau.
+- **T-061 slice renderer SELESAI** (PR menyusul di sesi ini): `packages/sites-kit/src/render/`
+  — renderer murni deterministik Site Document → HTML statis zero-JS + CSS token + JSON-LD
+  (escape/anti-XSS, `safeUrl`, `renderSection` exhaustive, `buildJsonLd`, `renderPage`/
+  `renderSite`). Diverifikasi render nyata (HTML5 valid, 3 JSON-LD, 0 script non-JSON-LD).
+  Gate 21/21 (+22 tes render). Berikutnya: wiring build Astro/Tailwind + worker build→artifact
+  (SRS §8), atau T-062 preview.
 - _Sejarah_: **T-052 ter-merge via PR #17** (`7e4eaf0`), **T-053** agent loop via PR #21
   (`9e5a783`). Semua sebelum sesi ini.
 
