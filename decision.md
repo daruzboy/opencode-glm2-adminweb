@@ -304,9 +304,21 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   **Diverifikasi**: render Site Document nyata → HTML5 valid, 3 node JSON-LD, 0 script
   non-JSON-LD (zero-JS), tanpa `javascript:` URI. Gate 21/21 (sites-kit +22 tes render).
   **Belum**: wiring Astro build + Tailwind utilities + audit schema.org di pipeline (slice ops).
+- 🔧 **T-062 (slice artifact)** Rakit artifact statis siap-deploy + preview noindex (EPIC-06,
+  FR-SEO-001/FR-PUB-001, SRS §8) — **ter-merge ke `main` (PR #…, 2026-07-09):**
+  `render/sitemap.ts` `buildSitemap(doc, baseUrl)` (URL absolut, XML-escaped) +
+  `buildRobots({baseUrl,noindex})` (publish: allow+sitemap; preview: disallow all).
+  `render/site-build.ts` `buildStaticSite(doc, {baseUrl?, noindex?})` → daftar `StaticFile`
+  ({path, contents, contentType}) = HTML per halaman + sitemap.xml (hanya publish) + robots.txt.
+  `renderPage`/`renderSite` diberi opsi `RenderOptions` (canonical/OG absolut via `baseUrl`,
+  `<meta robots noindex,nofollow>` via `noindex`) — backward-compatible. **Diverifikasi**:
+  rakit artifact nyata ke disk → `index.html`, `menu/index.html`, `sitemap.xml`, `robots.txt`
+  benar (URL absolut). Gate 21/21 (sites-kit 50 tes, +7 artifact). **Belum**: `BuildArtifactPort`/
+  upload object storage + `DeployPort` rsync shared hosting (butuh kredensial S3/cPanel — EPIC-00).
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
   (T-053+ penyempurnaan intent/agent loop setelah T-052 merge), slice builder
-  (T-061..064 render/preview/publish), ops (T-070..073), QA (T-080..083).
+  (T-063 publish/T-064 preview-route — **butuh kredensial S3/cPanel & DB Revision**),
+  ops (T-070..073), QA (T-080..083).
 
 ---
 

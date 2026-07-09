@@ -28,8 +28,15 @@
   — renderer murni deterministik Site Document → HTML statis zero-JS + CSS token + JSON-LD
   (escape/anti-XSS, `safeUrl`, `renderSection` exhaustive, `buildJsonLd`, `renderPage`/
   `renderSite`). Diverifikasi render nyata (HTML5 valid, 3 JSON-LD, 0 script non-JSON-LD).
-  Gate 21/21 (+22 tes render). Berikutnya: wiring build Astro/Tailwind + worker build→artifact
-  (SRS §8), atau T-062 preview.
+  Gate 21/21 (+22 tes render).
+- **T-062 slice artifact SELESAI** (PR menyusul di sesi ini): `render/sitemap.ts`
+  (`buildSitemap`/`buildRobots`) + `render/site-build.ts` (`buildStaticSite` → StaticFile[]:
+  HTML + sitemap.xml + robots.txt) + opsi `RenderOptions` (baseUrl → canonical/OG absolut,
+  noindex → meta robots utk preview draft FR-PUB-001). Diverifikasi rakit artifact nyata ke
+  disk. Gate 21/21 (sites-kit 50 tes). **Blocker berikutnya**: T-063 publish butuh kredensial
+  S3 (object storage) + cPanel/SSH (shared hosting) dari PO (EPIC-00 T-002); T-064 preview-route
+  butuh DB Revision. Yang masih bisa tanpa kredensial: definisikan Port (BuildArtifactPort/
+  DeployPort) + adapter stub/in-memory, atau ops/QA slice.
 - _Sejarah_: **T-052 ter-merge via PR #17** (`7e4eaf0`), **T-053** agent loop via PR #21
   (`9e5a783`). Semua sebelum sesi ini.
 
