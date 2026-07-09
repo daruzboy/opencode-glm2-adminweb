@@ -71,6 +71,44 @@ describe('executeFunctionToolCalls', () => {
     });
   });
 
+  it('treats empty arguments as an empty object', async () => {
+    const registry = createAgentToolRegistry([tool]);
+
+    const [message] = await executeFunctionToolCalls(
+      registry,
+      [call({ function: { name: 'ops_get_job_status', arguments: '' } })],
+      context,
+    );
+
+    expect(JSON.parse(message?.content ?? '{}')).toEqual({ ok: true, value: { input: {} } });
+  });
+
+  it('isolates a throwing tool so sibling calls in the batch still resolve', async () => {
+    const throwing: AgentToolDefinition<unknown, unknown> = {
+      name: 'ops_explode',
+      description: 'meledak',
+      scope: 'ops',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      execute: async () => {
+        throw new Error('boom');
+      },
+    };
+    const registry = createAgentToolRegistry([tool, throwing]);
+    const calls = [
+      call({ id: 'ok-1', function: { name: 'ops_get_job_status', arguments: '{"jobId":"a"}' } }),
+      call({ id: 'boom-1', function: { name: 'ops_explode', arguments: '{}' } }),
+    ];
+
+    const results = await executeFunctionToolCalls(registry, calls, context);
+
+    expect(results.map((message) => message.toolCallId)).toEqual(['ok-1', 'boom-1']);
+    expect(JSON.parse(results[0]?.content ?? '{}')).toMatchObject({ ok: true });
+    expect(JSON.parse(results[1]?.content ?? '{}')).toMatchObject({
+      ok: false,
+      error: { code: 'UNKNOWN' },
+    });
+  });
+
   it('preserves call order when executing multiple calls in parallel', async () => {
     const registry = createAgentToolRegistry([tool]);
     const calls = [

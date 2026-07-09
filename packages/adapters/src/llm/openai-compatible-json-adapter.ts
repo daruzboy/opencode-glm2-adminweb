@@ -26,6 +26,13 @@ export interface OpenAiCompatibleJsonAdapterConfig {
   readonly maxAttempts?: number;
   readonly inputTokenCostPer1M?: number;
   readonly outputTokenCostPer1M?: number;
+  // Batas waktu per panggilan HTTP (ms). <= 0 menonaktifkan timeout. Default 30 detik.
+  readonly timeoutMs?: number;
+  // Backoff eksponensial antar retry transport (429/5xx/timeout). Default 300ms → 4s cap.
+  readonly retryInitialDelayMs?: number;
+  readonly retryMaxDelayMs?: number;
+  // Injectable untuk test agar backoff tidak benar-benar menunggu. Default setTimeout.
+  readonly sleep?: (ms: number) => Promise<void>;
 }
 
 export interface RuntimeResponse {
@@ -41,8 +48,17 @@ export type RuntimeFetch = (
     readonly method: 'POST';
     readonly headers: Record<string, string>;
     readonly body: string;
+    readonly signal?: AbortSignal;
   },
 ) => Promise<RuntimeResponse>;
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_RETRY_INITIAL_DELAY_MS = 300;
+const DEFAULT_RETRY_MAX_DELAY_MS = 4_000;
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 interface ProviderUsage {
   readonly promptTokens: number;
@@ -65,11 +81,19 @@ export class OpenAiCompatibleJsonAdapter implements LlmJsonPort {
 
   private readonly fetch: RuntimeFetch;
   private readonly maxAttempts: number;
+  private readonly timeoutMs: number;
+  private readonly retryInitialDelayMs: number;
+  private readonly retryMaxDelayMs: number;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(private readonly config: OpenAiCompatibleJsonAdapterConfig) {
     this.name = `llm:${config.provider}`;
     this.fetch = config.fetch ?? browserFetch();
     this.maxAttempts = Math.max(1, config.maxAttempts ?? 3);
+    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.retryInitialDelayMs = config.retryInitialDelayMs ?? DEFAULT_RETRY_INITIAL_DELAY_MS;
+    this.retryMaxDelayMs = config.retryMaxDelayMs ?? DEFAULT_RETRY_MAX_DELAY_MS;
+    this.sleep = config.sleep ?? defaultSleep;
   }
 
   async completeJson<T>(request: LlmJsonRequest<T>): Promise<Result<T, LlmError>> {
@@ -85,6 +109,7 @@ export class OpenAiCompatibleJsonAdapter implements LlmJsonPort {
       if (!completion.ok) {
         lastError = completion.error;
         if (!completion.error.retryable) return completion;
+        await this.backoff(attempt);
         continue;
       }
 
@@ -96,6 +121,14 @@ export class OpenAiCompatibleJsonAdapter implements LlmJsonPort {
     }
 
     return err({ ...lastError, retryable: false });
+  }
+
+  // Jeda eksponensial sebelum percobaan berikutnya (transport 429/5xx/timeout).
+  // Tidak menunda setelah percobaan terakhir karena tak ada retry lagi sesudahnya.
+  private async backoff(attempt: number): Promise<void> {
+    if (attempt >= this.maxAttempts) return;
+    const delay = Math.min(this.retryInitialDelayMs * 2 ** (attempt - 1), this.retryMaxDelayMs);
+    if (delay > 0) await this.sleep(delay);
   }
 
   private async requestCompletion<T>(
@@ -130,6 +163,8 @@ export class OpenAiCompatibleJsonAdapter implements LlmJsonPort {
     repairHints: readonly LlmChatMessage[],
     attempt: number,
   ): Promise<Result<ProviderCompletion, LlmError>> {
+    const controller = this.timeoutMs > 0 ? new AbortController() : undefined;
+    const timer = controller ? setTimeout(() => controller.abort(), this.timeoutMs) : undefined;
     try {
       const response = await this.fetch(`${normalizeBaseUrl(this.config.baseUrl)}/chat/completions`, {
         method: 'POST',
@@ -148,10 +183,13 @@ export class OpenAiCompatibleJsonAdapter implements LlmJsonPort {
           temperature: request.temperature ?? defaultTemperatureForTask(request.task),
           response_format: { type: 'json_object' },
         }),
+        signal: controller?.signal,
       });
 
       if (!response.ok) {
-        return err(makeError('HTTP', `LLM HTTP ${response.status}`, response.status >= 500, attempt));
+        return err(
+          makeError('HTTP', `LLM HTTP ${response.status}`, isRetryableHttpStatus(response.status), attempt),
+        );
       }
 
       const body = await response.json();
@@ -161,7 +199,12 @@ export class OpenAiCompatibleJsonAdapter implements LlmJsonPort {
       }
       return ok(completion);
     } catch (e) {
+      if (controller?.signal.aborted) {
+        return err(makeError('TIMEOUT', `LLM timeout setelah ${this.timeoutMs}ms`, true, attempt));
+      }
       return err(makeError('UNKNOWN', errorMessage(e), true, attempt));
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -285,6 +328,12 @@ function makeError(
   attempt: number,
 ): LlmError {
   return { code, message, retryable, attempt };
+}
+
+// 5xx = server transient; 429 = rate limit; 408 = request timeout. Semuanya layak dicoba
+// ulang (idealnya dengan backoff). Status 4xx lain (400/401/403) permanen → jangan retry.
+function isRetryableHttpStatus(status: number): boolean {
+  return status >= 500 || status === 429 || status === 408;
 }
 
 function browserFetch(): RuntimeFetch {

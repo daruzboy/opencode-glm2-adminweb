@@ -36,6 +36,7 @@ export interface LlmJsonRequest<T> {
 export type LlmErrorCode =
   | 'CONFIG'
   | 'HTTP'
+  | 'TIMEOUT'
   | 'INVALID_JSON'
   | 'INVALID_SCHEMA'
   | 'PROVIDER'
