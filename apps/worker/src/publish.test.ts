@@ -1,0 +1,91 @@
+import { describe, it, expect } from 'vitest';
+import { ok, err, type ArtifactStorePort, type DeployPort, type PublishError, type Result, type ArtifactRef, type DeployResult, type DeployableFile } from '@digimaestro/shared';
+import { THEMES } from '@digimaestro/sites-kit';
+import { publishSite, rollbackSite, type PublishDeps } from './publish.js';
+
+function validDoc(): unknown {
+  return {
+    websiteId: 'w1',
+    title: 'Warung Demo',
+    themeId: 'umkm-fresh',
+    tokens: THEMES[0].tokens,
+    pages: [{ slug: 'index', title: 'Beranda', sections: [{ type: 'hero', variant: 'centered', props: { headline: 'Hai' } }] }],
+  };
+}
+
+function fakeStore(over: { storeErr?: boolean; retrieve?: readonly DeployableFile[] | null } = {}): ArtifactStorePort {
+  return {
+    async store({ key, files }): Promise<Result<ArtifactRef, PublishError>> {
+      if (over.storeErr) return err({ code: 'STORE', message: 'disk full' });
+      return ok({ key, location: `/artifacts/${key}`, fileCount: files.length });
+    },
+    async retrieve(): Promise<Result<readonly DeployableFile[] | null, PublishError>> {
+      return ok(over.retrieve ?? null);
+    },
+  };
+}
+
+function fakeDeploy(over: { deployErr?: boolean } = {}): DeployPort {
+  return {
+    async deploy({ target, files }): Promise<Result<DeployResult, PublishError>> {
+      if (over.deployErr) return err({ code: 'DEPLOY', message: 'ssh refused' });
+      return ok({ url: `https://${target.slug}.digimaestro.id`, fileCount: files.length });
+    },
+  };
+}
+
+const input = { websiteId: 'w1', revisionNumber: 3, slug: 'warung-demo', baseUrl: 'https://warung-demo.digimaestro.id', siteDocument: validDoc() };
+
+describe('publishSite (FR-PUB-004)', () => {
+  it('pipeline sukses: build → store → deploy → url', async () => {
+    const deps: PublishDeps = { artifacts: fakeStore(), deploy: fakeDeploy() };
+    const res = await publishSite(deps, input);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.url).toBe('https://warung-demo.digimaestro.id');
+      expect(res.value.artifact.key).toBe('w1/rev-3');
+      expect(res.value.fileCount).toBeGreaterThan(0); // html + sitemap + robots
+    }
+  });
+
+  it('site document invalid → BUILD', async () => {
+    const deps: PublishDeps = { artifacts: fakeStore(), deploy: fakeDeploy() };
+    const res = await publishSite(deps, { ...input, siteDocument: { pages: [] } });
+    expect(res).toMatchObject({ ok: false, error: { code: 'BUILD' } });
+  });
+
+  it('gagal store → STORE (tak lanjut deploy)', async () => {
+    const res = await publishSite({ artifacts: fakeStore({ storeErr: true }), deploy: fakeDeploy() }, input);
+    expect(res).toMatchObject({ ok: false, error: { code: 'STORE' } });
+  });
+
+  it('gagal deploy → DEPLOY', async () => {
+    const res = await publishSite({ artifacts: fakeStore(), deploy: fakeDeploy({ deployErr: true }), }, input);
+    expect(res).toMatchObject({ ok: false, error: { code: 'DEPLOY' } });
+  });
+
+  it('verifikasi HTTP gagal → VERIFY', async () => {
+    const deps: PublishDeps = { artifacts: fakeStore(), deploy: fakeDeploy(), verify: async () => false };
+    expect(await publishSite(deps, input)).toMatchObject({ ok: false, error: { code: 'VERIFY' } });
+  });
+
+  it('verifikasi HTTP sukses → ok', async () => {
+    const deps: PublishDeps = { artifacts: fakeStore(), deploy: fakeDeploy(), verify: async () => true };
+    expect((await publishSite(deps, input)).ok).toBe(true);
+  });
+});
+
+describe('rollbackSite (FR-PUB-005)', () => {
+  it('redeploy artifact tersimpan tanpa build ulang', async () => {
+    const stored: DeployableFile[] = [{ path: 'index.html', contents: '<!doctype html>', contentType: 'text/html' }];
+    const deps: PublishDeps = { artifacts: fakeStore({ retrieve: stored }), deploy: fakeDeploy() };
+    const res = await rollbackSite(deps, { websiteId: 'w1', revisionNumber: 2, slug: 'warung-demo' });
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.url).toBe('https://warung-demo.digimaestro.id');
+  });
+
+  it('artifact tak ada → NOT_FOUND', async () => {
+    const deps: PublishDeps = { artifacts: fakeStore({ retrieve: null }), deploy: fakeDeploy() };
+    expect(await rollbackSite(deps, { websiteId: 'w1', revisionNumber: 9, slug: 'x' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  });
+});

@@ -328,10 +328,24 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `inject`: token benar → 200 HTML noindex, token salah → 404. Gate 21/21 (api 20 tes, +7).
   **Belum**: adapter Prisma `PreviewPort` (Revision.siteDoc + **desain token preview** — domain
   publish) + wiring composition root; menyusul bersama T-063.
+- 🔧 **T-063 (slice publish)** Pipeline publish + rollback (EPIC-06, FR-PUB-004/005/009;
+  SRS §8) — **ter-merge ke `main` (PR #…, 2026-07-09):** Port di shared
+  (`ArtifactStorePort`, `DeployPort`, `DeployableFile`, `DeployTarget`, `PublishError`).
+  `apps/worker/src/publish.ts`: use case murni `publishSite` (validasi Site Document → build
+  statis sites-kit → simpan artifact → deploy → verifikasi HTTP 200 opsional; error berkode
+  BUILD/STORE/DEPLOY/VERIFY) + `rollbackSite` (redeploy artifact tersimpan tanpa build ulang,
+  FR-PUB-005). `packages/adapters/src/publish/`: `LocalArtifactStore` (+manifest utk retrieve)
+  & `LocalFilesystemDeploy` (docroot per slug, deploy bersih ala rsync --delete) — analog
+  dev/staging; **S3 (@aws-sdk) + rsync/SSH cPanel (ssh2) menyusul, kontrak Port sama
+  (FR-PUB-009)**. worker+api kini depend sites-kit. **Diverifikasi end-to-end**: publish
+  Site Document → docroot → serve HTTP → `GET / , /menu/ , /sitemap.xml , /robots.txt` semua
+  **200**; rollback ok. Gate 21/21 (worker +8 tes, adapters +4). **Belum (butuh EPIC-00)**:
+  adapter S3 + rsync/SSH cPanel nyata + subdomain cPanel API (FR-PUB-004b) + wiring worker
+  BullMQ consumer.
 - ⏳ Sisanya (**terblokir kredensial/PO, EPIC-00**): CHN WABA (T-030..033, terblokir T-001
-  verifikasi WABA), **T-063 publish** (butuh S3 object storage + cPanel/SSH shared hosting),
-  adapter Prisma preview (butuh desain token), finalisasi T-050 (butuh API key DeepSeek/GLM);
-  ops (T-070..073), QA (T-080..083, butuh app hidup + TestSprite restart).
+  verifikasi WABA), **adapter deploy nyata S3+cPanel/SSH** (T-063 real), adapter Prisma preview
+  (butuh desain token), perbandingan GLM (opsional, DeepSeek sudah default); ops (T-070..073),
+  QA (T-080..083, butuh app hidup + TestSprite restart).
 
 ---
 
