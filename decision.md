@@ -279,9 +279,20 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   (migrasi `00000000000000_init` applied), api `healthy` + `GET /healthz` → `{status:ok}`,
   worker `running` restarts=0; verifikasi pakai host port 3300 (port 3000 dipakai deploy
   `glm2-*` existing) lalu `down -v`. `config` valid utk base & prod+profil.
+- 🔧 **T-060 (slice model)** Site Document + registry section + design token (EPIC-06,
+  FR-CMP-001..005) — **ter-merge ke `main` (PR #…, 2026-07-09):** model situs tervalidasi
+  Zod di `packages/sites-kit` (framework-neutral; render Astro = slice T-06x berikutnya).
+  `design-tokens.ts`: `designTokensSchema` (colors/typography/radius/spacing) + **3 tema**
+  bawaan (FR-CMP-003, styling hanya via token). `sections.ts`: **13 tipe section** di
+  `SECTION_REGISTRY` (satu sumber kebenaran, open/closed FR-CMP-005 — `SectionType` diturunkan
+  dari keys registry), tiap tipe **≥2 varian** (FR-CMP-002) + skema props Zod (konten saja),
+  `sectionSchema` discriminated-union. `site-document.ts`: `siteDocumentSchema`
+  (Website→Pages→Sections, slug kebab-case unik, FR-CMP-004) + `parseSiteDocument()` (Result
+  ringkas berlabel path). Gate 21/21 hijau (sites-kit +21 tes: tema, registry, union, doc
+  valid/invalid). **Belum**: komponen render Astro/Tailwind + JSON-LD/SEO (slice lanjutan).
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
   (T-053+ penyempurnaan intent/agent loop setelah T-052 merge), slice builder
-  (T-060..064), ops (T-070..073), QA (T-080..083).
+  (T-061..064 render/preview/publish), ops (T-070..073), QA (T-080..083).
 
 ---
 
