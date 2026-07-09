@@ -1,0 +1,32 @@
+# Caddyfile — reverse proxy platform digimaestro (T-012, SRS §3 topologi VPS).
+# Dev: akses via http://localhost (Caddy → api:3000). Prod: ganti `:80` dengan domain
+# (mis. app.digimaestro.id) agar Caddy meng-provision TLS otomatis (AutoHTTPS).
+#
+# Subpath ops (n8n/umami) hanya aktif jika profil `ops` dijalankan; jika service tak ada,
+# Caddy tetap start (reverse_proxy hanya gagal saat rute itu diakses).
+
+{
+	# email admin@digimaestro.id   # aktifkan utk ACME/Let's Encrypt di prod domain
+	admin off
+}
+
+:80 {
+	encode gzip zstd
+
+	# API + Web Chat (REST + WebSocket /api/chat) — Caddy meneruskan Upgrade otomatis.
+	reverse_proxy /api/* api:3000
+	reverse_proxy /healthz api:3000
+
+	# Otomasi ops (profil ops)
+	handle_path /n8n/* {
+		reverse_proxy n8n:5678
+	}
+
+	# Analytics (profil ops)
+	handle_path /umami/* {
+		reverse_proxy umami:3000
+	}
+
+	# Default: teruskan sisanya ke api (portal/static menyusul).
+	reverse_proxy api:3000
+}

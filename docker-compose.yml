@@ -1,0 +1,179 @@
+# docker-compose.yml — T-012. Stack platform digimaestro (SRS §3, ADR-2/6/8).
+# Default `docker compose up` menjalankan stack aplikasi inti: postgres, redis, migrate,
+# api, worker. Service edge/ops (caddy, n8n, umami) ada di profil agar opsional:
+#   docker compose up                    # inti (db, redis, migrate, api, worker)
+#   docker compose --profile edge up     # + caddy (reverse proxy/TLS)
+#   docker compose --profile ops  up     # + n8n + umami (+ umami-db)
+# Prod: overlay dengan docker-compose.prod.yml (lihat file itu).
+#
+# Nilai default cocok untuk DEV. Untuk prod isi env asli via environment VPS / secret
+# manager (JANGAN commit .env berisi rahasia — repo public).
+
+name: digimaestro
+
+x-app-env: &app-env
+  NODE_ENV: ${NODE_ENV:-production}
+  DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/digimaestro}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  DIGIMAESTRO_LLM_PROVIDER: ${DIGIMAESTRO_LLM_PROVIDER:-deepseek}
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+  DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+  DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-}
+  GLM_API_KEY: ${GLM_API_KEY:-}
+  GLM_MODEL: ${GLM_MODEL:-glm-4.5}
+  GLM_BASE_URL: ${GLM_BASE_URL:-}
+
+x-app-build: &app-build
+  build:
+    context: .
+  image: digimaestro-app:local
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-digimaestro}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-digimaestro}']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    restart: unless-stopped
+
+  # One-shot: terapkan migrasi Prisma sebelum api/worker menyala.
+  migrate:
+    <<: *app-build
+    environment: *app-env
+    command: ['pnpm', '--filter', '@digimaestro/adapters', 'db:migrate']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    <<: *app-build
+    environment:
+      <<: *app-env
+      PORT: '3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    ports:
+      - '${API_PORT:-3000}:3000'
+    restart: unless-stopped
+
+  worker:
+    <<: *app-build
+    environment: *app-env
+    command: ['node', 'apps/worker/dist/index.js']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # ── Edge (profil: edge) ──────────────────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    profiles: ['edge']
+    depends_on:
+      - api
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    restart: unless-stopped
+
+  # ── Ops/analytics (profil: ops) ──────────────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:1.62.1
+    profiles: ['ops']
+    environment:
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PORT: '5678'
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      GENERIC_TIMEZONE: ${TZ:-Asia/Jakarta}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-dev-n8n-encryption-key-change-me}
+    volumes:
+      - n8ndata:/home/node/.n8n
+    ports:
+      - '${N8N_PORT:-5678}:5678'
+    restart: unless-stopped
+
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-v2.14.0
+    profiles: ['ops']
+    environment:
+      DATABASE_URL: postgresql://umami:umami@umami-db:5432/umami
+      DATABASE_TYPE: postgresql
+      APP_SECRET: ${UMAMI_APP_SECRET:-dev-umami-secret-change-me}
+    depends_on:
+      umami-db:
+        condition: service_healthy
+    ports:
+      - '${UMAMI_PORT:-3001}:3000'
+    restart: unless-stopped
+
+  umami-db:
+    image: postgres:16-alpine
+    profiles: ['ops']
+    environment:
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: umami
+      POSTGRES_DB: umami
+    volumes:
+      - umamidata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U umami -d umami']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  caddydata:
+  caddyconfig:
+  n8ndata:
+  umamidata:
