@@ -315,10 +315,20 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   rakit artifact nyata ke disk → `index.html`, `menu/index.html`, `sitemap.xml`, `robots.txt`
   benar (URL absolut). Gate 21/21 (sites-kit 50 tes, +7 artifact). **Belum**: `BuildArtifactPort`/
   upload object storage + `DeployPort` rsync shared hosting (butuh kredensial S3/cPanel — EPIC-00).
-- ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
-  (T-053+ penyempurnaan intent/agent loop setelah T-052 merge), slice builder
-  (T-063 publish/T-064 preview-route — **butuh kredensial S3/cPanel & DB Revision**),
-  ops (T-070..073), QA (T-080..083).
+- 🔧 **T-064 (slice preview-route)** Rute preview draft ber-token, noindex (EPIC-06,
+  FR-PUB-001; SRS §9 `/api/preview/:revisionId?t=token`) — **ter-merge ke `main` (PR #…,
+  2026-07-09):** Port `PreviewPort` di shared (`getPreview({revisionId,token})` → revisi/null;
+  token salah=null agar tak bocorkan keberadaan). `apps/api/src/preview/`: `handlePreview`
+  (token kosong/salah=404, error repo=500, `parseSiteDocument` gagal=500, sukses=render
+  halaman `noindex`) + `registerPreviewRoutes` (header `X-Robots-Tag: noindex`). `buildServer`
+  menerima `preview` opsional (diregistrasi bila disuntik). **Diverifikasi** via Fastify
+  `inject`: token benar → 200 HTML noindex, token salah → 404. Gate 21/21 (api 20 tes, +7).
+  **Belum**: adapter Prisma `PreviewPort` (Revision.siteDoc + **desain token preview** — domain
+  publish) + wiring composition root; menyusul bersama T-063.
+- ⏳ Sisanya (**terblokir kredensial/PO, EPIC-00**): CHN WABA (T-030..033, terblokir T-001
+  verifikasi WABA), **T-063 publish** (butuh S3 object storage + cPanel/SSH shared hosting),
+  adapter Prisma preview (butuh desain token), finalisasi T-050 (butuh API key DeepSeek/GLM);
+  ops (T-070..073), QA (T-080..083, butuh app hidup + TestSprite restart).
 
 ---
 

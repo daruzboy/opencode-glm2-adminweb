@@ -4,7 +4,9 @@
 import { pathToFileURL } from 'node:url';
 import { createChatDeps } from './composition.js';
 import { registerChatRoutes } from './chat/routes.js';
+import { registerPreviewRoutes } from './preview/routes.js';
 import type { ChatDeps } from './chat/handle-incoming.js';
+import type { PreviewDeps } from './preview/handle-preview.js';
 import Fastify, { type FastifyInstance } from 'fastify';
 import websocket from '@fastify/websocket';
 
@@ -12,6 +14,9 @@ export const APP_NAME = 'digimaestro-api';
 
 export interface BuildServerOptions {
   deps?: ChatDeps;
+  // Preview draft (T-064). Diregistrasi hanya bila disuntik (adapter Prisma Revision +
+  // token menyusul); test menyuntik fake sehingga rute teruji tanpa DB.
+  preview?: PreviewDeps;
   logger?: boolean;
 }
 
@@ -19,6 +24,7 @@ export async function buildServer(opts: BuildServerOptions = {}): Promise<Fastif
   const app = Fastify({ logger: opts.logger ?? false });
   await app.register(websocket);
   registerChatRoutes(app, opts.deps ?? createChatDeps());
+  if (opts.preview) registerPreviewRoutes(app, opts.preview);
   app.get('/healthz', async () => ({ status: 'ok', name: APP_NAME }));
   return app;
 }

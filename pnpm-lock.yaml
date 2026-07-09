@@ -44,6 +44,9 @@ importers:
       '@digimaestro/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@digimaestro/sites-kit':
+        specifier: workspace:*
+        version: link:../../packages/sites-kit
       '@fastify/websocket':
         specifier: ^11.2.0
         version: 11.2.0
