@@ -87,7 +87,8 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
 - ✅ **T-011** CI GitHub Actions (lint+typecheck+vitest) — **PR #1 merged**, CI hijau.
   Branch protection `main` aktif: require `lint + typecheck + vitest`, strict
   (up-to-date), wajib via PR, linear history, enforce_admins.
-- ⏳ **T-012** Docker Compose dev & prod (postgres/redis/caddy/api/worker/n8n/umami) — belum dibuat.
+- ✅ **T-012** Docker Compose dev & prod (postgres/redis/caddy/api/worker/n8n/umami) — image
+  staging (PR #23) + Compose penuh (2026-07-09, diverifikasi end-to-end di VPS). Detail di §2.
 - ✅ **T-013** Harness agent GLM 5.2 + `AGENTS.md` + template prompt
   (opencode + AGENTS.md aktif; template prompt di `docs/prompts/` ⏳)
 - ⏳ **T-014** TestSprite via MCP — terdaftar di `opencode.json`; API key sudah diset
@@ -266,12 +267,18 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `openai-compatible-json-adapter` + **ambang (threshold)** di `evaluation-runner`. T-051 —
   hardening `tool-registry` & `function-call-bridge`. Gate lokal 21/21 hijau + CI hijau.
   (Berbeda dari PR #15 yang mencakup temperature per-task + eval runner + tool paralel.)
-- 🔧 **T-012 (sebagian)** Docker **staging image** — **ter-merge ke `main` (PR #23, squash
-  `cbae68f`, 2026-07-09):** `Dockerfile` multi-stage (base→deps→builder→runner, `node:22-
-  bookworm-slim`, corepack `pnpm@11.9.0`, `prisma db:generate` + `pnpm build`, entrypoint
-  `node apps/api/dist/index.js`) + `.dockerignore`. Diverifikasi `docker build` sukses di
-  VPS. **Belum**: Docker **Compose** dev/prod penuh (postgres/redis/caddy/api/worker/n8n/
-  umami) → T-012 masih terbuka untuk compose.
+- ✅ **T-012** Docker Compose dev & prod — **image staging** ter-merge PR #23 (`cbae68f`);
+  **Compose penuh** ter-merge PR #… (2026-07-09): `docker-compose.yml` (service inti
+  postgres 16 / redis 7 / migrate one-shot `prisma migrate deploy` / api / worker; edge
+  `caddy` + ops `n8n`+`umami`+`umami-db` di **profil** `edge`/`ops`), overlay
+  `docker-compose.prod.yml` (restart always, port DB/Redis tak di-publish, trafik via
+  Caddy), `deploy/Caddyfile` (reverse proxy + WS `/api/*`), env compose di `.env.example`.
+  Worker diberi bootstrap long-running (`runWorker` + keep-alive + shutdown SIGTERM/SIGINT)
+  agar kontainer tak restart-loop; konsumen BullMQ nyata tetap menyusul EPIC-05/06.
+  **Diverifikasi end-to-end di VPS**: `docker compose up --build` → migrate exit 0
+  (migrasi `00000000000000_init` applied), api `healthy` + `GET /healthz` → `{status:ok}`,
+  worker `running` restarts=0; verifikasi pakai host port 3300 (port 3000 dipakai deploy
+  `glm2-*` existing) lalu `down -v`. `config` valid utk base & prod+profil.
 - ⏳ Sisanya: CHN WABA (T-030..033, **terblokir T-001 verifikasi WABA**), AGT
   (T-053+ penyempurnaan intent/agent loop setelah T-052 merge), slice builder
   (T-060..064), ops (T-070..073), QA (T-080..083).

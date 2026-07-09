@@ -1,0 +1,39 @@
+# docker-compose.prod.yml — overlay produksi untuk T-012.
+# Pakai: docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile edge --profile ops up -d
+#
+# Perbedaan dari dev (base):
+#   - restart: always (bukan unless-stopped).
+#   - Port Postgres/Redis TIDAK di-publish ke host (akses hanya via jaringan compose).
+#   - api/worker tidak mem-publish port langsung; trafik masuk lewat Caddy (edge).
+#   - Rahasia WAJIB via environment VPS / secret manager (bukan default dev).
+
+services:
+  postgres:
+    restart: always
+    ports: !reset []
+
+  redis:
+    restart: always
+    ports: !reset []
+
+  api:
+    restart: always
+    # Tidak expose 3000 ke host; Caddy (profil edge) yang mem-proxy.
+    ports: !reset []
+
+  worker:
+    restart: always
+
+  caddy:
+    restart: always
+
+  n8n:
+    restart: always
+    ports: !reset []
+
+  umami:
+    restart: always
+    ports: !reset []
+
+  umami-db:
+    restart: always

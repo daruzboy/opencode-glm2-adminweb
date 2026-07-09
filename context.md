@@ -13,6 +13,12 @@
   terautentikasi (`daruzboy`) & git credential helper terpasang di VPS ini.
   Berikutnya: T-012 Docker **Compose** penuh, atau T-060 (builder). EPIC-03 (WABA) tetap
   terblokir T-001.
+- **T-012 Docker Compose penuh SELESAI** (PR menyusul di sesi ini): `docker-compose.yml`
+  (inti postgres/redis/migrate/api/worker + profil `edge`=caddy, `ops`=n8n/umami),
+  `docker-compose.prod.yml`, `deploy/Caddyfile`, bootstrap long-running worker. Diverifikasi
+  end-to-end di VPS (api healthy, `/healthz` ok, worker stabil, migrate exit 0) via host
+  port 3300 karena **VPS ini menjalankan deploy asli `glm2-api`/`glm2-worker`/`glm2-postgres`
+  di 3000** (project compose terpisah, tak terganggu). Berikutnya: T-060 (builder).
 - _Sejarah_: **T-052 ter-merge via PR #17** (`7e4eaf0`), **T-053** agent loop via PR #21
   (`9e5a783`). Semua sebelum sesi ini.
 
