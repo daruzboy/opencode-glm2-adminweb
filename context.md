@@ -33,10 +33,17 @@
   (`buildSitemap`/`buildRobots`) + `render/site-build.ts` (`buildStaticSite` → StaticFile[]:
   HTML + sitemap.xml + robots.txt) + opsi `RenderOptions` (baseUrl → canonical/OG absolut,
   noindex → meta robots utk preview draft FR-PUB-001). Diverifikasi rakit artifact nyata ke
-  disk. Gate 21/21 (sites-kit 50 tes). **Blocker berikutnya**: T-063 publish butuh kredensial
-  S3 (object storage) + cPanel/SSH (shared hosting) dari PO (EPIC-00 T-002); T-064 preview-route
-  butuh DB Revision. Yang masih bisa tanpa kredensial: definisikan Port (BuildArtifactPort/
-  DeployPort) + adapter stub/in-memory, atau ops/QA slice.
+  disk. Gate 21/21 (sites-kit 50 tes).
+- **T-064 slice preview-route SELESAI** (PR menyusul di sesi ini): Port `PreviewPort` (shared)
+  + `apps/api/src/preview/` (`handlePreview` render noindex + token guard 404/500,
+  `registerPreviewRoutes` + `X-Robots-Tag`), `buildServer` terima `preview` opsional. Diuji via
+  Fastify inject (200 HTML/404). api sekarang depend `@digimaestro/sites-kit`. Gate 21/21.
+- **BLOCKER berikutnya (butuh PO/EPIC-00)**: T-063 publish (S3 + cPanel/SSH), adapter Prisma
+  preview (desain token), finalisasi T-050 (API key DeepSeek/GLM), QA T-08x (app hidup +
+  TestSprite restart), CHN WABA (T-001). Tanpa kredensial, sisa yang bisa: ops slice (Caddy/
+  n8n/umami config), atau penyempurnaan adapter deterministik.
+- _Catatan lingkungan_: setelah `pnpm install`, Prisma client perlu `pnpm --filter
+  @digimaestro/adapters db:generate` sebelum build adapters/api (postinstall tak selalu jalan).
 - _Sejarah_: **T-052 ter-merge via PR #17** (`7e4eaf0`), **T-053** agent loop via PR #21
   (`9e5a783`). Semua sebelum sesi ini.
 

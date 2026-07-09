@@ -21,6 +21,7 @@
     "@digimaestro/adapters": "workspace:*",
     "@digimaestro/core": "workspace:*",
     "@digimaestro/shared": "workspace:*",
+    "@digimaestro/sites-kit": "workspace:*",
     "@fastify/websocket": "^11.2.0",
     "fastify": "^5.9.0",
     "zod": "^4.4.3"
