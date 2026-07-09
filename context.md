@@ -38,10 +38,14 @@
   + `apps/api/src/preview/` (`handlePreview` render noindex + token guard 404/500,
   `registerPreviewRoutes` + `X-Robots-Tag`), `buildServer` terima `preview` opsional. Diuji via
   Fastify inject (200 HTML/404). api sekarang depend `@digimaestro/sites-kit`. Gate 21/21.
-- **BLOCKER berikutnya (butuh PO/EPIC-00)**: T-063 publish (S3 + cPanel/SSH), adapter Prisma
-  preview (desain token), finalisasi T-050 (API key DeepSeek/GLM), QA T-08x (app hidup +
-  TestSprite restart), CHN WABA (T-001). Tanpa kredensial, sisa yang bisa: ops slice (Caddy/
-  n8n/umami config), atau penyempurnaan adapter deterministik.
+- **T-063 slice publish SELESAI** (PR menyusul di sesi ini): Port `ArtifactStorePort`/
+  `DeployPort` (shared) + `apps/worker/src/publish.ts` (`publishSite`/`rollbackSite`, pipeline
+  build→store→deploy→verify) + adapter lokal-FS (`LocalArtifactStore`/`LocalFilesystemDeploy`,
+  analog rsync docroot). Diverifikasi end-to-end: publish→serve→curl 200 semua rute, rollback ok.
+  Gate 21/21. **Blocker sisa (EPIC-00/PO)**: adapter deploy NYATA (S3 @aws-sdk + rsync/SSH
+  cPanel ssh2) + subdomain cPanel API + wiring worker BullMQ; CHN WABA (T-001); QA T-08x
+  (app hidup + restart opencode). T-050 sudah final (DeepSeek). Perbandingan GLM opsional.
+- _Default LLM_: DeepSeek (`DIGIMAESTRO_LLM_PROVIDER=deepseek`) per eval T-050 2026-07-09.
 - **T-050 evaluasi DIJALANKAN 2026-07-09** (API DeepSeek nyata): deepseek pass 90%, quality
   0.85, ~$0.003/20 prompt, ~1.5s → **default = DeepSeek** (`DIGIMAESTRO_LLM_PROVIDER=deepseek`).
   GLM belum diuji (butuh GLM_API_KEY). Key DeepSeek dari PO **ter-ekspos di chat → minta rotasi**;

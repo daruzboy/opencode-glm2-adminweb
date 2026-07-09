@@ -21,6 +21,7 @@
   "dependencies": {
     "@digimaestro/adapters": "workspace:*",
     "@digimaestro/core": "workspace:*",
-    "@digimaestro/shared": "workspace:*"
+    "@digimaestro/shared": "workspace:*",
+    "@digimaestro/sites-kit": "workspace:*"
   }
 }
