@@ -42,6 +42,10 @@
   preview (desain token), finalisasi T-050 (API key DeepSeek/GLM), QA T-08x (app hidup +
   TestSprite restart), CHN WABA (T-001). Tanpa kredensial, sisa yang bisa: ops slice (Caddy/
   n8n/umami config), atau penyempurnaan adapter deterministik.
+- **T-050 evaluasi DIJALANKAN 2026-07-09** (API DeepSeek nyata): deepseek pass 90%, quality
+  0.85, ~$0.003/20 prompt, ~1.5s → **default = DeepSeek** (`DIGIMAESTRO_LLM_PROVIDER=deepseek`).
+  GLM belum diuji (butuh GLM_API_KEY). Key DeepSeek dari PO **ter-ekspos di chat → minta rotasi**;
+  dipakai inline saja, tak disimpan.
 - _Catatan lingkungan_: setelah `pnpm install`, Prisma client perlu `pnpm --filter
   @digimaestro/adapters db:generate` sebelum build adapters/api (postinstall tak selalu jalan).
 - _Sejarah_: **T-052 ter-merge via PR #17** (`7e4eaf0`), **T-053** agent loop via PR #21

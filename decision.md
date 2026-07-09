@@ -238,8 +238,11 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   (quality scorer via `requiredSignals`, cost via usage logger) + CLI
   `pnpm --filter @digimaestro/worker eval:llm` (siap jalan begitu API key diisi).
   T-051 — eksekusi tool **paralel** (`Promise.all`, urutan hasil terjaga). Gate 21/21
-  (124 tes). Tujuan T-050 (putuskan DeepSeek vs GLM) kini tinggal jalankan CLI setelah
-  `DEEPSEEK_API_KEY`/`GLM_API_KEY` diisi.
+  (124 tes).
+- ✅ **T-050 evaluasi provider DIJALANKAN** (2026-07-09, API DeepSeek nyata via `eval:llm`):
+  **deepseek** → pass **90%** (18/20 sinyal kualitas, 0 hard-failure), quality **0.85**,
+  cost **~$0.0031/20 prompt**, latency **~1497ms**, score **0.699** → **rekomendasi: deepseek**.
+  GLM belum diuji (butuh `GLM_API_KEY`). Lihat §3 keputusan default LLM.
 - ✅ **T-052** Router intent + state percakapan (EPIC-05, FR-CNV-001/002; M) —
   **ter-merge ke `main` (PR #17, squash `7e4eaf0`, 2026-07-04):**
   `packages/core/src/conversation/intent.ts` klasifier **hybrid dua tahap** (SRS §5.3
@@ -333,8 +336,12 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
 ---
 
 ## 3. Keputusan Tertunda / Pertanyaan Terbuka
-- **Default LLM produksi** (DeepSeek vs GLM 5.2) — diputuskan lewat T-050
-  (bandingkan 20 prompt: biaya vs kualitas).
+- **Default LLM produksi** — **DeepSeek dipilih (sementara-final)** per evaluasi T-050
+  2026-07-09 (pass 90%, quality 0.85, ~$0.003/20 prompt, ~1.5s). GLM 5.2 **belum**
+  dibandingkan (butuh `GLM_API_KEY`); revisit bila GLM diuji atau biaya/kualitas berubah.
+  _Env `DIGIMAESTRO_LLM_PROVIDER=deepseek`._ Key DeepSeek diberikan PO 2026-07-09 via chat
+  (**ter-ekspos → WAJIB dirotasi**); simpan sebagai secret repo/CI + env VPS, **jangan commit**
+  (repo public). Belum diset ke deploy live.
 - **Harga paket & kuota job AI** — finalisasi sebelum Fase 1 (input: COGS dari Fase 0).
 - **Kebijakan trial** — preview-gratis-lalu-bayar vs bayar-depan (rekomendasi: preview gratis).
 - **Provider image generation & stock photo** — dievaluasi Fase 0 (DeepSeek tak punya image-gen).
@@ -362,7 +369,10 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   berjalan melaporkan "No API Key" (mis. env dirotasi setelah startup), **wajib
   restart opencode** agar 8 tool MCP ter-load dgn env baru (load hanya saat
   startup; tidak hot-reload).
-- `GLM_API_KEY`, `DEEPSEEK_API_KEY`: ⏳ belum diisi.
+- `DEEPSEEK_API_KEY`: ⚠️ **diberikan PO 2026-07-09 via chat (plaintext → ter-ekspos, WAJIB
+  dirotasi)**. Dipakai sekali untuk evaluasi T-050 (inline, TIDAK ditulis ke file/commit).
+  Belum diset ke secret repo/env VPS/deploy live — lakukan dgn key hasil rotasi.
+- `GLM_API_KEY`: ⏳ belum diisi (perbandingan GLM T-050 menunggu).
 - WABA / Xendit / cPanel / S3 / Umami / n8n: ⏳ belum (EPIC-00).
 - `.env.example` ada (template, tanpa nilai). Produksi via secret manager, bukan `.env`.
 - **Relokasi `.git` (2026-07-04):** worktree tetap di
