@@ -116,6 +116,15 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   13 test tenant-guard + 6 test repo (cross-tenant leak: where SELALU berisi tenantId
   kaller). `pnpm turbo lint test build` 21/21 hijau. Extension di-wire di composition
   root apps/* (EPIC-03+); repo lain menyusul per use case pemakai.
+- 🔧 **T-020ext (adapter WebsiteRepository + RevisionRepository)** Implementasi Prisma dua
+  Port repo yang sebelumnya baru punya kontrak (SRS §8; NFR-09) — **PR tersendiri, 2026-07-10:**
+  `packages/adapters/src/prisma/website-repo-prisma.ts` (`WebsiteRepositoryPrisma`: `findByTenantId`
+  + `update` via `updateMany` where{tenantId,id} → re-read; kosong→CONFLICT, count 0→NOT_FOUND) &
+  `revision-repo-prisma.ts` (`RevisionRepositoryPrisma`: `findById`/`findLatest`/`create`/`update`,
+  **tenant-scoped via Website**: `assertOwned` cek Website milik tenant DULU → cross-tenant = null/
+  NOT_FOUND tanpa bocor, pola konsisten `PublishSourcePrisma`; `number` auto-increment via count+1,
+  race dijaga `@@unique([websiteId,number])`). Delegate sempit → fake test tanpa DB. Gate 21/21
+  (adapters +28 tes: 10 website + 18 revision, incl. cross-tenant no-leak & error path).
 
 ### EPIC-03..08 (Sprint 0.2–0.4)
 - ✅ **T-040** Web Chat (EPIC-04, FR-CHN-003) — **backend + frontend ter-merge ke `main`**

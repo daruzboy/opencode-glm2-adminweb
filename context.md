@@ -109,6 +109,12 @@
   audit di failed-set). Observability: `publish-worker` logger terinjeksi + log terstruktur start/
   sukses(durasi)/gagal, listener `failed` menandai **DEAD-LETTER** saat percobaan habis. Gate 21/21
   (worker +5, adapters +3 tes murni). Stacked-PR: base = branch #41; retarget ke main saat #41 merge.
+- **T-020ext adapter Website/Revision repo SELESAI (kode)** (PR tersendiri, 2026-07-10): impl Prisma
+  dua Port repo yg sebelumnya baru punya kontrak. `WebsiteRepositoryPrisma` (findByTenantId+update) &
+  `RevisionRepositoryPrisma` (findById/findLatest/create/update, tenant-scoped via Website: assertOwned
+  cek Website milik tenant dulu → cross-tenant=null/NOT_FOUND, pola PublishSourcePrisma; number=count+1,
+  race dijaga @@unique). Delegate sempit → fake test tanpa DB. Gate 21/21 (adapters +28 tes). Dikerjakan
+  di git worktree terisolasi krn working tree main dipakai sesi lain paralel (lihat memory).
 - **Object storage = MinIO self-host** (2026-07-10): service `minio`+`minio-init` di compose
   (profil `storage`), bucket `digimaestro-artifacts`, kredensial `MINIO_ROOT_*` (=S3_KEY/SECRET),
   `S3_ENDPOINT=http://minio:9000`. Diverifikasi put/get object via S3 API. Sisi S3 T-063 tak
