@@ -170,6 +170,41 @@ services:
       retries: 12
     restart: unless-stopped
 
+  # ── Object storage S3-compatible (profil: storage) ───────────────────────────
+  # MinIO self-host: artifact build + media tenant. Data tetap di VPS (residensi, ADR-8).
+  # Endpoint internal http://minio:9000 (S3 API), console http://localhost:9001.
+  minio:
+    image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    profiles: ['storage']
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-digimaestro}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-digimaestro-dev-secret}
+    volumes:
+      - miniodata:/data
+    ports:
+      - '${MINIO_API_PORT:-9000}:9000'
+      - '${MINIO_CONSOLE_PORT:-9001}:9001'
+    restart: unless-stopped
+
+  # One-shot: buat bucket artifact bila belum ada, lalu keluar.
+  minio-init:
+    image: minio/mc:RELEASE.2024-06-12T14-34-03Z
+    profiles: ['storage']
+    depends_on:
+      - minio
+    environment:
+      MC_HOST_local: http://${MINIO_ROOT_USER:-digimaestro}:${MINIO_ROOT_PASSWORD:-digimaestro-dev-secret}@minio:9000
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        until mc ls local > /dev/null 2>&1; do echo 'menunggu minio...'; sleep 2; done;
+        mc mb --ignore-existing "local/${S3_BUCKET:-digimaestro-artifacts}";
+        mc anonymous set none "local/${S3_BUCKET:-digimaestro-artifacts}";
+        echo "bucket ${S3_BUCKET:-digimaestro-artifacts} siap";
+    restart: 'no'
+
 volumes:
   pgdata:
   redisdata:
@@ -177,3 +212,4 @@ volumes:
   caddyconfig:
   n8ndata:
   umamidata:
+  miniodata:

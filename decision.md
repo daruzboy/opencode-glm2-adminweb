@@ -339,12 +339,18 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   dev/staging; **S3 (@aws-sdk) + rsync/SSH cPanel (ssh2) menyusul, kontrak Port sama
   (FR-PUB-009)**. worker+api kini depend sites-kit. **Diverifikasi end-to-end**: publish
   Site Document → docroot → serve HTTP → `GET / , /menu/ , /sitemap.xml , /robots.txt` semua
-  **200**; rollback ok. Gate 21/21 (worker +8 tes, adapters +4). **Belum (butuh EPIC-00)**:
-  adapter S3 + rsync/SSH cPanel nyata + subdomain cPanel API (FR-PUB-004b) + wiring worker
+  **200**; rollback ok. Gate 21/21 (worker +8 tes, adapters +4). **Belum**: adapter S3
+  (`@aws-sdk`) & rsync/SSH cPanel nyata + subdomain cPanel API (FR-PUB-004b) + wiring worker
   BullMQ consumer.
-- ⏳ Sisanya (**terblokir kredensial/PO, EPIC-00**): CHN WABA (T-030..033, terblokir T-001
-  verifikasi WABA), **adapter deploy nyata S3+cPanel/SSH** (T-063 real), adapter Prisma preview
-  (butuh desain token), perbandingan GLM (opsional, DeepSeek sudah default); ops (T-070..073),
+- ✅ **Object storage = MinIO self-host DIPUTUSKAN & disediakan** (2026-07-10, ops):
+  service `minio` + `minio-init` (profil compose `storage`) di `docker-compose.yml`, bucket
+  `digimaestro-artifacts` otomatis, kredensial via `MINIO_ROOT_*`; `.env.example` mengarahkan
+  `S3_ENDPOINT=http://minio:9000`. Data di VPS (residensi, ADR-8). **Diverifikasi**: MinIO up →
+  bucket dibuat → **put/list/get object via S3 API sukses**. → sisi S3 T-063 **tak lagi
+  terblokir**; tinggal adapter `@aws-sdk` (kode) + isi `S3_KEY/S3_SECRET` = `MINIO_ROOT_*`.
+- ⏳ Sisanya (**terblokir kredensial/PO**): CHN WABA (T-030..033, terblokir T-001), **deploy
+  cPanel/SSH nyata** (butuh CPANEL_HOST/UAPI token/SSH key — sedang dikumpulkan PO), adapter S3
+  `@aws-sdk` (kode, tak terblokir), adapter Prisma preview (desain token); ops sisa (T-071..073),
   QA (T-080..083, butuh app hidup + TestSprite restart).
 
 ---

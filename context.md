@@ -46,6 +46,11 @@
   cPanel ssh2) + subdomain cPanel API + wiring worker BullMQ; CHN WABA (T-001); QA T-08x
   (app hidup + restart opencode). T-050 sudah final (DeepSeek). Perbandingan GLM opsional.
 - _Default LLM_: DeepSeek (`DIGIMAESTRO_LLM_PROVIDER=deepseek`) per eval T-050 2026-07-09.
+- **Object storage = MinIO self-host** (2026-07-10): service `minio`+`minio-init` di compose
+  (profil `storage`), bucket `digimaestro-artifacts`, kredensial `MINIO_ROOT_*` (=S3_KEY/SECRET),
+  `S3_ENDPOINT=http://minio:9000`. Diverifikasi put/get object via S3 API. Sisi S3 T-063 tak
+  terblokir lagi → tinggal adapter `@aws-sdk` (kode). Sisi cPanel: PO sedang kumpulkan
+  CPANEL_HOST/UAPI token/SSH key (panduan sudah diberikan).
 - **T-050 evaluasi DIJALANKAN 2026-07-09** (API DeepSeek nyata): deepseek pass 90%, quality
   0.85, ~$0.003/20 prompt, ~1.5s → **default = DeepSeek** (`DIGIMAESTRO_LLM_PROVIDER=deepseek`).
   GLM belum diuji (butuh GLM_API_KEY). Key DeepSeek dari PO **ter-ekspos di chat → minta rotasi**;
