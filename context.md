@@ -89,6 +89,13 @@
   penting!, FTPS+TLS verified): deploy v1→v2, clean-delete mirror penuh. **Bug ditemukan E2E &
   diperbaiki**: hapus direktori usang (tambah `removeDir` ke `RemoteDeployClient`). Gate 21/21.
   Sisa cPanel: subdomain UAPI (FR-PUB-004b). _Catatan aman: password cPanel ter-paste di chat → rotasi._
+- **T-063 wiring subdomain→pipeline SELESAI** (PR #40, 2026-07-10): `publishSite`/`rollbackSite`
+  panggil `ensureSubdomainIfConfigured` SEBELUM deploy (bila `deps.subdomain` di-inject → wajib
+  `rootDomain`, docroot selaras `public_html/{slug}`; no-op bila tak di-inject = backward-compat).
+  `PublishDeps.subdomain?` + `PublishInput.rootDomain?` + job data `+rootDomain`. `composition
+  createSubdomain(env)` pilih UAPI bila `CPANEL_UAPI_HOST`+`USER`+(`TOKEN`|`PASSWORD`). Gate 21/21
+  (worker +7 tes). **Pipeline publish lengkap**: build→store→ensureSubdomain→deploy→verify. Sisa
+  T-063: produsen job publish di api (approve→enqueue).
 - **Object storage = MinIO self-host** (2026-07-10): service `minio`+`minio-init` di compose
   (profil `storage`), bucket `digimaestro-artifacts`, kredensial `MINIO_ROOT_*` (=S3_KEY/SECRET),
   `S3_ENDPOINT=http://minio:9000`. Diverifikasi put/get object via S3 API. Sisi S3 T-063 tak

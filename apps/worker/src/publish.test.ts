@@ -89,3 +89,61 @@ describe('rollbackSite (FR-PUB-005)', () => {
     expect(await rollbackSite(deps, { websiteId: 'w1', revisionNumber: 9, slug: 'x' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
   });
 });
+
+describe('publishSite — provisioning subdomain (FR-PUB-004b)', () => {
+  function fakeSubdomain(over: { err?: boolean } = {}) {
+    const calls: Array<{ slug: string; rootDomain: string; docroot: string }> = [];
+    const port = {
+      async ensureSubdomain(inp: { slug: string; rootDomain: string; docroot: string }) {
+        calls.push(inp);
+        if (over.err) return err({ code: 'SUBDOMAIN' as const, message: 'UAPI gagal' });
+        return ok({ subdomain: `${inp.slug}.${inp.rootDomain}`, created: true });
+      },
+    };
+    return { port, calls };
+  }
+
+  it('subdomain di-inject → ensureSubdomain dipanggil SEBELUM deploy (docroot default public_html/slug)', async () => {
+    const sub = fakeSubdomain();
+    let deployedAfterSub = false;
+    const deploy = {
+      async deploy({ target, files }: { target: { slug: string }; files: readonly DeployableFile[] }) {
+        deployedAfterSub = sub.calls.length === 1; // subdomain sudah dipanggil sebelum deploy
+        return ok({ url: `https://${target.slug}.digimaestro.id`, fileCount: files.length });
+      },
+    };
+    const deps: PublishDeps = { artifacts: fakeStore(), deploy, subdomain: sub.port };
+    const res = await publishSite(deps, { ...input, rootDomain: 'digimaestro.id' });
+    expect(res.ok).toBe(true);
+    expect(sub.calls).toEqual([{ slug: 'warung-demo', rootDomain: 'digimaestro.id', docroot: 'public_html/warung-demo' }]);
+    expect(deployedAfterSub).toBe(true);
+  });
+
+  it('subdomain di-inject tanpa rootDomain → err SUBDOMAIN (tak deploy)', async () => {
+    const sub = fakeSubdomain();
+    const deps: PublishDeps = { artifacts: fakeStore(), deploy: fakeDeploy(), subdomain: sub.port };
+    const res = await publishSite(deps, input); // tanpa rootDomain
+    expect(res).toMatchObject({ ok: false, error: { code: 'SUBDOMAIN' } });
+    expect(sub.calls).toHaveLength(0);
+  });
+
+  it('ensureSubdomain gagal → err SUBDOMAIN (tak deploy)', async () => {
+    const sub = fakeSubdomain({ err: true });
+    let deployed = false;
+    const deploy = {
+      async deploy() {
+        deployed = true;
+        return ok({ url: 'x', fileCount: 0 });
+      },
+    };
+    const deps: PublishDeps = { artifacts: fakeStore(), deploy, subdomain: sub.port };
+    const res = await publishSite(deps, { ...input, rootDomain: 'digimaestro.id' });
+    expect(res).toMatchObject({ ok: false, error: { code: 'SUBDOMAIN' } });
+    expect(deployed).toBe(false);
+  });
+
+  it('tanpa subdomain di-inject → dilewati (backward-compatible)', async () => {
+    const deps: PublishDeps = { artifacts: fakeStore(), deploy: fakeDeploy() };
+    expect((await publishSite(deps, input)).ok).toBe(true);
+  });
+});

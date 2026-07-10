@@ -15,6 +15,8 @@ export interface PublishJobData {
   readonly baseUrl: string;
   readonly siteDocument: unknown;
   readonly docroot?: string;
+  // Domain induk subdomain (mis. 'digimaestro.id'); wajib bila provisioning subdomain aktif.
+  readonly rootDomain?: string;
 }
 
 export interface RollbackJobData {
@@ -23,6 +25,7 @@ export interface RollbackJobData {
   readonly revisionNumber: number;
   readonly slug: string;
   readonly docroot?: string;
+  readonly rootDomain?: string;
 }
 
 export type PublishQueueJob = PublishJobData | RollbackJobData;
@@ -39,6 +42,7 @@ export async function processPublishJob(
       revisionNumber: data.revisionNumber,
       slug: data.slug,
       docroot: data.docroot,
+      rootDomain: data.rootDomain,
     });
   }
   return publishSite(deps, {
@@ -48,5 +52,6 @@ export async function processPublishJob(
     baseUrl: data.baseUrl,
     siteDocument: data.siteDocument,
     docroot: data.docroot,
+    rootDomain: data.rootDomain,
   });
 }

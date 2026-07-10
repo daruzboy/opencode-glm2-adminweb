@@ -362,8 +362,17 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   Rumahweb SUKSES** (2026-07-10, Basic auth akun cPanel utama): `addsubdomain` → created:true →
   panggil ulang created:false (idempoten) → cleanup. **Temuan host**: UAPI punya `addsubdomain` tapi
   TAK punya `delsubdomain`/`list_subdomains` (hapus perlu API2 `/json-api/cpanel`) — tak masalah utk
-  publish (hanya butuh buat subdomain). **Belum**: wiring ke pipeline publish (ensureSubdomain
-  sebelum deploy di worker).
+  publish (hanya butuh buat subdomain). Wiring ke pipeline = slice di bawah.
+- 🔧 **T-063 (slice wiring subdomain→pipeline)** ensureSubdomain sebelum deploy (EPIC-06,
+  FR-PUB-004b) — **PR #40, 2026-07-10:** `publishSite`/`rollbackSite` (worker) memanggil
+  `ensureSubdomainIfConfigured` SEBELUM `deploy`: bila `deps.subdomain` di-inject → wajib
+  `input.rootDomain` (else `err SUBDOMAIN`), docroot subdomain diselaraskan dgn docroot deploy
+  (`public_html/{slug}`); no-op bila subdomain tak di-inject (backward-compatible dev lokal-FS).
+  `PublishDeps.subdomain?`, `PublishInput.rootDomain?`, job data `+rootDomain`. `composition.ts`
+  `createSubdomain(env)` pilih `CpanelUapiSubdomain` bila `CPANEL_UAPI_HOST`+`USER`+
+  (`TOKEN`|`PASSWORD`) diisi → disuntik ke `createPublishDeps`. `.env.example` +`CPANEL_UAPI_*`.
+  Gate 21/21 (worker +7 tes: urutan sub→deploy, rootDomain wajib, error→tak deploy, backward-compat,
+  seleksi env). **Pipeline publish kini lengkap**: build→store→**ensureSubdomain**→deploy→verify.
 - ✅ **Object storage = MinIO self-host DIPUTUSKAN & disediakan** (2026-07-10, ops):
   service `minio` + `minio-init` (profil compose `storage`) di `docker-compose.yml`, bucket
   `digimaestro-artifacts` otomatis, kredensial via `MINIO_ROOT_*`; `.env.example` mengarahkan

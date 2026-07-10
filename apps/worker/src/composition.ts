@@ -12,9 +12,10 @@ import {
   S3ArtifactStore,
   createAwsS3ObjectClient,
   createBasicFtpDeployClient,
+  createCpanelUapiSubdomain,
   createSsh2SftpDeployClient,
 } from '@digimaestro/adapters';
-import type { ArtifactStorePort, DeployPort } from '@digimaestro/shared';
+import type { ArtifactStorePort, DeployPort, SubdomainPort } from '@digimaestro/shared';
 import type { ConnectionOptions } from 'bullmq';
 import type { PublishDeps } from './publish.js';
 
@@ -43,6 +44,12 @@ export interface PublishEnv {
   readonly CPANEL_FTP_SECURE?: string;
   readonly CPANEL_FTP_REJECT_UNAUTHORIZED?: string;
   readonly CPANEL_DOCROOT_TEMPLATE?: string;
+  // Subdomain cPanel UAPI (FR-PUB-004b). Bila HOST+USER+(TOKEN|PASSWORD) → SubdomainPort.
+  readonly CPANEL_UAPI_HOST?: string;
+  readonly CPANEL_UAPI_PORT?: string;
+  readonly CPANEL_UAPI_USER?: string;
+  readonly CPANEL_UAPI_TOKEN?: string;
+  readonly CPANEL_UAPI_PASSWORD?: string;
 }
 
 const DEFAULTS = {
@@ -116,11 +123,27 @@ export function createHttpVerify(fetchImpl: typeof fetch = fetch): (url: string)
   };
 }
 
+// Subdomain UAPI bila CPANEL_UAPI_HOST+USER+(TOKEN|PASSWORD) diisi (FR-PUB-004b); else
+// undefined (dilewati oleh publishSite — mis. dev lokal-FS tanpa cPanel).
+export function createSubdomain(env: PublishEnv): SubdomainPort | undefined {
+  if (env.CPANEL_UAPI_HOST && env.CPANEL_UAPI_USER && (env.CPANEL_UAPI_TOKEN || env.CPANEL_UAPI_PASSWORD)) {
+    return createCpanelUapiSubdomain({
+      host: env.CPANEL_UAPI_HOST,
+      port: env.CPANEL_UAPI_PORT ? Number(env.CPANEL_UAPI_PORT) : undefined,
+      username: env.CPANEL_UAPI_USER,
+      apiToken: env.CPANEL_UAPI_TOKEN,
+      password: env.CPANEL_UAPI_PASSWORD,
+    });
+  }
+  return undefined;
+}
+
 export function createPublishDeps(env: PublishEnv = process.env): PublishDeps {
   return {
     artifacts: createArtifactStore(env),
     deploy: createDeploy(env),
     verify: createHttpVerify(),
+    subdomain: createSubdomain(env),
   };
 }
 
