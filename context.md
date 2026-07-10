@@ -71,6 +71,15 @@
   `CPANEL_SFTP_HOST`+`USER` diisi, else lokal-FS. `.env.example` +`CPANEL_SFTP_*`. Gate 21/21
   (adapters +4, worker +1). **E2E ke host nyata MENUNGGU kredensial** (taruh di file scratchpad
   `cpanel.env`, JANGAN commit). Sisa cPanel: subdomain UAPI (FR-PUB-004b).
+- **T-063 deploy cPanel FTP/FTPS SELESAI (kode)** (PR #37, 2026-07-10, stacked di atas #36):
+  temuan — host shared PO (Rumahweb `202.10.43.56`) **tak buka SSH/SFTP** (hanya FTP 21 + cPanel
+  2083) → **FTPS dipilih PO**. Orkestrasi deploy diekstrak ke `remote-deploy.ts` (`deployToRemote`
+  + `RemoteDeployClient`, dipakai bersama SFTP & FTP). `cpanel-ftp-deploy.ts` `CpanelFtpDeploy` +
+  `basic-ftp-client.ts` `createBasicFtpDeployClient()` (satu-satunya impor vendor FTP; FTPS
+  eksplisit, path absolut, list rekursif). Dep `basic-ftp ^6.0.1`. `worker createDeploy()` prioritas
+  SFTP→FTP→lokal. Gate 21/21. **E2E Rumahweb: TLS/hostname cocok tapi login 530 (user `digs2416`
+  ditolak)** → **BUTUH kredensial FTP valid dari PO** (buat via cPanel → FTP Accounts). Sisa: E2E
+  sukses + subdomain UAPI. _Catatan aman: password cPanel ter-paste di chat → minta rotasi._
 - **Object storage = MinIO self-host** (2026-07-10): service `minio`+`minio-init` di compose
   (profil `storage`), bucket `digimaestro-artifacts`, kredensial `MINIO_ROOT_*` (=S3_KEY/SECRET),
   `S3_ENDPOINT=http://minio:9000`. Diverifikasi put/get object via S3 API. Sisi S3 T-063 tak

@@ -385,9 +385,23 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   Dep `ssh2-sftp-client ^12.1.1` (+`@types`), native `ssh2`/`cpu-features` di-`false` (crypto Node
   murni). `apps/worker/src/composition.ts createDeploy()` pilih cPanel bila `CPANEL_SFTP_HOST`+
   `USER` diisi (key via `CPANEL_SFTP_KEY_PATH`), else lokal-FS. `.env.example` +`CPANEL_SFTP_*`.
-  Gate 21/21 (adapters +4, worker +1). **E2E ke cPanel nyata**: menunggu kredensial dijalankan
-  (adapter unit-tested; verifikasi jaringan menyusul saat env diisi). **Belum**: subdomain cPanel
-  UAPI (FR-PUB-004b) + produsen job api.
+  Gate 21/21 (adapters +4, worker +1). **E2E SFTP tertunda**: host PO (Rumahweb `202.10.43.56`)
+  **tak mengekspos SSH/SFTP** (port 22 & alternatif tertutup; hanya 2083 cPanel + 21 FTP terbuka)
+  → adapter SFTP valid utk host SSH lain, tapi tak bisa E2E ke host ini. **Belum**: subdomain
+  cPanel UAPI (FR-PUB-004b) + produsen job api.
+- 🔧 **T-063 (slice cPanel deploy FTP/FTPS)** Fallback deploy utk host tanpa SSH (EPIC-06,
+  FR-PUB-004/009; SRS §1.3 "fallback FTP") — **PR #37, 2026-07-10 (stacked di atas #36):**
+  temuan: host shared PO (Rumahweb) hanya buka FTP(21)+cPanel(2083), SSH tertutup → **FTPS dipilih
+  PO 2026-07-10**. Orkestrasi deploy **diekstrak** ke `remote-deploy.ts` (`deployToRemote` +
+  `RemoteDeployClient`, dipakai bersama SFTP & FTP — DRY). `cpanel-ftp-deploy.ts` `CpanelFtpDeploy`
+  (impl `DeployPort` via orkestrasi bersama). `basic-ftp-client.ts` `createBasicFtpDeployClient()`
+  = **satu-satunya** impor vendor FTP (SOLID-D); **FTPS eksplisit** (AUTH TLS) default, path
+  absolut (bebas CWD), list rekursif, `rejectUnauthorized` konfigurasi. Dep `basic-ftp ^6.0.1`.
+  `createDeploy()` prioritas: SFTP → FTP (`CPANEL_FTP_HOST`) → lokal-FS. `.env.example`
+  +`CPANEL_FTP_*`. Gate 21/21 (adapters +2 FTP, worker +2 seleksi). **E2E ke Rumahweb**: FTPS+TLS
+  **terverifikasi cocok** (hostname `cikapundung.iixcp.rumahweb.net`, cert valid), tapi **login
+  `530` (user `digs2416` ditolak)** → **butuh kredensial FTP valid dari PO** (cPanel FTP Accounts).
+  **Belum**: E2E deploy sukses (nunggu kredensial FTP betul) + subdomain UAPI.
 - ⏳ Sisanya (**terblokir kredensial/PO**): CHN WABA (T-030..033, terblokir T-001), subdomain
   cPanel UAPI (FR-PUB-004b), adapter Prisma preview (desain token); ops sisa (T-071..073), QA
   (T-080..083, butuh app hidup + TestSprite restart). _(Adapter S3 + deploy cPanel SFTP sudah
@@ -405,9 +419,10 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
 - **Harga paket & kuota job AI** — finalisasi sebelum Fase 1 (input: COGS dari Fase 0).
 - **Kebijakan trial** — preview-gratis-lalu-bayar vs bayar-depan (rekomendasi: preview gratis).
 - **Provider image generation & stock photo** — dievaluasi Fase 0 (DeepSeek tak punya image-gen).
-- **Shared hosting deploy transport** — **SFTP over SSH DIPILIH** (PO 2026-07-10; `ssh2-sftp-client`,
-  deploy bersih upload+delete). rsync/SSH & FTP fallback ditolak. Adapter `CpanelSftpDeploy` (T-063
-  slice cPanel). E2E ke host nyata menyusul saat kredensial diisi.
+- **Shared hosting deploy transport** — **SFTP DIPILIH** utk host ber-SSH; **FTPS = fallback aktif**
+  utk host tanpa SSH (PO 2026-07-10). Temuan: host shared PO (Rumahweb `202.10.43.56`) **tak buka
+  SSH** (hanya FTP 21 + cPanel 2083) → dipakai `CpanelFtpDeploy` (FTPS). Adapter SFTP tetap ada utk
+  host lain. **E2E FTP tertunda: kredensial `digs2416` ditolak 530** — PO perlu sediakan FTP creds valid.
 
 ---
 

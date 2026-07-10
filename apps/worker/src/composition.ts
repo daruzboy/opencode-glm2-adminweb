@@ -1,15 +1,17 @@
 // Composition root worker (T-063, SOLID-D): pilih adapter konkret dari env & suntik ke
 // use case publish. ArtifactStore = S3 bila S3_KEY/S3_SECRET diisi (incl. MinIO via
-// S3_ENDPOINT), else lokal-FS (dev). Deploy = cPanel SFTP bila CPANEL_SFTP_HOST diisi, else
-// lokal-FS docroot (dev). Verify = HTTP fetch (FR-PUB-004).
+// S3_ENDPOINT), else lokal-FS (dev). Deploy: SFTP bila CPANEL_SFTP_HOST diisi → FTPS bila
+// CPANEL_FTP_HOST diisi (host tanpa SSH) → else lokal-FS docroot (dev). Verify = HTTP fetch.
 
 import { readFileSync } from 'node:fs';
 import {
+  CpanelFtpDeploy,
   CpanelSftpDeploy,
   LocalArtifactStore,
   LocalFilesystemDeploy,
   S3ArtifactStore,
   createAwsS3ObjectClient,
+  createBasicFtpDeployClient,
   createSsh2SftpDeployClient,
 } from '@digimaestro/adapters';
 import type { ArtifactStorePort, DeployPort } from '@digimaestro/shared';
@@ -26,13 +28,20 @@ export interface PublishEnv {
   readonly PUBLISH_DOCROOT_BASE?: string;
   readonly PUBLISH_BASE_DOMAIN?: string;
   readonly REDIS_URL?: string;
-  // Deploy cPanel SFTP (T-063). Bila HOST+USER diisi → CpanelSftpDeploy; else lokal-FS.
+  // Deploy cPanel SFTP (T-063). Bila HOST+USER diisi → CpanelSftpDeploy.
   readonly CPANEL_SFTP_HOST?: string;
   readonly CPANEL_SFTP_PORT?: string;
   readonly CPANEL_SFTP_USER?: string;
   readonly CPANEL_SFTP_PASSWORD?: string;
   readonly CPANEL_SFTP_KEY_PATH?: string;
   readonly CPANEL_SFTP_PASSPHRASE?: string;
+  // Deploy cPanel FTP/FTPS (fallback host tanpa SSH). Bila HOST+USER diisi → CpanelFtpDeploy.
+  readonly CPANEL_FTP_HOST?: string;
+  readonly CPANEL_FTP_PORT?: string;
+  readonly CPANEL_FTP_USER?: string;
+  readonly CPANEL_FTP_PASSWORD?: string;
+  readonly CPANEL_FTP_SECURE?: string;
+  readonly CPANEL_FTP_REJECT_UNAUTHORIZED?: string;
   readonly CPANEL_DOCROOT_TEMPLATE?: string;
 }
 
@@ -58,10 +67,12 @@ export function createArtifactStore(env: PublishEnv): ArtifactStorePort {
   return new LocalArtifactStore(env.PUBLISH_ARTIFACT_DIR ?? DEFAULTS.artifactDir);
 }
 
-// Deploy cPanel SFTP bila CPANEL_SFTP_HOST+USER diisi (produksi shared hosting, FR-PUB-004);
-// else lokal-FS docroot (dev/staging). Kredensial: password ATAU private key (CPANEL_SFTP_KEY_PATH).
+// Deploy: SFTP bila CPANEL_SFTP_HOST+USER (produksi, aman); FTPS bila CPANEL_FTP_HOST+USER
+// (fallback host tanpa SSH, mis. shared hosting); else lokal-FS docroot (dev/staging).
 export function createDeploy(env: PublishEnv): DeployPort {
   const baseDomain = env.PUBLISH_BASE_DOMAIN ?? DEFAULTS.baseDomain;
+  const docrootTemplate = env.CPANEL_DOCROOT_TEMPLATE;
+
   if (env.CPANEL_SFTP_HOST && env.CPANEL_SFTP_USER) {
     const client = createSsh2SftpDeployClient({
       host: env.CPANEL_SFTP_HOST,
@@ -71,8 +82,21 @@ export function createDeploy(env: PublishEnv): DeployPort {
       privateKey: env.CPANEL_SFTP_KEY_PATH ? readFileSync(env.CPANEL_SFTP_KEY_PATH) : undefined,
       passphrase: env.CPANEL_SFTP_PASSPHRASE,
     });
-    return new CpanelSftpDeploy(client, { baseDomain, docrootTemplate: env.CPANEL_DOCROOT_TEMPLATE });
+    return new CpanelSftpDeploy(client, { baseDomain, docrootTemplate });
   }
+
+  if (env.CPANEL_FTP_HOST && env.CPANEL_FTP_USER) {
+    const client = createBasicFtpDeployClient({
+      host: env.CPANEL_FTP_HOST,
+      port: env.CPANEL_FTP_PORT ? Number(env.CPANEL_FTP_PORT) : undefined,
+      user: env.CPANEL_FTP_USER,
+      password: env.CPANEL_FTP_PASSWORD ?? '',
+      secure: env.CPANEL_FTP_SECURE ? env.CPANEL_FTP_SECURE !== 'false' : undefined,
+      rejectUnauthorized: env.CPANEL_FTP_REJECT_UNAUTHORIZED ? env.CPANEL_FTP_REJECT_UNAUTHORIZED !== 'false' : undefined,
+    });
+    return new CpanelFtpDeploy(client, { baseDomain, docrootTemplate });
+  }
+
   return new LocalFilesystemDeploy({
     docrootBase: env.PUBLISH_DOCROOT_BASE ?? DEFAULTS.docrootBase,
     baseDomain,
