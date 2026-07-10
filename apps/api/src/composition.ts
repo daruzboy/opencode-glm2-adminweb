@@ -28,10 +28,20 @@ import {
   createAgentToolRegistry,
   createSitebuilderApplyPatchTool,
   createSitebuilderGetSiteOutlineTool,
+  type BuildDeps,
   type ConversationReplier,
   type SitebuilderToolPort,
 } from '@digimaestro/core';
-import type { AuthPort, ConversationRepository, LlmAgentResponse, LlmJsonPort, LlmUsageLoggerPort } from '@digimaestro/shared';
+import { siteDocumentSchema } from '@digimaestro/sites-kit';
+import type {
+  AgentToolDefinition,
+  AuthPort,
+  ConversationRepository,
+  LlmAgentResponse,
+  LlmJsonPort,
+  LlmUsageLoggerPort,
+} from '@digimaestro/shared';
+import { createSitebuilderBuildSiteTool } from './agent/build-site-tool.js';
 import type { ChatDeps } from './chat/handle-incoming.js';
 import type { PreviewDeps } from './preview/handle-preview.js';
 import type { PublishRequestDeps } from './publish/handle-publish.js';
@@ -168,16 +178,18 @@ function deterministicAgentResponder(): LlmAgentResponse {
 
 // T-053c: Replier produksi dengan adapter HTTP nyata (DeepSeek/GLM). Dipakai bila
 // API key tersedia. Error adapter → fallback stubReply di handle-incoming (chat tak mati).
-// Registry tool sitebuilder untuk agent produksi (T-053d): daftarkan
+// Registry tool sitebuilder untuk agent produksi (T-053d/T-053e): daftarkan
 // `sitebuilder_get_site_outline` + `sitebuilder_apply_patch` (T-051) di atas
-// `SitebuilderToolPort` (adapter T-053b). Diekspor + bergantung port → teruji offline
-// dgn fake port (tanpa Prisma/jaringan).
+// `SitebuilderToolPort` (adapter T-053b) + `extraTools` (mis. `sitebuilder_build_site`,
+// T-053e). Diekspor + bergantung port → teruji offline dgn fake port (tanpa Prisma/jaringan).
 export function createSitebuilderToolRegistry(
   port: SitebuilderToolPort,
+  extraTools: readonly AgentToolDefinition<unknown, unknown>[] = [],
 ): ReturnType<typeof createAgentToolRegistry> {
   return createAgentToolRegistry([
     createSitebuilderGetSiteOutlineTool(port),
     createSitebuilderApplyPatchTool(port),
+    ...extraTools,
   ]);
 }
 
@@ -206,17 +218,26 @@ function createProductionAgentReplier(
 
   const websites = new WebsiteRepositoryPrisma(prisma.website as unknown as WebsiteDelegate);
   const revisions = new RevisionRepositoryPrisma(prisma as unknown as RevisionDelegate);
+  const jsonLlm = createLlmJsonPort({ env });
+
+  // T-053e: schema Site Document NYATA (sites-kit) → applyPatch & build memvalidasi output
+  // LLM + self-repair (bukan lagi PERMISSIVE). Zod safeParse kompatibel struktural LlmJsonSchema.
   const sitebuilder = new SitebuilderToolAdapter({
     websites,
     revisions,
-    llm: createLlmJsonPort({ env }),
+    llm: jsonLlm,
+    siteDocSchema: siteDocumentSchema,
   });
+
+  // T-053e: tool build situs baru dari brief (buildSiteFromBrief) → menutup jalur situs baru.
+  const buildDeps: BuildDeps = { llm: jsonLlm, revisions, websites, siteDocSchema: siteDocumentSchema };
+  const buildTool = createSitebuilderBuildSiteTool(buildDeps);
 
   return createAgentReplier({
     router: { conversations },
     loop: {
       llm: agentLlm,
-      tools: createSitebuilderToolRegistry(sitebuilder),
+      tools: createSitebuilderToolRegistry(sitebuilder, [buildTool]),
     },
   });
 }

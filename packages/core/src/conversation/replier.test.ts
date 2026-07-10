@@ -55,10 +55,10 @@ function fakeConversationRepo(overrides: Partial<ConversationRepository> = {}): 
 }
 
 describe('composeAgentPlan (RouterAction → rencana agent)', () => {
-  it('START_INTERVIEW → task interview, tanpa tool', () => {
+  it('START_INTERVIEW → task interview, scope sitebuilder (T-053e: build dari brief)', () => {
     const plan = composeAgentPlan('START_INTERVIEW', 'ONBOARDING', 'mau buat web');
     expect(plan.task).toBe('interview');
-    expect(plan.scopes).toEqual([]);
+    expect(plan.scopes).toEqual(['sitebuilder']);
     expect(plan.system).toBe(AGENT_SYSTEM_PROMPTS.interview);
   });
 
