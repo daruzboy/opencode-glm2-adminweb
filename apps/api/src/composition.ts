@@ -1,5 +1,6 @@
 import {
   ConversationRepositoryPrisma,
+  JwtAuthPort,
   LlmUsageLoggerPrisma,
   MessageRepositoryPrisma,
   OpenAiCompatibleAgentAdapter,
@@ -18,7 +19,7 @@ import {
   type RuntimeFetch,
 } from '@digimaestro/adapters';
 import { createAgentReplier, createAgentToolRegistry, type ConversationReplier } from '@digimaestro/core';
-import type { ConversationRepository, LlmAgentResponse, LlmJsonPort, LlmUsageLoggerPort } from '@digimaestro/shared';
+import type { AuthPort, ConversationRepository, LlmAgentResponse, LlmJsonPort, LlmUsageLoggerPort } from '@digimaestro/shared';
 import type { ChatDeps } from './chat/handle-incoming.js';
 import type { PreviewDeps } from './preview/handle-preview.js';
 import type { PublishRequestDeps } from './publish/handle-publish.js';
@@ -210,4 +211,20 @@ function createPrismaLlmUsageLogger(): LlmUsageLoggerPort {
 
 function parseLlmProvider(value: string | undefined): LlmProviderName {
   return value === 'glm' ? 'glm' : 'deepseek';
+}
+
+// ── Auth (T-002auth) ──────────────────────────────────────────────────────────
+
+export interface AuthDeps {
+  readonly auth: AuthPort;
+  readonly allowHeaderFallback: boolean;
+}
+
+export function createAuthDeps(env: NodeJS.ProcessEnv = process.env): AuthDeps | undefined {
+  const secret = env.JWT_SECRET;
+  if (!secret) return undefined;
+  return {
+    auth: new JwtAuthPort({ secret }),
+    allowHeaderFallback: env.AUTH_DISABLED === '1',
+  };
 }

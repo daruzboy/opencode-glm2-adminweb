@@ -67,3 +67,4 @@ export * from './publish/bullmq-publish-queue.js';
 export * from './publish/bullmq-queue-factory.js';
 export * from './publish/publish-job-options.js';
 export * from './builder/sitebuilder-tool-adapter.js';
+export * from './auth/jwt-auth.js';
