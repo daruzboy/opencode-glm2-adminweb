@@ -103,6 +103,12 @@
   `buildServer` `publish` opsional (aktif bila DATABASE_URL+REDIS_URL). Dep bullmq di adapters. Gate
   21/21 (adapters +7, api +8). **E2E produsen↔konsumen (Redis nyata) SUKSES**. **Jalur approve→publish
   tersambung penuh.** Sisa produksi: load siteDoc real path sudah dari DB; tinggal auth (T-002).
+- **T-063 hardening pipeline SELESAI (kode)** (stacked di atas #41, 2026-07-10): job publish kini
+  tahan gangguan transien. Retry: `defaultPublishJobOptions()` (murni) → `defaultJobOptions` Queue =
+  `attempts:3` + backoff eksponensial 5s, `removeOnComplete:50`, `removeOnFail:true` (dead-letter
+  audit di failed-set). Observability: `publish-worker` logger terinjeksi + log terstruktur start/
+  sukses(durasi)/gagal, listener `failed` menandai **DEAD-LETTER** saat percobaan habis. Gate 21/21
+  (worker +5, adapters +3 tes murni). Stacked-PR: base = branch #41; retarget ke main saat #41 merge.
 - **Object storage = MinIO self-host** (2026-07-10): service `minio`+`minio-init` di compose
   (profil `storage`), bucket `digimaestro-artifacts`, kredensial `MINIO_ROOT_*` (=S3_KEY/SECRET),
   `S3_ENDPOINT=http://minio:9000`. Diverifikasi put/get object via S3 API. Sisi S3 T-063 tak
