@@ -4,7 +4,9 @@ import {
   createArtifactStore,
   createDeploy,
   createHttpVerify,
+  createPublishDeps,
   createRedisConnection,
+  createSubdomain,
   type PublishEnv,
 } from './composition.js';
 
@@ -71,5 +73,16 @@ describe('worker composition (pilih adapter dari env)', () => {
     const conn = createRedisConnection({}) as { host: string; port: number };
     expect(conn.host).toBe('localhost');
     expect(conn.port).toBe(6379);
+  });
+
+  it('createSubdomain: UAPI env lengkap (password) → SubdomainPort; kurang → undefined', () => {
+    expect(createSubdomain({ CPANEL_UAPI_HOST: 'h', CPANEL_UAPI_USER: 'u', CPANEL_UAPI_PASSWORD: 'p' })).toBeDefined();
+    expect(createSubdomain({ CPANEL_UAPI_HOST: 'h', CPANEL_UAPI_USER: 'u', CPANEL_UAPI_TOKEN: 't' })).toBeDefined();
+    expect(createSubdomain({ CPANEL_UAPI_HOST: 'h', CPANEL_UAPI_USER: 'u' })).toBeUndefined(); // tanpa token/pass
+    expect(createSubdomain({})).toBeUndefined();
+  });
+
+  it('createPublishDeps: tanpa env cPanel → subdomain undefined (dilewati)', () => {
+    expect(createPublishDeps({}).subdomain).toBeUndefined();
   });
 });
