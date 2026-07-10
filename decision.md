@@ -12,7 +12,7 @@
 - Lokal: `C:\Users\daruzboy\Documents\A_PROJECT\02_digimaestro\glm2-adminweb`
 - Produk: **digimaestro.id** (platform website builder chatbot & agentic AI untuk UMKM)
 - Pemilik/PO: Darusman · Model coding agent: GLM 5.2 · QA: TestSprite
-- Terakhir diperbarui: 2026-07-09
+- Terakhir diperbarui: 2026-07-10
 
 ---
 
@@ -326,8 +326,17 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   halaman `noindex`) + `registerPreviewRoutes` (header `X-Robots-Tag: noindex`). `buildServer`
   menerima `preview` opsional (diregistrasi bila disuntik). **Diverifikasi** via Fastify
   `inject`: token benar → 200 HTML noindex, token salah → 404. Gate 21/21 (api 20 tes, +7).
-  **Belum**: adapter Prisma `PreviewPort` (Revision.siteDoc + **desain token preview** — domain
-  publish) + wiring composition root; menyusul bersama T-063.
+  **Adapter Prisma + wiring SELESAI** (PR #…, 2026-07-10): `packages/adapters/src/prisma/
+  preview-token.ts` — **token stateless HMAC-SHA256(PREVIEW_TOKEN_SECRET, revisionId)**
+  (keputusan desain token, §3): `createPreviewToken`/`verifyPreviewToken` (timing-safe,
+  tanpa migrasi/kolom DB; revoke = rotasi secret). `preview-port-prisma.ts` `PreviewPortPrisma`
+  (impl `PreviewPort` via delegate sempit `RevisionPreviewDelegate.findUnique`; verifikasi token
+  DULU → baru muat `Revision.siteDoc`; revisi tak ada/token salah = keduanya null; Revision tak
+  ter-scope tenant langsung → aman thd `tenantGuardExtension`). `apps/api/src/composition.ts`
+  `createPreviewDeps()` (env `PREVIEW_TOKEN_SECRET`) + `index.ts start()` mendaftarkan rute
+  preview hanya bila secret diisi. `.env.example` +`PREVIEW_TOKEN_SECRET`. **Diverifikasi
+  end-to-end** (HTTP inject → route → adapter → HMAC verify → render): token HMAC valid → 200
+  HTML noindex ter-render, token salah → 404, revisi tak ada → 404. Gate 21/21 (adapters +6 tes).
 - 🔧 **T-063 (slice publish)** Pipeline publish + rollback (EPIC-06, FR-PUB-004/005/009;
   SRS §8) — **ter-merge ke `main` (PR #…, 2026-07-09):** Port di shared
   (`ArtifactStorePort`, `DeployPort`, `DeployableFile`, `DeployTarget`, `PublishError`).
@@ -339,32 +348,89 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   dev/staging; **S3 (@aws-sdk) + rsync/SSH cPanel (ssh2) menyusul, kontrak Port sama
   (FR-PUB-009)**. worker+api kini depend sites-kit. **Diverifikasi end-to-end**: publish
   Site Document → docroot → serve HTTP → `GET / , /menu/ , /sitemap.xml , /robots.txt` semua
-  **200**; rollback ok. Gate 21/21 (worker +8 tes, adapters +4). **Belum**: adapter S3
-  (`@aws-sdk`) & rsync/SSH cPanel nyata + subdomain cPanel API (FR-PUB-004b) + wiring worker
-  BullMQ consumer.
+  **200**; rollback ok. Gate 21/21 (worker +8 tes, adapters +4). _(Adapter S3 = slice S3/PR #33;
+  wiring worker BullMQ = slice BullMQ/PR #35 — lihat di bawah. Deploy cPanel SFTP+FTPS = slice
+  cPanel deploy; subdomain UAPI = slice di bawah.)_
 - 🔧 **T-063 (slice subdomain UAPI)** Provisioning subdomain cPanel (EPIC-06, FR-PUB-004b) —
-  **PR #38, 2026-07-10 (off main):** Port `SubdomainPort` (shared/publish.ts; `ensureSubdomain`
+  **PR #38, 2026-07-10:** Port `SubdomainPort` (shared/publish.ts; `ensureSubdomain`
   → `SubdomainResult{subdomain,created}`, idempoten; +kode error `SUBDOMAIN`). Adapter
   `packages/adapters/src/publish/cpanel-uapi-subdomain.ts` `createCpanelUapiSubdomain()` — panggil
-  UAPI `SubDomain::addsubdomain` (auth **cPanel API token**, header `Authorization: cpanel
-  user:token`, panel :2083), **fetch di-inject** (offline-testable). Idempoten: errors "already
-  exists" → `ok(created:false)`. **Auth: token cPanel ATAU Basic auth password** (fallback host
-  tanpa menu API token, mis. Rumahweb). Gate 21/21 (adapters +8 tes: sukses/idempoten/error/HTTP/
-  JSON/throw/basic-auth/no-cred). **E2E ke cPanel Rumahweb SUKSES** (2026-07-10, Basic auth
-  `digs2416`): `addsubdomain` → created:true → panggil ulang created:false (idempoten) → cleanup.
-  **Temuan host**: UAPI punya `addsubdomain` tapi TAK punya `delsubdomain`/`list_subdomains`
-  (hapus perlu API2 `/json-api/cpanel`) — tak masalah utk publish (hanya butuh buat subdomain).
-  **Belum**: wiring ke pipeline publish (ensureSubdomain sebelum deploy di worker).
+  UAPI `SubDomain::addsubdomain` (header `Authorization: cpanel user:token`, panel :2083), **fetch
+  di-inject** (offline-testable). Idempoten: errors "already exists" → `ok(created:false)`. **Auth:
+  token cPanel ATAU Basic auth password** (fallback host tanpa menu API token, mis. Rumahweb). Gate
+  21/21 (adapters +8 tes: sukses/idempoten/error/HTTP/JSON/throw/basic-auth/no-cred). **E2E ke cPanel
+  Rumahweb SUKSES** (2026-07-10, Basic auth akun cPanel utama): `addsubdomain` → created:true →
+  panggil ulang created:false (idempoten) → cleanup. **Temuan host**: UAPI punya `addsubdomain` tapi
+  TAK punya `delsubdomain`/`list_subdomains` (hapus perlu API2 `/json-api/cpanel`) — tak masalah utk
+  publish (hanya butuh buat subdomain). **Belum**: wiring ke pipeline publish (ensureSubdomain
+  sebelum deploy di worker).
 - ✅ **Object storage = MinIO self-host DIPUTUSKAN & disediakan** (2026-07-10, ops):
   service `minio` + `minio-init` (profil compose `storage`) di `docker-compose.yml`, bucket
   `digimaestro-artifacts` otomatis, kredensial via `MINIO_ROOT_*`; `.env.example` mengarahkan
   `S3_ENDPOINT=http://minio:9000`. Data di VPS (residensi, ADR-8). **Diverifikasi**: MinIO up →
   bucket dibuat → **put/list/get object via S3 API sukses**. → sisi S3 T-063 **tak lagi
   terblokir**; tinggal adapter `@aws-sdk` (kode) + isi `S3_KEY/S3_SECRET` = `MINIO_ROOT_*`.
-- ⏳ Sisanya (**terblokir kredensial/PO**): CHN WABA (T-030..033, terblokir T-001), **deploy
-  cPanel/SSH nyata** (butuh CPANEL_HOST/UAPI token/SSH key — sedang dikumpulkan PO), adapter S3
-  `@aws-sdk` (kode, tak terblokir), adapter Prisma preview (desain token); ops sisa (T-071..073),
-  QA (T-080..083, butuh app hidup + TestSprite restart).
+- 🔧 **T-063 (slice S3)** Adapter `ArtifactStorePort` di object storage S3-compatible
+  (EPIC-06, FR-PUB-009) — **PR #33, 2026-07-10:** `packages/adapters/src/publish/
+  s3-artifact-store.ts` `S3ArtifactStore` bergantung interface **sempit** `S3ObjectClient`
+  (bukan `@aws-sdk` langsung) → offline-testable dgn fake in-memory; kontrak Port identik
+  `LocalArtifactStore`. Simpan tiap file + `_manifest.json` sbg objek terpisah (key
+  `/`-separator S3) → `retrieve` utuh utk rollback (FR-PUB-005); artifact rusak (objek
+  hilang) → `err STORE`. `aws-s3-client.ts` `createAwsS3ObjectClient()` = **satu-satunya**
+  file impor vendor SDK S3 (SOLID-D); dukung **MinIO** via `endpoint`+`forcePathStyle`
+  (ADR-8), `NoSuchKey`/404 → `null`. Dep `@aws-sdk/client-s3 ^3.1083.0`. **Diverifikasi
+  end-to-end melawan MinIO nyata** (jalur produksi `createAwsS3ObjectClient` →
+  `S3ArtifactStore`): store 4 file + manifest → objek mendarat di bucket → retrieve utuh
+  (contentType terjaga) → key absen = `null`. Gate 21/21 (adapters 57 tes, +4 S3).
+- 🔧 **T-063 (slice BullMQ consumer)** Wiring worker antrean `publish` (EPIC-06, ADR-2;
+  SRS §3.2) — **PR #35, 2026-07-10 (stacked di atas PR #33):** `apps/worker/src/publish-job.ts`
+  `processPublishJob` (dispatch **murni** offline-testable atas union job `publish`/`rollback`
+  → `publishSite`/`rollbackSite`) + `PUBLISH_QUEUE`. `publish-worker.ts` `startPublishWorker`
+  (wrapper **tipis** BullMQ `Worker`; job gagal → throw agar retry). `composition.ts`
+  `createPublishDeps(env)` pilih adapter dari env: **S3ArtifactStore bila `S3_KEY/S3_SECRET`
+  diisi** (incl. MinIO), else `LocalArtifactStore`; deploy = lokal-FS (cPanel menyusul); verify
+  = HTTP fetch (FR-PUB-004). `createRedisConnection` parse `REDIS_URL`. `runWorker()` kini
+  memulai consumer + shutdown rapi (`worker.close()`). Dep `bullmq ^5.79.3` (native accel
+  `msgpackr-extract` di-`false` di workspace, fallback JS). **Diverifikasi end-to-end** (Redis +
+  MinIO nyata): enqueue job `publish` → consume → build → **store ke MinIO** → deploy docroot →
+  verify → job completed; artifact retrievable dari S3. Gate 21/21 (worker +10 tes). **Belum**:
+  produsen job di api (approve→enqueue).
+- 🔧 **T-063 (slice cPanel deploy)** Adapter `DeployPort` ke shared hosting cPanel via SFTP/SSH
+  (EPIC-06, FR-PUB-004/009; SRS §1.3) — **PR #36, 2026-07-10 (stacked di atas #35):**
+  **transport = SFTP over SSH** (dipilih PO 2026-07-10; rsync/FTP ditolak). `packages/adapters/
+  src/publish/cpanel-sftp-deploy.ts` `CpanelSftpDeploy` — orkestrasi **murni** atas interface
+  **sempit** `SftpDeployClient` (offline-testable); **deploy bersih** ala rsync --delete (upload
+  rilis baru + hapus file usang, incl. nested); docroot per subdomain via template
+  `public_html/{slug}` (atau `target.docroot`); URL = `https://<slug>.<baseDomain>`; gagal →
+  `err DEPLOY` + tutup koneksi. `ssh2-sftp-client.ts` `createSsh2SftpDeployClient()` =
+  **satu-satunya** file impor vendor SDK SFTP (SOLID-D); auth password/private-key; list rekursif.
+  Dep `ssh2-sftp-client ^12.1.1` (+`@types`), native `ssh2`/`cpu-features` di-`false` (crypto Node
+  murni). `apps/worker/src/composition.ts createDeploy()` pilih cPanel bila `CPANEL_SFTP_HOST`+
+  `USER` diisi (key via `CPANEL_SFTP_KEY_PATH`), else lokal-FS. `.env.example` +`CPANEL_SFTP_*`.
+  Gate 21/21 (adapters +4, worker +1). **E2E SFTP tertunda**: host PO (Rumahweb (host di catatan lokal))
+  **tak mengekspos SSH/SFTP** (port 22 & alternatif tertutup; hanya 2083 cPanel + 21 FTP terbuka)
+  → adapter SFTP valid utk host SSH lain, tapi tak bisa E2E ke host ini. **Belum**: subdomain
+  cPanel UAPI (FR-PUB-004b) + produsen job api.
+- 🔧 **T-063 (slice cPanel deploy FTP/FTPS)** Fallback deploy utk host tanpa SSH (EPIC-06,
+  FR-PUB-004/009; SRS §1.3 "fallback FTP") — **PR #37, 2026-07-10 (stacked di atas #36):**
+  temuan: host shared PO (Rumahweb) hanya buka FTP(21)+cPanel(2083), SSH tertutup → **FTPS dipilih
+  PO 2026-07-10**. Orkestrasi deploy **diekstrak** ke `remote-deploy.ts` (`deployToRemote` +
+  `RemoteDeployClient`, dipakai bersama SFTP & FTP — DRY). `cpanel-ftp-deploy.ts` `CpanelFtpDeploy`
+  (impl `DeployPort` via orkestrasi bersama). `basic-ftp-client.ts` `createBasicFtpDeployClient()`
+  = **satu-satunya** impor vendor FTP (SOLID-D); **FTPS eksplisit** (AUTH TLS) default, path
+  absolut (bebas CWD), list rekursif, `rejectUnauthorized` konfigurasi. Dep `basic-ftp ^6.0.1`.
+  `createDeploy()` prioritas: SFTP → FTP (`CPANEL_FTP_HOST`) → lokal-FS. `.env.example`
+  +`CPANEL_FTP_*`. **E2E ke Rumahweb SUKSES** (2026-07-10, FTPS+TLS verified, akun FTP
+  akun FTP khusus (casing username penting)): deploy v1 (3 file) → v2 (1 file) →
+  listing akhir hanya `index.html` (robots.txt **&** dir `sub/` terhapus). **Bug ditemukan E2E &
+  diperbaiki**: clean-delete tak menghapus direktori yang jadi kosong → tambah `removeDir` ke
+  `RemoteDeployClient` + orkestrasi hapus **direktori usang** (mirror penuh, terdalam dulu);
+  impl `sftp.rmdir(_,true)` & `ftp.removeDir`. Gate 21/21 (adapters +2 FTP incl. assert removeDir,
+  worker +2). **Belum**: subdomain cPanel UAPI (FR-PUB-004b) + produsen job api.
+- ⏳ Sisanya (**terblokir kredensial/PO**): CHN WABA (T-030..033, terblokir T-001), subdomain
+  cPanel UAPI (FR-PUB-004b); ops sisa (T-071..073), QA (T-080..083, butuh app hidup + TestSprite
+  restart). _(Adapter S3 + deploy cPanel SFTP + Prisma preview/token HMAC sudah dibuat — lihat
+  slice S3, cPanel deploy, & T-064.)_
 
 ---
 
@@ -378,7 +444,11 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
 - **Harga paket & kuota job AI** — finalisasi sebelum Fase 1 (input: COGS dari Fase 0).
 - **Kebijakan trial** — preview-gratis-lalu-bayar vs bayar-depan (rekomendasi: preview gratis).
 - **Provider image generation & stock photo** — dievaluasi Fase 0 (DeepSeek tak punya image-gen).
-- **Shared hosting: rsync/SSH vs fallback FTP** — dibuktikan minggu pertama (T-002).
+- **Shared hosting deploy transport** — **SFTP DIPILIH** utk host ber-SSH; **FTPS = fallback aktif**
+  utk host tanpa SSH (PO 2026-07-10). Temuan: host shared PO (Rumahweb (host di catatan lokal)) **tak buka
+  SSH** (hanya FTP 21 + cPanel 2083) → dipakai `CpanelFtpDeploy` (FTPS). Adapter SFTP tetap ada utk
+  host lain. **E2E FTP SUKSES** ke Rumahweb (akun FTP khusus, FTPS+TLS verified) —
+  deploy + clean-delete mirror penuh terbukti; bug hapus-direktori-usang ditemukan E2E & diperbaiki.
 
 ---
 

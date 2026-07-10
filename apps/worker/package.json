@@ -22,6 +22,7 @@
     "@digimaestro/adapters": "workspace:*",
     "@digimaestro/core": "workspace:*",
     "@digimaestro/shared": "workspace:*",
-    "@digimaestro/sites-kit": "workspace:*"
+    "@digimaestro/sites-kit": "workspace:*",
+    "bullmq": "^5.79.3"
   }
 }
