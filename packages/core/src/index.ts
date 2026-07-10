@@ -101,3 +101,14 @@ export {
   type ConversationReplierError,
   type ConversationReplierRequest,
 } from './conversation/replier.js';
+
+// Builder use case (T-053b, FR-AGT-001/002).
+export {
+  buildSiteFromBrief,
+  DEFAULT_BUILD_SYSTEM_PROMPT,
+  type BuildDeps,
+  type BuildError,
+  type BuildRequest,
+  type BuildResult,
+  type InterviewBrief,
+} from './builder/build-site.js';
