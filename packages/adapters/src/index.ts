@@ -58,3 +58,4 @@ export * from './publish/cpanel-sftp-deploy.js';
 export * from './publish/ssh2-sftp-client.js';
 export * from './publish/cpanel-ftp-deploy.js';
 export * from './publish/basic-ftp-client.js';
+export * from './publish/cpanel-uapi-subdomain.js';

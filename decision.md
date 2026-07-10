@@ -349,8 +349,21 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   (FR-PUB-009)**. worker+api kini depend sites-kit. **Diverifikasi end-to-end**: publish
   Site Document → docroot → serve HTTP → `GET / , /menu/ , /sitemap.xml , /robots.txt` semua
   **200**; rollback ok. Gate 21/21 (worker +8 tes, adapters +4). _(Adapter S3 = slice S3/PR #33;
-  wiring worker BullMQ = slice BullMQ/PR #35 — lihat di bawah. Sisa: rsync/SSH cPanel + subdomain
-  cPanel API FR-PUB-004b.)_
+  wiring worker BullMQ = slice BullMQ/PR #35 — lihat di bawah. Deploy cPanel SFTP+FTPS = slice
+  cPanel deploy; subdomain UAPI = slice di bawah.)_
+- 🔧 **T-063 (slice subdomain UAPI)** Provisioning subdomain cPanel (EPIC-06, FR-PUB-004b) —
+  **PR #38, 2026-07-10:** Port `SubdomainPort` (shared/publish.ts; `ensureSubdomain`
+  → `SubdomainResult{subdomain,created}`, idempoten; +kode error `SUBDOMAIN`). Adapter
+  `packages/adapters/src/publish/cpanel-uapi-subdomain.ts` `createCpanelUapiSubdomain()` — panggil
+  UAPI `SubDomain::addsubdomain` (header `Authorization: cpanel user:token`, panel :2083), **fetch
+  di-inject** (offline-testable). Idempoten: errors "already exists" → `ok(created:false)`. **Auth:
+  token cPanel ATAU Basic auth password** (fallback host tanpa menu API token, mis. Rumahweb). Gate
+  21/21 (adapters +8 tes: sukses/idempoten/error/HTTP/JSON/throw/basic-auth/no-cred). **E2E ke cPanel
+  Rumahweb SUKSES** (2026-07-10, Basic auth akun cPanel utama): `addsubdomain` → created:true →
+  panggil ulang created:false (idempoten) → cleanup. **Temuan host**: UAPI punya `addsubdomain` tapi
+  TAK punya `delsubdomain`/`list_subdomains` (hapus perlu API2 `/json-api/cpanel`) — tak masalah utk
+  publish (hanya butuh buat subdomain). **Belum**: wiring ke pipeline publish (ensureSubdomain
+  sebelum deploy di worker).
 - ✅ **Object storage = MinIO self-host DIPUTUSKAN & disediakan** (2026-07-10, ops):
   service `minio` + `minio-init` (profil compose `storage`) di `docker-compose.yml`, bucket
   `digimaestro-artifacts` otomatis, kredensial via `MINIO_ROOT_*`; `.env.example` mengarahkan
