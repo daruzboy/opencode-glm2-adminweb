@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LocalArtifactStore, S3ArtifactStore } from '@digimaestro/adapters';
+import { CpanelSftpDeploy, LocalArtifactStore, LocalFilesystemDeploy, S3ArtifactStore } from '@digimaestro/adapters';
 import {
   createArtifactStore,
   createDeploy,
@@ -18,8 +18,13 @@ describe('worker composition (pilih adapter dari env)', () => {
     expect(createArtifactStore({})).toBeInstanceOf(LocalArtifactStore);
   });
 
-  it('createDeploy → DeployPort (lokal-FS) dgn method deploy', () => {
-    expect(typeof createDeploy({}).deploy).toBe('function');
+  it('tanpa env cPanel → LocalFilesystemDeploy (dev)', () => {
+    expect(createDeploy({})).toBeInstanceOf(LocalFilesystemDeploy);
+  });
+
+  it('CPANEL_SFTP_HOST+USER diisi (password auth) → CpanelSftpDeploy', () => {
+    const deploy = createDeploy({ CPANEL_SFTP_HOST: 'srv.host', CPANEL_SFTP_USER: 'u', CPANEL_SFTP_PASSWORD: 'p' });
+    expect(deploy).toBeInstanceOf(CpanelSftpDeploy);
   });
 
   it('createHttpVerify: res.ok → true, res tidak ok → false, error jaringan → false', async () => {

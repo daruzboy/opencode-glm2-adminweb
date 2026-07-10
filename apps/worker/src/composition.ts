@@ -1,13 +1,16 @@
 // Composition root worker (T-063, SOLID-D): pilih adapter konkret dari env & suntik ke
 // use case publish. ArtifactStore = S3 bila S3_KEY/S3_SECRET diisi (incl. MinIO via
-// S3_ENDPOINT), else lokal-FS (dev). Deploy = lokal-FS docroot sekarang; adapter rsync/SSH
-// cPanel menyusul (kontrak DeployPort sama, FR-PUB-009). Verify = HTTP fetch (FR-PUB-004).
+// S3_ENDPOINT), else lokal-FS (dev). Deploy = cPanel SFTP bila CPANEL_SFTP_HOST diisi, else
+// lokal-FS docroot (dev). Verify = HTTP fetch (FR-PUB-004).
 
+import { readFileSync } from 'node:fs';
 import {
+  CpanelSftpDeploy,
   LocalArtifactStore,
   LocalFilesystemDeploy,
   S3ArtifactStore,
   createAwsS3ObjectClient,
+  createSsh2SftpDeployClient,
 } from '@digimaestro/adapters';
 import type { ArtifactStorePort, DeployPort } from '@digimaestro/shared';
 import type { ConnectionOptions } from 'bullmq';
@@ -23,6 +26,14 @@ export interface PublishEnv {
   readonly PUBLISH_DOCROOT_BASE?: string;
   readonly PUBLISH_BASE_DOMAIN?: string;
   readonly REDIS_URL?: string;
+  // Deploy cPanel SFTP (T-063). Bila HOST+USER diisi → CpanelSftpDeploy; else lokal-FS.
+  readonly CPANEL_SFTP_HOST?: string;
+  readonly CPANEL_SFTP_PORT?: string;
+  readonly CPANEL_SFTP_USER?: string;
+  readonly CPANEL_SFTP_PASSWORD?: string;
+  readonly CPANEL_SFTP_KEY_PATH?: string;
+  readonly CPANEL_SFTP_PASSPHRASE?: string;
+  readonly CPANEL_DOCROOT_TEMPLATE?: string;
 }
 
 const DEFAULTS = {
@@ -47,11 +58,24 @@ export function createArtifactStore(env: PublishEnv): ArtifactStorePort {
   return new LocalArtifactStore(env.PUBLISH_ARTIFACT_DIR ?? DEFAULTS.artifactDir);
 }
 
-// Deploy lokal-FS (analog rsync docroot). Adapter cPanel rsync/SSH menyusul (FR-PUB-009).
+// Deploy cPanel SFTP bila CPANEL_SFTP_HOST+USER diisi (produksi shared hosting, FR-PUB-004);
+// else lokal-FS docroot (dev/staging). Kredensial: password ATAU private key (CPANEL_SFTP_KEY_PATH).
 export function createDeploy(env: PublishEnv): DeployPort {
+  const baseDomain = env.PUBLISH_BASE_DOMAIN ?? DEFAULTS.baseDomain;
+  if (env.CPANEL_SFTP_HOST && env.CPANEL_SFTP_USER) {
+    const client = createSsh2SftpDeployClient({
+      host: env.CPANEL_SFTP_HOST,
+      port: env.CPANEL_SFTP_PORT ? Number(env.CPANEL_SFTP_PORT) : undefined,
+      username: env.CPANEL_SFTP_USER,
+      password: env.CPANEL_SFTP_PASSWORD,
+      privateKey: env.CPANEL_SFTP_KEY_PATH ? readFileSync(env.CPANEL_SFTP_KEY_PATH) : undefined,
+      passphrase: env.CPANEL_SFTP_PASSPHRASE,
+    });
+    return new CpanelSftpDeploy(client, { baseDomain, docrootTemplate: env.CPANEL_DOCROOT_TEMPLATE });
+  }
   return new LocalFilesystemDeploy({
     docrootBase: env.PUBLISH_DOCROOT_BASE ?? DEFAULTS.docrootBase,
-    baseDomain: env.PUBLISH_BASE_DOMAIN ?? DEFAULTS.baseDomain,
+    baseDomain,
   });
 }
 
