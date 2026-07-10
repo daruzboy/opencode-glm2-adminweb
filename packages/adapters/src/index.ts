@@ -40,6 +40,7 @@ export function defineAdapter<T extends Port>(adapter: T): T {
 // Repository layer + tenant guard (T-021, NFR-09). Lihat prisma/* .
 export * from './llm/deterministic-agent-adapter.js';
 export * from './llm/deterministic-json-adapter.js';
+export * from './llm/openai-compatible-agent-adapter.js';
 export * from './llm/openai-compatible-json-adapter.js';
 export * from './prisma/audit-log-prisma.js';
 export * from './prisma/client.js';
