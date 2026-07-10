@@ -49,3 +49,4 @@ export * from './prisma/message-repo-prisma.js';
 export * from './prisma/llm-usage-logger-prisma.js';
 export * from './publish/local-artifact-store.js';
 export * from './publish/local-deploy.js';
+export * from './publish/cpanel-uapi-subdomain.js';

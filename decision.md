@@ -342,6 +342,15 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   **200**; rollback ok. Gate 21/21 (worker +8 tes, adapters +4). **Belum**: adapter S3
   (`@aws-sdk`) & rsync/SSH cPanel nyata + subdomain cPanel API (FR-PUB-004b) + wiring worker
   BullMQ consumer.
+- 🔧 **T-063 (slice subdomain UAPI)** Provisioning subdomain cPanel (EPIC-06, FR-PUB-004b) —
+  **PR #38, 2026-07-10 (off main):** Port `SubdomainPort` (shared/publish.ts; `ensureSubdomain`
+  → `SubdomainResult{subdomain,created}`, idempoten; +kode error `SUBDOMAIN`). Adapter
+  `packages/adapters/src/publish/cpanel-uapi-subdomain.ts` `createCpanelUapiSubdomain()` — panggil
+  UAPI `SubDomain::addsubdomain` (auth **cPanel API token**, header `Authorization: cpanel
+  user:token`, panel :2083), **fetch di-inject** (offline-testable). Idempoten: errors "already
+  exists" → `ok(created:false)`. Gate 21/21 (adapters +6 tes: sukses/idempoten/error/HTTP/JSON/
+  throw). **Belum**: E2E ke cPanel nyata (butuh **UAPI token** + konfirmasi `digimaestro.id` = domain
+  di akun) + wiring ke pipeline publish (ensureSubdomain sebelum deploy).
 - ✅ **Object storage = MinIO self-host DIPUTUSKAN & disediakan** (2026-07-10, ops):
   service `minio` + `minio-init` (profil compose `storage`) di `docker-compose.yml`, bucket
   `digimaestro-artifacts` otomatis, kredensial via `MINIO_ROOT_*`; `.env.example` mengarahkan

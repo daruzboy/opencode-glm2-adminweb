@@ -13,7 +13,7 @@ export interface DeployableFile {
   readonly contentType: string;
 }
 
-export type PublishErrorCode = 'BUILD' | 'STORE' | 'DEPLOY' | 'VERIFY' | 'NOT_FOUND';
+export type PublishErrorCode = 'BUILD' | 'STORE' | 'DEPLOY' | 'VERIFY' | 'NOT_FOUND' | 'SUBDOMAIN';
 
 export interface PublishError {
   readonly code: PublishErrorCode;
@@ -46,4 +46,21 @@ export interface DeployResult {
 
 export interface DeployPort {
   deploy(input: { readonly target: DeployTarget; readonly files: readonly DeployableFile[] }): Promise<Result<DeployResult, PublishError>>;
+}
+
+// Provisioning subdomain shared hosting (FR-PUB-004b): buat `<slug>.<rootDomain>` sebelum
+// deploy. Adapter cPanel UAPI di packages/adapters. Idempoten: subdomain sudah ada = ok.
+export interface SubdomainProvision {
+  readonly slug: string; // mis. 'toko' → subdomain toko.<rootDomain>
+  readonly rootDomain: string; // mis. 'digimaestro.id' (harus domain di akun cPanel)
+  readonly docroot: string; // docroot subdomain (mis. 'public_html/toko')
+}
+
+export interface SubdomainResult {
+  readonly subdomain: string; // FQDN penuh, mis. 'toko.digimaestro.id'
+  readonly created: boolean; // false bila sudah ada sebelumnya (idempoten)
+}
+
+export interface SubdomainPort {
+  ensureSubdomain(input: SubdomainProvision): Promise<Result<SubdomainResult, PublishError>>;
 }
