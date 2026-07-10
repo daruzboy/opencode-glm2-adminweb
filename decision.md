@@ -372,11 +372,26 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `msgpackr-extract` di-`false` di workspace, fallback JS). **Diverifikasi end-to-end** (Redis +
   MinIO nyata): enqueue job `publish` → consume → build → **store ke MinIO** → deploy docroot →
   verify → job completed; artifact retrievable dari S3. Gate 21/21 (worker +10 tes). **Belum**:
-  produsen job di api (approve→enqueue) + deploy cPanel/SSH nyata.
-- ⏳ Sisanya (**terblokir kredensial/PO**): CHN WABA (T-030..033, terblokir T-001), **deploy
-  cPanel/SSH nyata** (butuh CPANEL_HOST/UAPI token/SSH key — sedang dikumpulkan PO), adapter
-  Prisma preview (desain token); ops sisa (T-071..073), QA (T-080..083, butuh app hidup +
-  TestSprite restart). _(Adapter S3 sudah dibuat — lihat T-063 slice S3.)_
+  produsen job di api (approve→enqueue).
+- 🔧 **T-063 (slice cPanel deploy)** Adapter `DeployPort` ke shared hosting cPanel via SFTP/SSH
+  (EPIC-06, FR-PUB-004/009; SRS §1.3) — **PR #36, 2026-07-10 (stacked di atas #35):**
+  **transport = SFTP over SSH** (dipilih PO 2026-07-10; rsync/FTP ditolak). `packages/adapters/
+  src/publish/cpanel-sftp-deploy.ts` `CpanelSftpDeploy` — orkestrasi **murni** atas interface
+  **sempit** `SftpDeployClient` (offline-testable); **deploy bersih** ala rsync --delete (upload
+  rilis baru + hapus file usang, incl. nested); docroot per subdomain via template
+  `public_html/{slug}` (atau `target.docroot`); URL = `https://<slug>.<baseDomain>`; gagal →
+  `err DEPLOY` + tutup koneksi. `ssh2-sftp-client.ts` `createSsh2SftpDeployClient()` =
+  **satu-satunya** file impor vendor SDK SFTP (SOLID-D); auth password/private-key; list rekursif.
+  Dep `ssh2-sftp-client ^12.1.1` (+`@types`), native `ssh2`/`cpu-features` di-`false` (crypto Node
+  murni). `apps/worker/src/composition.ts createDeploy()` pilih cPanel bila `CPANEL_SFTP_HOST`+
+  `USER` diisi (key via `CPANEL_SFTP_KEY_PATH`), else lokal-FS. `.env.example` +`CPANEL_SFTP_*`.
+  Gate 21/21 (adapters +4, worker +1). **E2E ke cPanel nyata**: menunggu kredensial dijalankan
+  (adapter unit-tested; verifikasi jaringan menyusul saat env diisi). **Belum**: subdomain cPanel
+  UAPI (FR-PUB-004b) + produsen job api.
+- ⏳ Sisanya (**terblokir kredensial/PO**): CHN WABA (T-030..033, terblokir T-001), subdomain
+  cPanel UAPI (FR-PUB-004b), adapter Prisma preview (desain token); ops sisa (T-071..073), QA
+  (T-080..083, butuh app hidup + TestSprite restart). _(Adapter S3 + deploy cPanel SFTP sudah
+  dibuat — lihat slice S3 & cPanel deploy.)_
 
 ---
 
@@ -390,7 +405,9 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
 - **Harga paket & kuota job AI** — finalisasi sebelum Fase 1 (input: COGS dari Fase 0).
 - **Kebijakan trial** — preview-gratis-lalu-bayar vs bayar-depan (rekomendasi: preview gratis).
 - **Provider image generation & stock photo** — dievaluasi Fase 0 (DeepSeek tak punya image-gen).
-- **Shared hosting: rsync/SSH vs fallback FTP** — dibuktikan minggu pertama (T-002).
+- **Shared hosting deploy transport** — **SFTP over SSH DIPILIH** (PO 2026-07-10; `ssh2-sftp-client`,
+  deploy bersih upload+delete). rsync/SSH & FTP fallback ditolak. Adapter `CpanelSftpDeploy` (T-063
+  slice cPanel). E2E ke host nyata menyusul saat kredensial diisi.
 
 ---
 

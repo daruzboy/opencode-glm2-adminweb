@@ -51,3 +51,5 @@ export * from './publish/local-artifact-store.js';
 export * from './publish/local-deploy.js';
 export * from './publish/s3-artifact-store.js';
 export * from './publish/aws-s3-client.js';
+export * from './publish/cpanel-sftp-deploy.js';
+export * from './publish/ssh2-sftp-client.js';

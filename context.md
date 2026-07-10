@@ -62,6 +62,15 @@
   `bullmq ^5.79.3` (`msgpackr-extract:false` di workspace). Diverifikasi E2E (Redis+MinIO nyata):
   enqueue→consume→build→store MinIO→deploy→verify→completed. Gate 21/21 (worker +10 tes). Sisa:
   produsen job di api (approve→enqueue) + deploy cPanel nyata (berikutnya).
+- **T-063 deploy cPanel SFTP SELESAI (kode)** (PR #36, 2026-07-10, stacked di atas #35):
+  transport **SFTP over SSH** (dipilih PO). `packages/adapters/src/publish/cpanel-sftp-deploy.ts`
+  `CpanelSftpDeploy` (impl `DeployPort`, interface sempit `SftpDeployClient`, offline-test; deploy
+  bersih upload+hapus-usang; docroot `public_html/{slug}`) + `ssh2-sftp-client.ts`
+  `createSsh2SftpDeployClient()` (satu-satunya impor vendor SFTP; auth password/key; list rekursif).
+  Dep `ssh2-sftp-client ^12.1.1`. `worker composition.createDeploy()` pilih cPanel bila
+  `CPANEL_SFTP_HOST`+`USER` diisi, else lokal-FS. `.env.example` +`CPANEL_SFTP_*`. Gate 21/21
+  (adapters +4, worker +1). **E2E ke host nyata MENUNGGU kredensial** (taruh di file scratchpad
+  `cpanel.env`, JANGAN commit). Sisa cPanel: subdomain UAPI (FR-PUB-004b).
 - **Object storage = MinIO self-host** (2026-07-10): service `minio`+`minio-init` di compose
   (profil `storage`), bucket `digimaestro-artifacts`, kredensial `MINIO_ROOT_*` (=S3_KEY/SECRET),
   `S3_ENDPOINT=http://minio:9000`. Diverifikasi put/get object via S3 API. Sisi S3 T-063 tak

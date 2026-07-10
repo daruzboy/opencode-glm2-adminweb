@@ -5,10 +5,13 @@ packages:
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
+  # Akselerator native opsional ssh2 (crypto Node murni cukup) → jangan build.
+  cpu-features: false
   esbuild: true
   # Akselerator native opsional (bullmq→msgpackr); fallback JS murni cukup → jangan build.
   msgpackr-extract: false
   prisma: true
+  ssh2: false
 
 onlyBuiltDependencies:
   - esbuild
