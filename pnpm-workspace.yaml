@@ -6,6 +6,8 @@ allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
   esbuild: true
+  # Akselerator native opsional (bullmq→msgpackr); fallback JS murni cukup → jangan build.
+  msgpackr-extract: false
   prisma: true
 
 onlyBuiltDependencies:

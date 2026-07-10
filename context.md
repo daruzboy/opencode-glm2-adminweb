@@ -53,6 +53,15 @@
   → retrieve utuh (rollback). Diverifikasi end-to-end melawan MinIO nyata (store→bucket→retrieve;
   key absen=null). Gate 21/21 (adapters +4 tes). **Blocker storage S3 tuntas** → sisa: wiring
   worker BullMQ + composition root (env `S3_*`) & deploy cPanel/SSH nyata (nunggu kredensial PO).
+- **T-063 worker BullMQ consumer SELESAI** (PR #35, 2026-07-10, stacked di atas #33):
+  `apps/worker/src/publish-job.ts` `processPublishJob` (dispatch murni offline-test atas union
+  job `publish`/`rollback`) + `PUBLISH_QUEUE`; `publish-worker.ts` `startPublishWorker` (wrapper
+  tipis BullMQ, gagal→throw utk retry); `composition.ts` `createPublishDeps(env)` pilih adapter
+  (S3 bila `S3_KEY/S3_SECRET`, else lokal-FS; deploy lokal-FS; verify HTTP fetch) +
+  `createRedisConnection` (parse `REDIS_URL`). `runWorker()` mulai consumer + shutdown rapi. Dep
+  `bullmq ^5.79.3` (`msgpackr-extract:false` di workspace). Diverifikasi E2E (Redis+MinIO nyata):
+  enqueue→consume→build→store MinIO→deploy→verify→completed. Gate 21/21 (worker +10 tes). Sisa:
+  produsen job di api (approve→enqueue) + deploy cPanel nyata (berikutnya).
 - **Object storage = MinIO self-host** (2026-07-10): service `minio`+`minio-init` di compose
   (profil `storage`), bucket `digimaestro-artifacts`, kredensial `MINIO_ROOT_*` (=S3_KEY/SECRET),
   `S3_ENDPOINT=http://minio:9000`. Diverifikasi put/get object via S3 API. Sisi S3 T-063 tak
