@@ -348,9 +348,13 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `packages/adapters/src/publish/cpanel-uapi-subdomain.ts` `createCpanelUapiSubdomain()` — panggil
   UAPI `SubDomain::addsubdomain` (auth **cPanel API token**, header `Authorization: cpanel
   user:token`, panel :2083), **fetch di-inject** (offline-testable). Idempoten: errors "already
-  exists" → `ok(created:false)`. Gate 21/21 (adapters +6 tes: sukses/idempoten/error/HTTP/JSON/
-  throw). **Belum**: E2E ke cPanel nyata (butuh **UAPI token** + konfirmasi `digimaestro.id` = domain
-  di akun) + wiring ke pipeline publish (ensureSubdomain sebelum deploy).
+  exists" → `ok(created:false)`. **Auth: token cPanel ATAU Basic auth password** (fallback host
+  tanpa menu API token, mis. Rumahweb). Gate 21/21 (adapters +8 tes: sukses/idempoten/error/HTTP/
+  JSON/throw/basic-auth/no-cred). **E2E ke cPanel Rumahweb SUKSES** (2026-07-10, Basic auth
+  `digs2416`): `addsubdomain` → created:true → panggil ulang created:false (idempoten) → cleanup.
+  **Temuan host**: UAPI punya `addsubdomain` tapi TAK punya `delsubdomain`/`list_subdomains`
+  (hapus perlu API2 `/json-api/cpanel`) — tak masalah utk publish (hanya butuh buat subdomain).
+  **Belum**: wiring ke pipeline publish (ensureSubdomain sebelum deploy di worker).
 - ✅ **Object storage = MinIO self-host DIPUTUSKAN & disediakan** (2026-07-10, ops):
   service `minio` + `minio-init` (profil compose `storage`) di `docker-compose.yml`, bucket
   `digimaestro-artifacts` otomatis, kredensial via `MINIO_ROOT_*`; `.env.example` mengarahkan
