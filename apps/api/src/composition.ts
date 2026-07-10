@@ -4,6 +4,9 @@ import {
   LlmUsageLoggerPrisma,
   MessageRepositoryPrisma,
   OpenAiCompatibleAgentAdapter,
+  RevisionRepositoryPrisma,
+  SitebuilderToolAdapter,
+  WebsiteRepositoryPrisma,
   createDeepSeekJsonAdapter,
   createDeterministicLlmAgentAdapter,
   createGlmJsonAdapter,
@@ -15,10 +18,19 @@ import {
   type LlmUsageDelegate,
   type MessageDelegate,
   type PublishSourceDelegate,
+  type RevisionDelegate,
   type RevisionPreviewDelegate,
   type RuntimeFetch,
+  type WebsiteDelegate,
 } from '@digimaestro/adapters';
-import { createAgentReplier, createAgentToolRegistry, type ConversationReplier } from '@digimaestro/core';
+import {
+  createAgentReplier,
+  createAgentToolRegistry,
+  createSitebuilderApplyPatchTool,
+  createSitebuilderGetSiteOutlineTool,
+  type ConversationReplier,
+  type SitebuilderToolPort,
+} from '@digimaestro/core';
 import type { AuthPort, ConversationRepository, LlmAgentResponse, LlmJsonPort, LlmUsageLoggerPort } from '@digimaestro/shared';
 import type { ChatDeps } from './chat/handle-incoming.js';
 import type { PreviewDeps } from './preview/handle-preview.js';
@@ -71,7 +83,7 @@ export function createChatDeps(options: CreateChatDepsOptions = {}): ChatDeps {
   // Bila tidak → fallback deterministik (dev tanpa key).
   const apiKey = env.DIGIMAESTRO_LLM_PROVIDER === 'glm' ? env.GLM_API_KEY : env.DEEPSEEK_API_KEY;
   if (apiKey && apiKey.length > 0) {
-    const reply = createProductionAgentReplier(conversations, env);
+    const reply = createProductionAgentReplier(conversations, prisma, env);
     return { conversations, messages, reply };
   }
 
@@ -156,7 +168,28 @@ function deterministicAgentResponder(): LlmAgentResponse {
 
 // T-053c: Replier produksi dengan adapter HTTP nyata (DeepSeek/GLM). Dipakai bila
 // API key tersedia. Error adapter → fallback stubReply di handle-incoming (chat tak mati).
-function createProductionAgentReplier(conversations: ConversationRepository, env: LlmEnv): ConversationReplier {
+// Registry tool sitebuilder untuk agent produksi (T-053d): daftarkan
+// `sitebuilder_get_site_outline` + `sitebuilder_apply_patch` (T-051) di atas
+// `SitebuilderToolPort` (adapter T-053b). Diekspor + bergantung port → teruji offline
+// dgn fake port (tanpa Prisma/jaringan).
+export function createSitebuilderToolRegistry(
+  port: SitebuilderToolPort,
+): ReturnType<typeof createAgentToolRegistry> {
+  return createAgentToolRegistry([
+    createSitebuilderGetSiteOutlineTool(port),
+    createSitebuilderApplyPatchTool(port),
+  ]);
+}
+
+// Agent produksi: LLM HTTP nyata (T-053c) + tool sitebuilder (T-053d) yang menyambungkan
+// loop percakapan ke build/edit Site Document (adapter T-053b di atas repo T-020ext). Tool
+// LLM revision_patch = `createLlmJsonPort` (JSON satu-tembakan); repo dari prisma yg sama
+// (ter-guard tenant T-021).
+function createProductionAgentReplier(
+  conversations: ConversationRepository,
+  prisma: ReturnType<typeof createPrismaClient>,
+  env: LlmEnv,
+): ConversationReplier {
   const isGlm = env.DIGIMAESTRO_LLM_PROVIDER === 'glm';
   const apiKey = isGlm ? (env.GLM_API_KEY ?? '') : (env.DEEPSEEK_API_KEY ?? '');
   const model = isGlm ? (env.GLM_MODEL ?? 'glm-4.5') : (env.DEEPSEEK_MODEL ?? 'deepseek-chat');
@@ -171,11 +204,19 @@ function createProductionAgentReplier(conversations: ConversationRepository, env
     baseUrl,
   });
 
+  const websites = new WebsiteRepositoryPrisma(prisma.website as unknown as WebsiteDelegate);
+  const revisions = new RevisionRepositoryPrisma(prisma as unknown as RevisionDelegate);
+  const sitebuilder = new SitebuilderToolAdapter({
+    websites,
+    revisions,
+    llm: createLlmJsonPort({ env }),
+  });
+
   return createAgentReplier({
     router: { conversations },
     loop: {
       llm: agentLlm,
-      tools: createAgentToolRegistry([]),
+      tools: createSitebuilderToolRegistry(sitebuilder),
     },
   });
 }

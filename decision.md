@@ -274,6 +274,39 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `main` (PR #21, squash `9e5a783`, 2026-07-04).** `packages/core/src/agent/agent-loop.ts`
   + `conversation/replier.ts` (+ `DeterministicAgentAdapter` di adapters, Port `llm-agent.ts`
   di shared). Fondasi loop percakapan di atas router T-052.
+- ✅ **T-053b** Use case build Site Document → persist Revision + tool sitebuilder (EPIC-05,
+  FR-AGT-001/004) — **PR #44, 2026-07-10:** `packages/core/src/builder/build-site.ts`
+  `buildSiteFromBrief` (murni, bergantung Port `LlmJsonPort`+`RevisionRepository`+`WebsiteRepository`;
+  guard defense-in-depth id website) + adapter `SitebuilderToolAdapter` (`packages/adapters/src/
+  builder/`, impl `SitebuilderToolPort`: `getSiteOutline` ekstrak outline dari revisi terbaru,
+  `applyPatch` LLM revision_patch → persist Revision baru). Clean-arch: core tak impor vendor;
+  adapter redeklarasi port struktural (hindari edge adapters→core). Gate 21/21. _Catatan review:_
+  komentar "update status DRAFTING" tak dieksekusi; `PERMISSIVE_SCHEMA` default (validasi di worker).
+- ✅ **T-053c** Adapter `LlmAgentPort` HTTP OpenAI-compatible + wiring composition (EPIC-05,
+  FR-AGT-008) — **PR #46, 2026-07-10:** `packages/adapters/src/llm/openai-compatible-agent-adapter.ts`
+  `OpenAiCompatibleAgentAdapter` (single-shot `completeWithTools`; loop `maxSteps` di core; reuse
+  `RuntimeFetch` sempit → offline-test; API key hanya di header, timeout AbortController). `apps/api
+  composition` pilih adapter HTTP bila API key ada. Gate 21/21. _Catatan review:_ error jaringan
+  `retryable:false` (JSON adapter `true` — inkonsisten); replier produksi awalnya 0 tool → **ditutup T-053d**.
+- ✅ **T-053d** Wiring agent produksi → tool sitebuilder (EPIC-05, FR-AGT-004; **loop inti**) —
+  **PR tersendiri, 2026-07-10:** `createProductionAgentReplier` (`apps/api/composition.ts`) kini
+  membangun `WebsiteRepositoryPrisma`+`RevisionRepositoryPrisma` (T-020ext) → `SitebuilderToolAdapter`
+  (T-053b) → registry `createSitebuilderToolRegistry` (tool `sitebuilder_get_site_outline`+
+  `sitebuilder_apply_patch`, T-051) disuntik ke agent loop. **Menutup celah**: sebelumnya
+  `createAgentToolRegistry([])` (0 tool) → agent tak bisa bangun/edit situs; kini loop
+  chat→bangun/revisi Site Document→persist Revision **tersambung**. Helper registry diekspor +
+  bergantung Port → teruji offline (fake port). Gate 21/21 (api +4 tes: daftar tool, guard scope,
+  dispatch outline/patch). _Sisa:_ inject schema Site Document nyata (kini permissive) + auth rute (T-002).
+- ✅ **T-002auth** Autentikasi JWT dasar + resolusi tenant (EPIC-00/NFR-07) — **PR #45, 2026-07-10:**
+  Port `AuthPort` (shared) + `JwtAuthPort` (adapter, satu-satunya impor `jsonwebtoken`; verify/issue
+  → `Result`) + `POST /api/auth/token` + plugin `resolveTenant`. **UTANG (lihat memory):** plugin
+  **belum dipasang ke rute** (chat/publish/preview masih `x-tenant-id`) → NFR-07 belum tegak;
+  endpoint token mencetak OWNER tanpa kredensial (aktif bila `JWT_SECRET` diisi) → butuh guard
+  produksi + wiring rute. Merged atas keputusan PO meski temuan dipaparkan. Gate 21/21.
+- ✅ **T-080slice** Integration test repo + tenant guard DB nyata (EPIC-08/NFR-11) — **PR #47,
+  2026-07-10:** `repo-integration.test.ts`. **UTANG:** di-gate `RUN_INTEGRATION_TESTS=1` yang tak
+  pernah diset → **selalu skip di CI**; cleanup `deleteMany()` tanpa `where` kena tenant-guard →
+  `TenantGuardError` (tak bisa lulus saat diaktifkan). Perlu klien unguarded + wiring flag CI.
 - ✅ **Hardening T-050/T-051 lanjutan** — **ter-merge ke `main` (PR #22, squash `8dbc2e4`,
   2026-07-09):** T-050 — **retry pada 429/timeout dgn exponential backoff** di
   `openai-compatible-json-adapter` + **ambang (threshold)** di `evaluation-runner`. T-051 —
