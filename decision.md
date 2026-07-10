@@ -385,6 +385,15 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   terima `publish` opsional (aktif bila DATABASE_URL+REDIS_URL). Dep `bullmq` di adapters. Gate 21/21
   (adapters +7, api +8). **Diverifikasi E2E produsen↔konsumen** (Redis nyata): `enqueuePublish` →
   worker consume → build → deploy → HTML ter-render. **Jalur approve→publish TERSAMBUNG penuh.**
+- 🔧 **T-063 (slice hardening pipeline)** Ketahanan job publish (EPIC-06, ADR-2; NFR reliabilitas) —
+  **stacked di atas #41, 2026-07-10:** (1) **Retry/backoff/retensi** — `defaultPublishJobOptions()`
+  (modul murni offline-test) sbg `defaultJobOptions` di `createBullMqPublishQueue` → semua job dpt
+  `attempts:3` + backoff eksponensial `delay:5000ms` (retry kegagalan transien cPanel/Redis),
+  `removeOnComplete:50` (Redis ramping), `removeOnFail:true` (job final gagal **tetap tersimpan sbg
+  dead-letter** utk audit); policy opsional override. (2) **Observability** — `publish-worker` inject
+  logger (default console), log terstruktur satu-baris start/sukses (durasi_ms)/gagal via formatter
+  murni; listener `worker.on('failed')` menandai **DEAD-LETTER** saat percobaan habis (attemptsMade≥
+  attempts) → mudah di-grep/alert di stdout kontainer. Gate 21/21 (worker +5, adapters +3 tes murni).
 - ✅ **Object storage = MinIO self-host DIPUTUSKAN & disediakan** (2026-07-10, ops):
   service `minio` + `minio-init` (profil compose `storage`) di `docker-compose.yml`, bucket
   `digimaestro-artifacts` otomatis, kredensial via `MINIO_ROOT_*`; `.env.example` mengarahkan
