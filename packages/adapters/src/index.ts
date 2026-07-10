@@ -47,5 +47,7 @@ export * from './prisma/tenant-guard.js';
 export * from './prisma/conversation-repo-prisma.js';
 export * from './prisma/message-repo-prisma.js';
 export * from './prisma/llm-usage-logger-prisma.js';
+export * from './prisma/preview-token.js';
+export * from './prisma/preview-port-prisma.js';
 export * from './publish/local-artifact-store.js';
 export * from './publish/local-deploy.js';

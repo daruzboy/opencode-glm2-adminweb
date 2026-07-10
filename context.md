@@ -38,6 +38,14 @@
   + `apps/api/src/preview/` (`handlePreview` render noindex + token guard 404/500,
   `registerPreviewRoutes` + `X-Robots-Tag`), `buildServer` terima `preview` opsional. Diuji via
   Fastify inject (200 HTML/404). api sekarang depend `@digimaestro/sites-kit`. Gate 21/21.
+- **T-064 adapter Prisma + wiring SELESAI** (PR, 2026-07-10): `packages/adapters/src/prisma/
+  preview-token.ts` = **token stateless HMAC** (`createPreviewToken`/`verifyPreviewToken`,
+  timing-safe, tanpa migrasi; revoke = rotasi `PREVIEW_TOKEN_SECRET`) + `preview-port-prisma.ts`
+  `PreviewPortPrisma` (delegate sempit `RevisionPreviewDelegate`, verifikasi token dulu → muat
+  `Revision.siteDoc`; revisi tak ada/token salah = null). `composition.ts createPreviewDeps()` +
+  `index.ts start()` daftarkan rute preview bila `PREVIEW_TOKEN_SECRET` diisi. Diverifikasi
+  end-to-end (HTTP inject → adapter → HMAC → render): 200 noindex / 404 salah / 404 absen. Gate
+  21/21 (adapters +6 tes). **Keputusan desain token = stateless HMAC** (dipilih PO 2026-07-10).
 - **T-063 slice publish SELESAI** (PR menyusul di sesi ini): Port `ArtifactStorePort`/
   `DeployPort` (shared) + `apps/worker/src/publish.ts` (`publishSite`/`rollbackSite`, pipeline
   build→store→deploy→verify) + adapter lokal-FS (`LocalArtifactStore`/`LocalFilesystemDeploy`,

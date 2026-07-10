@@ -6,14 +6,17 @@ import {
   createDeterministicLlmAgentAdapter,
   createGlmJsonAdapter,
   createPrismaClient,
+  PreviewPortPrisma,
   type ConversationDelegate,
   type LlmUsageDelegate,
   type MessageDelegate,
+  type RevisionPreviewDelegate,
   type RuntimeFetch,
 } from '@digimaestro/adapters';
 import { createAgentReplier, createAgentToolRegistry, type ConversationReplier } from '@digimaestro/core';
 import type { ConversationRepository, LlmAgentResponse, LlmJsonPort, LlmUsageLoggerPort } from '@digimaestro/shared';
 import type { ChatDeps } from './chat/handle-incoming.js';
+import type { PreviewDeps } from './preview/handle-preview.js';
 
 export type LlmProviderName = 'deepseek' | 'glm';
 
@@ -60,6 +63,23 @@ export function createChatDeps(options: CreateChatDepsOptions = {}): ChatDeps {
 
   const reply = createDeterministicAgentReplier(conversations);
   return { conversations, messages, reply };
+}
+
+export interface CreatePreviewDepsOptions {
+  // Override utk test/dev (fake delegate); default = Prisma client nyata.
+  readonly prisma?: { revision: RevisionPreviewDelegate };
+  readonly tokenSecret?: string;
+}
+
+// Composition preview draft (T-064): adapter Prisma Revision + token stateless HMAC.
+// Butuh PREVIEW_TOKEN_SECRET (rahasia server; rotasi = revoke semua preview). Revision
+// tak ter-scope tenant langsung → query by id aman terhadap tenantGuardExtension.
+export function createPreviewDeps(options: CreatePreviewDepsOptions = {}): PreviewDeps {
+  const secret = options.tokenSecret ?? process.env.PREVIEW_TOKEN_SECRET;
+  if (!secret) throw new Error('PREVIEW_TOKEN_SECRET wajib diisi untuk mengaktifkan rute preview draft');
+  const prisma = options.prisma ?? createPrismaClient();
+  const preview = new PreviewPortPrisma(prisma.revision as unknown as RevisionPreviewDelegate, secret);
+  return { preview };
 }
 
 export interface CreateChatDepsOptions {

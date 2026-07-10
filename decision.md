@@ -12,7 +12,7 @@
 - Lokal: `C:\Users\daruzboy\Documents\A_PROJECT\02_digimaestro\glm2-adminweb`
 - Produk: **digimaestro.id** (platform website builder chatbot & agentic AI untuk UMKM)
 - Pemilik/PO: Darusman · Model coding agent: GLM 5.2 · QA: TestSprite
-- Terakhir diperbarui: 2026-07-09
+- Terakhir diperbarui: 2026-07-10
 
 ---
 
@@ -326,8 +326,17 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   halaman `noindex`) + `registerPreviewRoutes` (header `X-Robots-Tag: noindex`). `buildServer`
   menerima `preview` opsional (diregistrasi bila disuntik). **Diverifikasi** via Fastify
   `inject`: token benar → 200 HTML noindex, token salah → 404. Gate 21/21 (api 20 tes, +7).
-  **Belum**: adapter Prisma `PreviewPort` (Revision.siteDoc + **desain token preview** — domain
-  publish) + wiring composition root; menyusul bersama T-063.
+  **Adapter Prisma + wiring SELESAI** (PR #…, 2026-07-10): `packages/adapters/src/prisma/
+  preview-token.ts` — **token stateless HMAC-SHA256(PREVIEW_TOKEN_SECRET, revisionId)**
+  (keputusan desain token, §3): `createPreviewToken`/`verifyPreviewToken` (timing-safe,
+  tanpa migrasi/kolom DB; revoke = rotasi secret). `preview-port-prisma.ts` `PreviewPortPrisma`
+  (impl `PreviewPort` via delegate sempit `RevisionPreviewDelegate.findUnique`; verifikasi token
+  DULU → baru muat `Revision.siteDoc`; revisi tak ada/token salah = keduanya null; Revision tak
+  ter-scope tenant langsung → aman thd `tenantGuardExtension`). `apps/api/src/composition.ts`
+  `createPreviewDeps()` (env `PREVIEW_TOKEN_SECRET`) + `index.ts start()` mendaftarkan rute
+  preview hanya bila secret diisi. `.env.example` +`PREVIEW_TOKEN_SECRET`. **Diverifikasi
+  end-to-end** (HTTP inject → route → adapter → HMAC verify → render): token HMAC valid → 200
+  HTML noindex ter-render, token salah → 404, revisi tak ada → 404. Gate 21/21 (adapters +6 tes).
 - 🔧 **T-063 (slice publish)** Pipeline publish + rollback (EPIC-06, FR-PUB-004/005/009;
   SRS §8) — **ter-merge ke `main` (PR #…, 2026-07-09):** Port di shared
   (`ArtifactStorePort`, `DeployPort`, `DeployableFile`, `DeployTarget`, `PublishError`).
@@ -350,8 +359,9 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   terblokir**; tinggal adapter `@aws-sdk` (kode) + isi `S3_KEY/S3_SECRET` = `MINIO_ROOT_*`.
 - ⏳ Sisanya (**terblokir kredensial/PO**): CHN WABA (T-030..033, terblokir T-001), **deploy
   cPanel/SSH nyata** (butuh CPANEL_HOST/UAPI token/SSH key — sedang dikumpulkan PO), adapter S3
-  `@aws-sdk` (kode, tak terblokir), adapter Prisma preview (desain token); ops sisa (T-071..073),
-  QA (T-080..083, butuh app hidup + TestSprite restart).
+  `@aws-sdk` (kode, tak terblokir); ops sisa (T-071..073),
+  QA (T-080..083, butuh app hidup + TestSprite restart). _(Adapter Prisma preview + token
+  HMAC SUDAH dibuat — lihat T-064.)_
 
 ---
 
