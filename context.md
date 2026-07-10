@@ -77,9 +77,10 @@
   + `RemoteDeployClient`, dipakai bersama SFTP & FTP). `cpanel-ftp-deploy.ts` `CpanelFtpDeploy` +
   `basic-ftp-client.ts` `createBasicFtpDeployClient()` (satu-satunya impor vendor FTP; FTPS
   eksplisit, path absolut, list rekursif). Dep `basic-ftp ^6.0.1`. `worker createDeploy()` prioritas
-  SFTP→FTP→lokal. Gate 21/21. **E2E Rumahweb: TLS/hostname cocok tapi login 530 (user `digs2416`
-  ditolak)** → **BUTUH kredensial FTP valid dari PO** (buat via cPanel → FTP Accounts). Sisa: E2E
-  sukses + subdomain UAPI. _Catatan aman: password cPanel ter-paste di chat → minta rotasi._
+  SFTP→FTP→lokal. **E2E Rumahweb SUKSES** (akun FTP `Deploy@digimaestro.id` — casing username
+  penting!, FTPS+TLS verified): deploy v1→v2, clean-delete mirror penuh. **Bug ditemukan E2E &
+  diperbaiki**: hapus direktori usang (tambah `removeDir` ke `RemoteDeployClient`). Gate 21/21.
+  Sisa cPanel: subdomain UAPI (FR-PUB-004b). _Catatan aman: password cPanel ter-paste di chat → rotasi._
 - **Object storage = MinIO self-host** (2026-07-10): service `minio`+`minio-init` di compose
   (profil `storage`), bucket `digimaestro-artifacts`, kredensial `MINIO_ROOT_*` (=S3_KEY/SECRET),
   `S3_ENDPOINT=http://minio:9000`. Diverifikasi put/get object via S3 API. Sisi S3 T-063 tak

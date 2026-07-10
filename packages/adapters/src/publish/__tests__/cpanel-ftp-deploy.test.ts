@@ -11,6 +11,7 @@ const files: DeployableFile[] = [
 function fakeFtp(preexisting: string[] = []) {
   const store = new Map<string, string>();
   for (const p of preexisting) store.set(p, 'lama');
+  const removed: string[] = [];
   const client: FtpDeployClient = {
     async connect() {},
     async end() {},
@@ -25,8 +26,13 @@ function fakeFtp(preexisting: string[] = []) {
     async deleteFile(path) {
       store.delete(path);
     },
+    async removeDir(dir) {
+      removed.push(dir);
+      const prefix = `${dir.replace(/\/$/, '')}/`;
+      for (const p of [...store.keys()]) if (p.startsWith(prefix)) store.delete(p);
+    },
   };
-  return { client, store };
+  return { client, store, removed };
 }
 
 describe('CpanelFtpDeploy (fallback FTP)', () => {
@@ -51,5 +57,6 @@ describe('CpanelFtpDeploy (fallback FTP)', () => {
     expect(f.store.get('public_html/s/index.html')).toBe('baru');
     expect(f.store.has('public_html/s/lama.html')).toBe(false);
     expect(f.store.has('public_html/s/arsip/2020.html')).toBe(false);
+    expect(f.removed).toContain('public_html/s/arsip'); // direktori usang ikut dihapus
   });
 });

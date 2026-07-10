@@ -74,5 +74,9 @@ export function createSsh2SftpDeployClient(config: Ssh2SftpConfig): SftpDeployCl
     async deleteFile(path: string) {
       await sftp.delete(path);
     },
+    async removeDir(dir: string) {
+      // rmdir(path, recursive=true) menghapus dir + isinya.
+      await sftp.rmdir(dir, true);
+    },
   };
 }

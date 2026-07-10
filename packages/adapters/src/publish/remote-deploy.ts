@@ -16,6 +16,8 @@ export interface RemoteDeployClient {
   // Daftar path file (rekursif) relatif terhadap `dir`; [] bila dir belum ada.
   listAllFiles(dir: string): Promise<string[]>;
   deleteFile(path: string): Promise<void>;
+  // Hapus direktori beserta isinya (rekursif); no-op bila tak ada.
+  removeDir(dir: string): Promise<void>;
 }
 
 export interface RemoteDeployOptions {
@@ -75,6 +77,23 @@ export async function deployToRemote(
       if (!fresh.has(stale)) {
         await client.deleteFile(joinRemote(docroot, stale));
       }
+    }
+
+    // Hapus direktori yang menjadi usang (tak lagi menampung file rilis baru) — mirror penuh.
+    const freshDirs = new Set<string>();
+    for (const file of input.files) {
+      for (let d = parentDir(file.path); d; d = parentDir(d)) freshDirs.add(d);
+    }
+    const staleDirs = new Set<string>();
+    for (const stale of existing) {
+      if (fresh.has(stale)) continue;
+      for (let d = parentDir(stale); d; d = parentDir(d)) {
+        if (!freshDirs.has(d)) staleDirs.add(d);
+      }
+    }
+    // Terdalam dulu agar induk kosong setelah anak terhapus (removeDir rekursif juga aman).
+    for (const dir of [...staleDirs].sort((a, b) => b.length - a.length)) {
+      await client.removeDir(joinRemote(docroot, dir));
     }
 
     await client.end();

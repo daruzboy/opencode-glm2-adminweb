@@ -398,10 +398,13 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   = **satu-satunya** impor vendor FTP (SOLID-D); **FTPS eksplisit** (AUTH TLS) default, path
   absolut (bebas CWD), list rekursif, `rejectUnauthorized` konfigurasi. Dep `basic-ftp ^6.0.1`.
   `createDeploy()` prioritas: SFTP → FTP (`CPANEL_FTP_HOST`) → lokal-FS. `.env.example`
-  +`CPANEL_FTP_*`. Gate 21/21 (adapters +2 FTP, worker +2 seleksi). **E2E ke Rumahweb**: FTPS+TLS
-  **terverifikasi cocok** (hostname `cikapundung.iixcp.rumahweb.net`, cert valid), tapi **login
-  `530` (user `digs2416` ditolak)** → **butuh kredensial FTP valid dari PO** (cPanel FTP Accounts).
-  **Belum**: E2E deploy sukses (nunggu kredensial FTP betul) + subdomain UAPI.
+  +`CPANEL_FTP_*`. **E2E ke Rumahweb SUKSES** (2026-07-10, FTPS+TLS verified, akun FTP
+  `Deploy@digimaestro.id` — casing username penting): deploy v1 (3 file) → v2 (1 file) →
+  listing akhir hanya `index.html` (robots.txt **&** dir `sub/` terhapus). **Bug ditemukan E2E &
+  diperbaiki**: clean-delete tak menghapus direktori yang jadi kosong → tambah `removeDir` ke
+  `RemoteDeployClient` + orkestrasi hapus **direktori usang** (mirror penuh, terdalam dulu);
+  impl `sftp.rmdir(_,true)` & `ftp.removeDir`. Gate 21/21 (adapters +2 FTP incl. assert removeDir,
+  worker +2). **Belum**: subdomain cPanel UAPI (FR-PUB-004b) + produsen job api.
 - ⏳ Sisanya (**terblokir kredensial/PO**): CHN WABA (T-030..033, terblokir T-001), subdomain
   cPanel UAPI (FR-PUB-004b), adapter Prisma preview (desain token); ops sisa (T-071..073), QA
   (T-080..083, butuh app hidup + TestSprite restart). _(Adapter S3 + deploy cPanel SFTP sudah
@@ -422,7 +425,8 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
 - **Shared hosting deploy transport** — **SFTP DIPILIH** utk host ber-SSH; **FTPS = fallback aktif**
   utk host tanpa SSH (PO 2026-07-10). Temuan: host shared PO (Rumahweb `202.10.43.56`) **tak buka
   SSH** (hanya FTP 21 + cPanel 2083) → dipakai `CpanelFtpDeploy` (FTPS). Adapter SFTP tetap ada utk
-  host lain. **E2E FTP tertunda: kredensial `digs2416` ditolak 530** — PO perlu sediakan FTP creds valid.
+  host lain. **E2E FTP SUKSES** ke Rumahweb (akun `Deploy@digimaestro.id`, FTPS+TLS verified) —
+  deploy + clean-delete mirror penuh terbukti; bug hapus-direktori-usang ditemukan E2E & diperbaiki.
 
 ---
 

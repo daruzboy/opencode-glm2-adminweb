@@ -80,5 +80,9 @@ export function createBasicFtpDeployClient(config: BasicFtpConfig): RemoteDeploy
     async deleteFile(path: string) {
       await client.remove(abs(path));
     },
+    async removeDir(dir: string) {
+      // removeDir menghapus direktori beserta seluruh isinya (rekursif).
+      await client.removeDir(abs(dir));
+    },
   };
 }
