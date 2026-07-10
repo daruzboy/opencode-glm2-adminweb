@@ -339,9 +339,9 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   dev/staging; **S3 (@aws-sdk) + rsync/SSH cPanel (ssh2) menyusul, kontrak Port sama
   (FR-PUB-009)**. worker+api kini depend sites-kit. **Diverifikasi end-to-end**: publish
   Site Document → docroot → serve HTTP → `GET / , /menu/ , /sitemap.xml , /robots.txt` semua
-  **200**; rollback ok. Gate 21/21 (worker +8 tes, adapters +4). **Belum**: adapter S3
-  (`@aws-sdk`) & rsync/SSH cPanel nyata + subdomain cPanel API (FR-PUB-004b) + wiring worker
-  BullMQ consumer.
+  **200**; rollback ok. Gate 21/21 (worker +8 tes, adapters +4). _(Adapter S3 = slice S3/PR #33;
+  wiring worker BullMQ = slice BullMQ/PR #35 — lihat di bawah. Sisa: rsync/SSH cPanel + subdomain
+  cPanel API FR-PUB-004b.)_
 - ✅ **Object storage = MinIO self-host DIPUTUSKAN & disediakan** (2026-07-10, ops):
   service `minio` + `minio-init` (profil compose `storage`) di `docker-compose.yml`, bucket
   `digimaestro-artifacts` otomatis, kredensial via `MINIO_ROOT_*`; `.env.example` mengarahkan
@@ -359,8 +359,20 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   (ADR-8), `NoSuchKey`/404 → `null`. Dep `@aws-sdk/client-s3 ^3.1083.0`. **Diverifikasi
   end-to-end melawan MinIO nyata** (jalur produksi `createAwsS3ObjectClient` →
   `S3ArtifactStore`): store 4 file + manifest → objek mendarat di bucket → retrieve utuh
-  (contentType terjaga) → key absen = `null`. Gate 21/21 (adapters 57 tes, +4 S3). **Belum**:
-  wiring worker BullMQ + composition root (pilih `S3ArtifactStore` via env `S3_*`).
+  (contentType terjaga) → key absen = `null`. Gate 21/21 (adapters 57 tes, +4 S3).
+- 🔧 **T-063 (slice BullMQ consumer)** Wiring worker antrean `publish` (EPIC-06, ADR-2;
+  SRS §3.2) — **PR #35, 2026-07-10 (stacked di atas PR #33):** `apps/worker/src/publish-job.ts`
+  `processPublishJob` (dispatch **murni** offline-testable atas union job `publish`/`rollback`
+  → `publishSite`/`rollbackSite`) + `PUBLISH_QUEUE`. `publish-worker.ts` `startPublishWorker`
+  (wrapper **tipis** BullMQ `Worker`; job gagal → throw agar retry). `composition.ts`
+  `createPublishDeps(env)` pilih adapter dari env: **S3ArtifactStore bila `S3_KEY/S3_SECRET`
+  diisi** (incl. MinIO), else `LocalArtifactStore`; deploy = lokal-FS (cPanel menyusul); verify
+  = HTTP fetch (FR-PUB-004). `createRedisConnection` parse `REDIS_URL`. `runWorker()` kini
+  memulai consumer + shutdown rapi (`worker.close()`). Dep `bullmq ^5.79.3` (native accel
+  `msgpackr-extract` di-`false` di workspace, fallback JS). **Diverifikasi end-to-end** (Redis +
+  MinIO nyata): enqueue job `publish` → consume → build → **store ke MinIO** → deploy docroot →
+  verify → job completed; artifact retrievable dari S3. Gate 21/21 (worker +10 tes). **Belum**:
+  produsen job di api (approve→enqueue) + deploy cPanel/SSH nyata.
 - ⏳ Sisanya (**terblokir kredensial/PO**): CHN WABA (T-030..033, terblokir T-001), **deploy
   cPanel/SSH nyata** (butuh CPANEL_HOST/UAPI token/SSH key — sedang dikumpulkan PO), adapter
   Prisma preview (desain token); ops sisa (T-071..073), QA (T-080..083, butuh app hidup +
