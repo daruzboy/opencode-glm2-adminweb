@@ -2,7 +2,7 @@
 // REST riwayat, healthz. Adapter disuntikkan di sini (SOLID-D).
 
 import { pathToFileURL } from 'node:url';
-import { createChatDeps } from './composition.js';
+import { createChatDeps, createPreviewDeps } from './composition.js';
 import { registerChatRoutes } from './chat/routes.js';
 import { registerPreviewRoutes } from './preview/routes.js';
 import type { ChatDeps } from './chat/handle-incoming.js';
@@ -30,7 +30,10 @@ export async function buildServer(opts: BuildServerOptions = {}): Promise<Fastif
 }
 
 export async function start(): Promise<void> {
-  const app = await buildServer();
+  // Rute preview draft diaktifkan hanya bila PREVIEW_TOKEN_SECRET diisi (butuh DB +
+  // rahasia token). Tanpa itu, server tetap jalan tanpa /api/preview.
+  const preview = process.env.PREVIEW_TOKEN_SECRET ? createPreviewDeps() : undefined;
+  const app = await buildServer({ preview });
   const port = Number(process.env.PORT ?? '3000');
   await app.listen({ port, host: '0.0.0.0' });
 }
