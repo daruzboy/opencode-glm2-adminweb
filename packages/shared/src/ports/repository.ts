@@ -129,3 +129,98 @@ export interface MessageRepository extends Port {
     input: MessageCreateInput,
   ): Promise<Result<MessageEntity, RepositoryError>>;
 }
+
+// ── Website ───────────────────────────────────────────────────────────────────
+// SRS §8 Website (tenantId @unique = satu website per tenant, BRU-01). Status
+// mengikuti state machine SRS §6.1. Dipakai pipeline publish & agent builder.
+
+export type WebsiteStatus =
+  | 'DRAFTING'
+  | 'PREVIEW_READY'
+  | 'APPROVED'
+  | 'PUBLISHED'
+  | 'SUSPENDED'
+  | 'ARCHIVED';
+
+export interface WebsiteEntity {
+  id: string;
+  tenantId: string;
+  slug: string;
+  status: WebsiteStatus;
+  publishedRevisionId: string | null;
+  themeId: string | null;
+  deploymentTargetId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebsiteUpdateInput {
+  status?: WebsiteStatus;
+  publishedRevisionId?: string | null;
+}
+
+export interface WebsiteRepository extends Port {
+  readonly name: 'WebsiteRepository';
+  findByTenantId(tenantId: TenantId): Promise<Result<WebsiteEntity | null, RepositoryError>>;
+  update(
+    tenantId: TenantId,
+    websiteId: string,
+    input: WebsiteUpdateInput,
+  ): Promise<Result<WebsiteEntity, RepositoryError>>;
+}
+
+// ── Revision ──────────────────────────────────────────────────────────────────
+// SRS §8 Revision (snapshot immutable Site Document per perubahan agent). Status
+// mengikuti state machine DRAFT→PREVIEW→APPROVED→PUBLISHED|REJECTED (SRS §6.1).
+// Revision tidak punya tenantId langsung → scope via Website (tenantId) di setiap
+// method (NFR-09: tenant guard mengecek Website milik tenant DULU).
+
+export type RevisionStatus = 'DRAFT' | 'PREVIEW' | 'APPROVED' | 'PUBLISHED' | 'REJECTED';
+
+export interface RevisionEntity {
+  id: string;
+  websiteId: string;
+  number: number;
+  siteDoc: unknown;
+  summary: string | null;
+  status: RevisionStatus;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RevisionCreateInput {
+  websiteId: string;
+  siteDoc: unknown;
+  summary?: string;
+  createdBy: string;
+  status?: RevisionStatus;
+}
+
+export interface RevisionUpdateInput {
+  status?: RevisionStatus;
+  summary?: string;
+}
+
+export interface RevisionRepository extends Port {
+  readonly name: 'RevisionRepository';
+  findById(
+    tenantId: TenantId,
+    websiteId: string,
+    revisionId: string,
+  ): Promise<Result<RevisionEntity | null, RepositoryError>>;
+  findLatest(
+    tenantId: TenantId,
+    websiteId: string,
+  ): Promise<Result<RevisionEntity | null, RepositoryError>>;
+  create(
+    tenantId: TenantId,
+    input: RevisionCreateInput,
+  ): Promise<Result<RevisionEntity, RepositoryError>>;
+  update(
+    tenantId: TenantId,
+    websiteId: string,
+    revisionId: string,
+    input: RevisionUpdateInput,
+  ): Promise<Result<RevisionEntity, RepositoryError>>;
+}

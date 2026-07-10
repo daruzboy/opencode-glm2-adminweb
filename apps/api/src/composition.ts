@@ -6,10 +6,13 @@ import {
   createDeterministicLlmAgentAdapter,
   createGlmJsonAdapter,
   createPrismaClient,
+  createBullMqPublishQueue,
   PreviewPortPrisma,
+  PublishSourcePrisma,
   type ConversationDelegate,
   type LlmUsageDelegate,
   type MessageDelegate,
+  type PublishSourceDelegate,
   type RevisionPreviewDelegate,
   type RuntimeFetch,
 } from '@digimaestro/adapters';
@@ -17,6 +20,7 @@ import { createAgentReplier, createAgentToolRegistry, type ConversationReplier }
 import type { ConversationRepository, LlmAgentResponse, LlmJsonPort, LlmUsageLoggerPort } from '@digimaestro/shared';
 import type { ChatDeps } from './chat/handle-incoming.js';
 import type { PreviewDeps } from './preview/handle-preview.js';
+import type { PublishRequestDeps } from './publish/handle-publish.js';
 
 export type LlmProviderName = 'deepseek' | 'glm';
 
@@ -80,6 +84,34 @@ export function createPreviewDeps(options: CreatePreviewDepsOptions = {}): Previ
   const prisma = options.prisma ?? createPrismaClient();
   const preview = new PreviewPortPrisma(prisma.revision as unknown as RevisionPreviewDelegate, secret);
   return { preview };
+}
+
+export interface CreatePublishRequestDepsOptions {
+  readonly prisma?: { website: PublishSourceDelegate['website']; revision: PublishSourceDelegate['revision'] };
+  readonly redisUrl?: string;
+  readonly rootDomain?: string;
+}
+
+// Composition publish request (T-063, BRU-02): sumber Prisma tenant-scoped + produsen antrean
+// BullMQ. rootDomain dari PUBLISH_BASE_DOMAIN (default digimaestro.id). Butuh DATABASE_URL +
+// REDIS_URL saat nyata; test menyuntik fake sehingga rute teruji tanpa DB/Redis.
+export function createPublishRequestDeps(options: CreatePublishRequestDepsOptions = {}): PublishRequestDeps {
+  const prisma = options.prisma ?? createPrismaClient();
+  const source = new PublishSourcePrisma({
+    website: prisma.website as unknown as PublishSourceDelegate['website'],
+    revision: prisma.revision as unknown as PublishSourceDelegate['revision'],
+  });
+  const url = new URL(options.redisUrl ?? process.env.REDIS_URL ?? 'redis://localhost:6379');
+  const queue = createBullMqPublishQueue({
+    host: url.hostname,
+    port: url.port ? Number(url.port) : 6379,
+    username: url.username || undefined,
+    password: url.password || undefined,
+    // maxRetriesPerRequest null wajib utk koneksi BullMQ.
+    maxRetriesPerRequest: null,
+  });
+  const rootDomain = options.rootDomain ?? process.env.PUBLISH_BASE_DOMAIN ?? 'digimaestro.id';
+  return { source, queue, rootDomain };
 }
 
 export interface CreateChatDepsOptions {

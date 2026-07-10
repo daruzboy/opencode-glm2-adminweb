@@ -13,7 +13,7 @@ export interface DeployableFile {
   readonly contentType: string;
 }
 
-export type PublishErrorCode = 'BUILD' | 'STORE' | 'DEPLOY' | 'VERIFY' | 'NOT_FOUND' | 'SUBDOMAIN';
+export type PublishErrorCode = 'BUILD' | 'STORE' | 'DEPLOY' | 'VERIFY' | 'NOT_FOUND' | 'SUBDOMAIN' | 'QUEUE';
 
 export interface PublishError {
   readonly code: PublishErrorCode;
