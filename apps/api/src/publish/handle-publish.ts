@@ -1,0 +1,47 @@
+// Use case publish request (T-063, BRU-02 approval-first; FR-PUB-004). Memanggil endpoint ini
+// = persetujuan eksplisit klien untuk mempublikasikan sebuah revisi. Konten diambil dari DB
+// tepercaya (PublishSourcePort, tenant-scoped) — BUKAN dari body — lalu di-enqueue ke worker
+// (PublishQueuePort). Bergantung hanya pada Port → diuji dengan fake tanpa DB/Redis.
+
+import type { PublishQueuePort, PublishSourcePort, TenantId } from '@digimaestro/shared';
+
+export interface PublishRequestDeps {
+  readonly source: PublishSourcePort;
+  readonly queue: PublishQueuePort;
+  // Domain induk situs klien (mis. 'digimaestro.id') → baseUrl + rootDomain job.
+  readonly rootDomain: string;
+}
+
+export interface PublishRequest {
+  readonly tenantId: TenantId;
+  readonly websiteId: string;
+  readonly revisionNumber: number;
+}
+
+export type PublishOutcome =
+  | { readonly ok: true; readonly status: 202; readonly jobId: string; readonly url: string }
+  | { readonly ok: false; readonly status: 404 | 500; readonly message: string };
+
+export async function handlePublishRequest(deps: PublishRequestDeps, req: PublishRequest): Promise<PublishOutcome> {
+  const src = await deps.source.getPublishSource(req.tenantId, {
+    websiteId: req.websiteId,
+    revisionNumber: req.revisionNumber,
+  });
+  if (!src.ok) return { ok: false, status: 500, message: src.error.message };
+  if (!src.value) return { ok: false, status: 404, message: 'revisi tidak ditemukan' };
+
+  const { slug, siteDocument, websiteId, revisionNumber } = src.value;
+  const url = `https://${slug}.${deps.rootDomain}`;
+
+  const enq = await deps.queue.enqueuePublish({
+    websiteId,
+    revisionNumber,
+    slug,
+    baseUrl: url,
+    siteDocument,
+    rootDomain: deps.rootDomain,
+  });
+  if (!enq.ok) return { ok: false, status: 500, message: enq.error.message };
+
+  return { ok: true, status: 202, jobId: enq.value.jobId, url };
+}

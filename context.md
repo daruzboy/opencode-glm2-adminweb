@@ -94,8 +94,15 @@
   `rootDomain`, docroot selaras `public_html/{slug}`; no-op bila tak di-inject = backward-compat).
   `PublishDeps.subdomain?` + `PublishInput.rootDomain?` + job data `+rootDomain`. `composition
   createSubdomain(env)` pilih UAPI bila `CPANEL_UAPI_HOST`+`USER`+(`TOKEN`|`PASSWORD`). Gate 21/21
-  (worker +7 tes). **Pipeline publish lengkap**: build→store→ensureSubdomain→deploy→verify. Sisa
-  T-063: produsen job publish di api (approve→enqueue).
+  (worker +7 tes). **Pipeline publish lengkap**: build→store→ensureSubdomain→deploy→verify.
+- **T-063 produsen job api SELESAI** (PR #41, 2026-07-10): `POST /api/websites/:id/publish` (BRU-02
+  approval-first) → enqueue. Port `PublishQueuePort`/`PublishSourcePort` (shared, +kode `QUEUE`).
+  Adapter `BullMqPublishQueue` (+`createBullMqPublishQueue`) + `PublishSourcePrisma` (tenant-scoped:
+  Website milik tenant → Revision.siteDoc). api `handlePublishRequest` (konten dari **DB**, bukan
+  body) + rute (x-tenant-id, `{revisionNumber}` zod → 202/401/400/404) + `createPublishRequestDeps`;
+  `buildServer` `publish` opsional (aktif bila DATABASE_URL+REDIS_URL). Dep bullmq di adapters. Gate
+  21/21 (adapters +7, api +8). **E2E produsen↔konsumen (Redis nyata) SUKSES**. **Jalur approve→publish
+  tersambung penuh.** Sisa produksi: load siteDoc real path sudah dari DB; tinggal auth (T-002).
 - **Object storage = MinIO self-host** (2026-07-10): service `minio`+`minio-init` di compose
   (profil `storage`), bucket `digimaestro-artifacts`, kredensial `MINIO_ROOT_*` (=S3_KEY/SECRET),
   `S3_ENDPOINT=http://minio:9000`. Diverifikasi put/get object via S3 API. Sisi S3 T-063 tak

@@ -14,10 +14,33 @@
   "permission": {
     "bash": {
       "testsprite *": "allow",
-      "npm *": "ask",
-      "pnpm *": "ask",
+      "pnpm *": "allow",
+      "npm *": "allow",
+      "npx *": "allow",
+      "tsc *": "allow",
+      "git status *": "allow",
+      "git diff *": "allow",
+      "git log *": "allow",
+      "git show *": "allow",
+      "git branch *": "allow",
+      "git checkout *": "allow",
+      "git add *": "allow",
+      "ls *": "allow",
+      "find *": "allow",
+      "rg *": "allow",
+      "cat *": "allow",
+      "head *": "allow",
+      "tail *": "allow",
+      "wc *": "allow",
+      "mkdir *": "allow",
+      "cp *": "allow",
+      "mv *": "allow",
+      "touch *": "allow",
+      "echo *": "allow",
       "*": "ask"
-    }
+    },
+    "edit": "allow",
+    "write": "allow"
   },
   "references": {
     "spec": {

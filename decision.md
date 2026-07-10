@@ -373,6 +373,18 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   (`TOKEN`|`PASSWORD`) diisi → disuntik ke `createPublishDeps`. `.env.example` +`CPANEL_UAPI_*`.
   Gate 21/21 (worker +7 tes: urutan sub→deploy, rootDomain wajib, error→tak deploy, backward-compat,
   seleksi env). **Pipeline publish kini lengkap**: build→store→**ensureSubdomain**→deploy→verify.
+- 🔧 **T-063 (slice produsen job api)** POST /api/websites/:id/publish → enqueue (EPIC-06, BRU-02
+  approval-first; FR-PUB-004) — **PR #41, 2026-07-10:** Port `PublishQueuePort`+`PublishJobRequest`
+  +`PUBLISH_QUEUE_NAME` & `PublishSourcePort`+`PublishSource` (shared); +kode error `QUEUE`. Adapter
+  `BullMqPublishQueue` (produsen; interface sempit `JobQueueClient` offline-test) +
+  `createBullMqPublishQueue(connection)` (impor vendor bullmq); `PublishSourcePrisma` (**tenant-scoped**:
+  verifikasi Website milik tenant DULU → ambil Revision.siteDoc; guard NFR-09). api:
+  `handlePublishRequest` (BRU-02: konten dari **DB tepercaya**, BUKAN body → cegah publish
+  sembarang) + `registerPublishRoutes` (x-tenant-id header, body `{revisionNumber}` zod → 202+jobId/
+  401/400/404) + `createPublishRequestDeps` (env `REDIS_URL`/`PUBLISH_BASE_DOMAIN`); `buildServer`
+  terima `publish` opsional (aktif bila DATABASE_URL+REDIS_URL). Dep `bullmq` di adapters. Gate 21/21
+  (adapters +7, api +8). **Diverifikasi E2E produsen↔konsumen** (Redis nyata): `enqueuePublish` →
+  worker consume → build → deploy → HTML ter-render. **Jalur approve→publish TERSAMBUNG penuh.**
 - ✅ **Object storage = MinIO self-host DIPUTUSKAN & disediakan** (2026-07-10, ops):
   service `minio` + `minio-init` (profil compose `storage`) di `docker-compose.yml`, bucket
   `digimaestro-artifacts` otomatis, kredensial via `MINIO_ROOT_*`; `.env.example` mengarahkan

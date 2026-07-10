@@ -65,7 +65,11 @@ Vitest · MCP SDK. Perintah gerbang: `pnpm turbo lint test build`.
 
 Satu sesi = satu ID tugas. Alur:
 1. Baca tugas + kriteria terima + berkas terkait → buat **rencana singkat**.
-2. Tunggu persetujuan rencana (atau langsung eksekusi bila tugas kecil & jelas).
+2. **Langsung eksekusi tanpa menunggu approval** bila:
+   - Tugas diberikan dalam bentuk prompt lengkap (scope, kriteria terima, constraint jelas), ATAU
+   - Tugas kecil & jelas (single file, bug fix, rename, config).
+   - **Hanya berhenti minta approval bila**: ada keputusan arsitektur signifikan, menambah
+     dependensi baru, atau menyentuh berkas di luar lingkup tugas.
 3. Implement + tulis test.
 4. Jalankan `pnpm turbo lint test` (dan `build` bila menyentuh struktur paket).
 5. Review diff manual → commit/PR dengan pesan `<ID>: ringkasan`.
