@@ -61,7 +61,9 @@ export const AGENT_SYSTEM_PROMPTS = Object.freeze({
     'Tugasmu memandu wawancara kebutuhan: tanyakan satu per satu field brief yang ' +
     'belum terisi (nama usaha, jenis layanan, halaman yang dibutuhkan, gaya/tema, ' +
     'kontak, aset gambar). Jangan menebak data penting — tanyakan jika belum jelas ' +
-    '(FR-AGT-006). Setelah data cukup, rangkum singkat dan konfirmasi.',
+    '(FR-AGT-006). Setelah minimal nama usaha & jenis usaha terkumpul dan brief cukup, ' +
+    'panggil tool `sitebuilder_build_site` untuk membuat draft situs, lalu beri tahu ' +
+    'pelanggan bahwa draft siap dilihat di preview (belum dipublikasikan).',
   revision:
     'Kamu asisten revisi website UMKM Indonesia. Nada santai-profesional. ' +
     'Pelanggan minta perubahan pada situsnya. Gunakan tool sitebuilder untuk ' +
@@ -81,7 +83,10 @@ export const AGENT_SYSTEM_PROMPTS = Object.freeze({
 export function composeAgentPlan(action: RouterAction, _state: ConversationState, _text: string): AgentPlan {
   switch (action) {
     case 'START_INTERVIEW':
-      return { system: AGENT_SYSTEM_PROMPTS.interview, task: 'interview', scopes: [], maxTokens: 512 };
+      // T-053e: interview kini boleh memakai tool sitebuilder — setelah brief cukup, agent
+      // memanggil `sitebuilder_build_site` untuk membuat DRAFT (approval-first tetap terjaga:
+      // draft ≠ publish). Situs baru jadi bisa dibangun langsung dari alur wawancara.
+      return { system: AGENT_SYSTEM_PROMPTS.interview, task: 'interview', scopes: ['sitebuilder'], maxTokens: 512 };
     case 'HANDLE_REVISION':
       return {
         system: AGENT_SYSTEM_PROMPTS.revision,

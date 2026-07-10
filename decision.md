@@ -297,6 +297,18 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   chat→bangun/revisi Site Document→persist Revision **tersambung**. Helper registry diekspor +
   bergantung Port → teruji offline (fake port). Gate 21/21 (api +4 tes: daftar tool, guard scope,
   dispatch outline/patch). _Sisa:_ inject schema Site Document nyata (kini permissive) + auth rute (T-002).
+- ✅ **T-053e** Lengkapi loop agent — build situs baru + validasi schema (EPIC-05, FR-AGT-001/004;
+  **melengkapi loop inti**) — **PR tersendiri, 2026-07-10:** (1) **Schema Site Document NYATA**:
+  `composition` inject `siteDocumentSchema` (sites-kit, Zod `safeParse` kompatibel `LlmJsonSchema`)
+  ke `SitebuilderToolAdapter` + `BuildDeps` → `apply_patch`/`build` kini **memvalidasi output LLM +
+  self-repair** (bukan `PERMISSIVE`). (2) **Tool `sitebuilder_build_site`** (`apps/api/src/agent/
+  build-site-tool.ts`): bungkus use case core `buildSiteFromBrief` (T-053b) sbg `AgentToolDefinition`
+  (parse brief → resolve website tenant → Revision DRAFT pertama); di composition root krn menyatukan
+  core+adapter (tanpa duplikasi/langgar dependency rule). Diregistrasi via `createSitebuilderToolRegistry
+  (port, [buildTool])`. (3) **Router**: `START_INTERVIEW` kini scope `['sitebuilder']` + prompt interview
+  mengarahkan agent memanggil `sitebuilder_build_site` setelah brief cukup → **jalur situs BARU
+  (interview→build→DRAFT) tersambung** (approval-first terjaga: draft ≠ publish). Gate 21/21 (api +6
+  tes build-tool offline; replier test discope-update). _Sisa:_ E2E dgn API key nyata + auth rute (T-002).
 - ✅ **T-002auth** Autentikasi JWT dasar + resolusi tenant (EPIC-00/NFR-07) — **PR #45, 2026-07-10:**
   Port `AuthPort` (shared) + `JwtAuthPort` (adapter, satu-satunya impor `jsonwebtoken`; verify/issue
   → `Result`) + `POST /api/auth/token` + plugin `resolveTenant`. **UTANG (lihat memory):** plugin
