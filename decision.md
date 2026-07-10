@@ -385,7 +385,7 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   Dep `ssh2-sftp-client ^12.1.1` (+`@types`), native `ssh2`/`cpu-features` di-`false` (crypto Node
   murni). `apps/worker/src/composition.ts createDeploy()` pilih cPanel bila `CPANEL_SFTP_HOST`+
   `USER` diisi (key via `CPANEL_SFTP_KEY_PATH`), else lokal-FS. `.env.example` +`CPANEL_SFTP_*`.
-  Gate 21/21 (adapters +4, worker +1). **E2E SFTP tertunda**: host PO (Rumahweb `202.10.43.56`)
+  Gate 21/21 (adapters +4, worker +1). **E2E SFTP tertunda**: host PO (Rumahweb (host di catatan lokal))
   **tak mengekspos SSH/SFTP** (port 22 & alternatif tertutup; hanya 2083 cPanel + 21 FTP terbuka)
   → adapter SFTP valid utk host SSH lain, tapi tak bisa E2E ke host ini. **Belum**: subdomain
   cPanel UAPI (FR-PUB-004b) + produsen job api.
@@ -399,7 +399,7 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   absolut (bebas CWD), list rekursif, `rejectUnauthorized` konfigurasi. Dep `basic-ftp ^6.0.1`.
   `createDeploy()` prioritas: SFTP → FTP (`CPANEL_FTP_HOST`) → lokal-FS. `.env.example`
   +`CPANEL_FTP_*`. **E2E ke Rumahweb SUKSES** (2026-07-10, FTPS+TLS verified, akun FTP
-  `Deploy@digimaestro.id` — casing username penting): deploy v1 (3 file) → v2 (1 file) →
+  akun FTP khusus (casing username penting)): deploy v1 (3 file) → v2 (1 file) →
   listing akhir hanya `index.html` (robots.txt **&** dir `sub/` terhapus). **Bug ditemukan E2E &
   diperbaiki**: clean-delete tak menghapus direktori yang jadi kosong → tambah `removeDir` ke
   `RemoteDeployClient` + orkestrasi hapus **direktori usang** (mirror penuh, terdalam dulu);
@@ -423,9 +423,9 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
 - **Kebijakan trial** — preview-gratis-lalu-bayar vs bayar-depan (rekomendasi: preview gratis).
 - **Provider image generation & stock photo** — dievaluasi Fase 0 (DeepSeek tak punya image-gen).
 - **Shared hosting deploy transport** — **SFTP DIPILIH** utk host ber-SSH; **FTPS = fallback aktif**
-  utk host tanpa SSH (PO 2026-07-10). Temuan: host shared PO (Rumahweb `202.10.43.56`) **tak buka
+  utk host tanpa SSH (PO 2026-07-10). Temuan: host shared PO (Rumahweb (host di catatan lokal)) **tak buka
   SSH** (hanya FTP 21 + cPanel 2083) → dipakai `CpanelFtpDeploy` (FTPS). Adapter SFTP tetap ada utk
-  host lain. **E2E FTP SUKSES** ke Rumahweb (akun `Deploy@digimaestro.id`, FTPS+TLS verified) —
+  host lain. **E2E FTP SUKSES** ke Rumahweb (akun FTP khusus, FTPS+TLS verified) —
   deploy + clean-delete mirror penuh terbukti; bug hapus-direktori-usang ditemukan E2E & diperbaiki.
 
 ---

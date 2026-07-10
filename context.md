@@ -72,12 +72,12 @@
   (adapters +4, worker +1). **E2E ke host nyata MENUNGGU kredensial** (taruh di file scratchpad
   `cpanel.env`, JANGAN commit). Sisa cPanel: subdomain UAPI (FR-PUB-004b).
 - **T-063 deploy cPanel FTP/FTPS SELESAI (kode)** (PR #37, 2026-07-10, stacked di atas #36):
-  temuan — host shared PO (Rumahweb `202.10.43.56`) **tak buka SSH/SFTP** (hanya FTP 21 + cPanel
+  temuan — host shared PO (Rumahweb (host di catatan lokal)) **tak buka SSH/SFTP** (hanya FTP 21 + cPanel
   2083) → **FTPS dipilih PO**. Orkestrasi deploy diekstrak ke `remote-deploy.ts` (`deployToRemote`
   + `RemoteDeployClient`, dipakai bersama SFTP & FTP). `cpanel-ftp-deploy.ts` `CpanelFtpDeploy` +
   `basic-ftp-client.ts` `createBasicFtpDeployClient()` (satu-satunya impor vendor FTP; FTPS
   eksplisit, path absolut, list rekursif). Dep `basic-ftp ^6.0.1`. `worker createDeploy()` prioritas
-  SFTP→FTP→lokal. **E2E Rumahweb SUKSES** (akun FTP `Deploy@digimaestro.id` — casing username
+  SFTP→FTP→lokal. **E2E Rumahweb SUKSES** (akun FTP khusus — casing username
   penting!, FTPS+TLS verified): deploy v1→v2, clean-delete mirror penuh. **Bug ditemukan E2E &
   diperbaiki**: hapus direktori usang (tambah `removeDir` ke `RemoteDeployClient`). Gate 21/21.
   Sisa cPanel: subdomain UAPI (FR-PUB-004b). _Catatan aman: password cPanel ter-paste di chat → rotasi._
