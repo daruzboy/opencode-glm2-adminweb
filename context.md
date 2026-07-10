@@ -115,6 +115,17 @@
   cek Website milik tenant dulu → cross-tenant=null/NOT_FOUND, pola PublishSourcePrisma; number=count+1,
   race dijaga @@unique). Delegate sempit → fake test tanpa DB. Gate 21/21 (adapters +28 tes). Dikerjakan
   di git worktree terisolasi krn working tree main dipakai sesi lain paralel (lihat memory).
+- **Batch sesi paralel MERGED 2026-07-10** (#44/#45/#46/#47, review + merge berurutan oleh sesi ini):
+  **T-053b** (#44) use case `buildSiteFromBrief` + `SitebuilderToolAdapter` (build/edit Site Document
+  → persist Revision). **T-053c** (#46) `OpenAiCompatibleAgentAdapter` (LLM HTTP nyata utk agent loop).
+  **T-002auth** (#45) `AuthPort`/`JwtAuthPort` + `/api/auth/token` + plugin — **UTANG: belum dipasang
+  ke rute + endpoint token tanpa kredensial** (lihat memory `auth-t002-security-debt`). **T-080** (#47)
+  integration test — **selalu di-skip + rusak** (cleanup kena tenant-guard). Semua gate 21/21.
+- **T-053d wiring agent→tool sitebuilder SELESAI (loop inti)** (PR tersendiri, 2026-07-10):
+  `createProductionAgentReplier` kini menyuntik registry tool sitebuilder (repo T-020ext →
+  `SitebuilderToolAdapter` T-053b → tool T-051) ke agent loop, **menutup celah `createAgentToolRegistry([])`
+  (0 tool)**. Loop **chat→bangun/revisi situs→persist Revision→(preview→approve→publish)** kini
+  tersambung. Gate 21/21 (api +4 tes offline). Sisa: inject schema Site Document nyata + auth rute (T-002).
 - **Object storage = MinIO self-host** (2026-07-10): service `minio`+`minio-init` di compose
   (profil `storage`), bucket `digimaestro-artifacts`, kredensial `MINIO_ROOT_*` (=S3_KEY/SECRET),
   `S3_ENDPOINT=http://minio:9000`. Diverifikasi put/get object via S3 API. Sisi S3 T-063 tak
