@@ -54,6 +54,41 @@
   cPanel ssh2) + subdomain cPanel API + wiring worker BullMQ; CHN WABA (T-001); QA T-08x
   (app hidup + restart opencode). T-050 sudah final (DeepSeek). Perbandingan GLM opsional.
 - _Default LLM_: DeepSeek (`DIGIMAESTRO_LLM_PROVIDER=deepseek`) per eval T-050 2026-07-09.
+- **T-063 adapter S3 SELESAI** (PR #33, 2026-07-10): `packages/adapters/src/publish/`
+  `S3ArtifactStore` (impl `ArtifactStorePort` di S3-compatible) bergantung interface sempit
+  `S3ObjectClient` (offline-testable, fake in-memory) + `createAwsS3ObjectClient()` (satu-satunya
+  impor `@aws-sdk/client-s3`, dukung MinIO via `endpoint`+`forcePathStyle`). Simpan objek+manifest
+  → retrieve utuh (rollback). Diverifikasi end-to-end melawan MinIO nyata (store→bucket→retrieve;
+  key absen=null). Gate 21/21 (adapters +4 tes). **Blocker storage S3 tuntas** → sisa: wiring
+  worker BullMQ + composition root (env `S3_*`) & deploy cPanel/SSH nyata (nunggu kredensial PO).
+- **T-063 worker BullMQ consumer SELESAI** (PR #35, 2026-07-10, stacked di atas #33):
+  `apps/worker/src/publish-job.ts` `processPublishJob` (dispatch murni offline-test atas union
+  job `publish`/`rollback`) + `PUBLISH_QUEUE`; `publish-worker.ts` `startPublishWorker` (wrapper
+  tipis BullMQ, gagal→throw utk retry); `composition.ts` `createPublishDeps(env)` pilih adapter
+  (S3 bila `S3_KEY/S3_SECRET`, else lokal-FS; deploy lokal-FS; verify HTTP fetch) +
+  `createRedisConnection` (parse `REDIS_URL`). `runWorker()` mulai consumer + shutdown rapi. Dep
+  `bullmq ^5.79.3` (`msgpackr-extract:false` di workspace). Diverifikasi E2E (Redis+MinIO nyata):
+  enqueue→consume→build→store MinIO→deploy→verify→completed. Gate 21/21 (worker +10 tes). Sisa:
+  produsen job di api (approve→enqueue) + deploy cPanel nyata (berikutnya).
+- **T-063 deploy cPanel SFTP SELESAI (kode)** (PR #36, 2026-07-10, stacked di atas #35):
+  transport **SFTP over SSH** (dipilih PO). `packages/adapters/src/publish/cpanel-sftp-deploy.ts`
+  `CpanelSftpDeploy` (impl `DeployPort`, interface sempit `SftpDeployClient`, offline-test; deploy
+  bersih upload+hapus-usang; docroot `public_html/{slug}`) + `ssh2-sftp-client.ts`
+  `createSsh2SftpDeployClient()` (satu-satunya impor vendor SFTP; auth password/key; list rekursif).
+  Dep `ssh2-sftp-client ^12.1.1`. `worker composition.createDeploy()` pilih cPanel bila
+  `CPANEL_SFTP_HOST`+`USER` diisi, else lokal-FS. `.env.example` +`CPANEL_SFTP_*`. Gate 21/21
+  (adapters +4, worker +1). **E2E ke host nyata MENUNGGU kredensial** (taruh di file scratchpad
+  `cpanel.env`, JANGAN commit). Sisa cPanel: subdomain UAPI (FR-PUB-004b).
+- **T-063 deploy cPanel FTP/FTPS SELESAI (kode)** (PR #37, 2026-07-10, stacked di atas #36):
+  temuan — host shared PO (Rumahweb (host di catatan lokal)) **tak buka SSH/SFTP** (hanya FTP 21 + cPanel
+  2083) → **FTPS dipilih PO**. Orkestrasi deploy diekstrak ke `remote-deploy.ts` (`deployToRemote`
+  + `RemoteDeployClient`, dipakai bersama SFTP & FTP). `cpanel-ftp-deploy.ts` `CpanelFtpDeploy` +
+  `basic-ftp-client.ts` `createBasicFtpDeployClient()` (satu-satunya impor vendor FTP; FTPS
+  eksplisit, path absolut, list rekursif). Dep `basic-ftp ^6.0.1`. `worker createDeploy()` prioritas
+  SFTP→FTP→lokal. **E2E Rumahweb SUKSES** (akun FTP khusus — casing username
+  penting!, FTPS+TLS verified): deploy v1→v2, clean-delete mirror penuh. **Bug ditemukan E2E &
+  diperbaiki**: hapus direktori usang (tambah `removeDir` ke `RemoteDeployClient`). Gate 21/21.
+  Sisa cPanel: subdomain UAPI (FR-PUB-004b). _Catatan aman: password cPanel ter-paste di chat → rotasi._
 - **Object storage = MinIO self-host** (2026-07-10): service `minio`+`minio-init` di compose
   (profil `storage`), bucket `digimaestro-artifacts`, kredensial `MINIO_ROOT_*` (=S3_KEY/SECRET),
   `S3_ENDPOINT=http://minio:9000`. Diverifikasi put/get object via S3 API. Sisi S3 T-063 tak
