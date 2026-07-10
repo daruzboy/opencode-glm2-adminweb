@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CpanelSftpDeploy, LocalArtifactStore, LocalFilesystemDeploy, S3ArtifactStore } from '@digimaestro/adapters';
+import { CpanelFtpDeploy, CpanelSftpDeploy, LocalArtifactStore, LocalFilesystemDeploy, S3ArtifactStore } from '@digimaestro/adapters';
 import {
   createArtifactStore,
   createDeploy,
@@ -24,6 +24,22 @@ describe('worker composition (pilih adapter dari env)', () => {
 
   it('CPANEL_SFTP_HOST+USER diisi (password auth) → CpanelSftpDeploy', () => {
     const deploy = createDeploy({ CPANEL_SFTP_HOST: 'srv.host', CPANEL_SFTP_USER: 'u', CPANEL_SFTP_PASSWORD: 'p' });
+    expect(deploy).toBeInstanceOf(CpanelSftpDeploy);
+  });
+
+  it('CPANEL_FTP_HOST+USER diisi (tanpa SFTP) → CpanelFtpDeploy (fallback FTPS)', () => {
+    const deploy = createDeploy({ CPANEL_FTP_HOST: 'ftp.host', CPANEL_FTP_USER: 'u', CPANEL_FTP_PASSWORD: 'p' });
+    expect(deploy).toBeInstanceOf(CpanelFtpDeploy);
+  });
+
+  it('SFTP diprioritaskan di atas FTP bila keduanya diisi', () => {
+    const deploy = createDeploy({
+      CPANEL_SFTP_HOST: 'srv',
+      CPANEL_SFTP_USER: 'u',
+      CPANEL_SFTP_PASSWORD: 'p',
+      CPANEL_FTP_HOST: 'ftp',
+      CPANEL_FTP_USER: 'u',
+    });
     expect(deploy).toBeInstanceOf(CpanelSftpDeploy);
   });
 

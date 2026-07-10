@@ -13,6 +13,7 @@ function fakeSftp(preexisting: string[] = []) {
   const store = new Map<string, string>();
   for (const p of preexisting) store.set(p, 'lama');
   const mkdirs: string[] = [];
+  const removed: string[] = [];
   const calls = { connected: 0, ended: 0 };
   const client: SftpDeployClient = {
     async connect() {
@@ -34,8 +35,13 @@ function fakeSftp(preexisting: string[] = []) {
     async deleteFile(path) {
       store.delete(path);
     },
+    async removeDir(dir) {
+      removed.push(dir);
+      const prefix = `${dir.replace(/\/$/, '')}/`;
+      for (const p of [...store.keys()]) if (p.startsWith(prefix)) store.delete(p);
+    },
   };
-  return { client, store, mkdirs, calls };
+  return { client, store, mkdirs, removed, calls };
 }
 
 describe('CpanelSftpDeploy', () => {
@@ -71,6 +77,7 @@ describe('CpanelSftpDeploy', () => {
     expect(f.store.get('public_html/s/index.html')).toBe('baru'); // ditimpa
     expect(f.store.has('public_html/s/lama.html')).toBe(false); // dihapus
     expect(f.store.has('public_html/s/arsip/2020.html')).toBe(false); // dihapus (nested)
+    expect(f.removed).toContain('public_html/s/arsip'); // direktori usang ikut dihapus (mirror penuh)
   });
 
   it('menghormati target.docroot eksplisit + docrootTemplate kustom', async () => {
@@ -100,6 +107,7 @@ describe('CpanelSftpDeploy', () => {
         return [];
       },
       async deleteFile() {},
+      async removeDir() {},
     };
     const deploy = new CpanelSftpDeploy(client, { baseDomain: 'digimaestro.id' });
     const res = await deploy.deploy({ target: { slug: 's' }, files });
