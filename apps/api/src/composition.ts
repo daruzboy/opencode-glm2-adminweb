@@ -2,6 +2,7 @@ import {
   ConversationRepositoryPrisma,
   LlmUsageLoggerPrisma,
   MessageRepositoryPrisma,
+  OpenAiCompatibleAgentAdapter,
   createDeepSeekJsonAdapter,
   createDeterministicLlmAgentAdapter,
   createGlmJsonAdapter,
@@ -64,6 +65,14 @@ export function createChatDeps(options: CreateChatDepsOptions = {}): ChatDeps {
 
   const enableAgentLoop = options.enableAgentLoop ?? env.DIGIMAESTRO_AGENT_LOOP === '1';
   if (!enableAgentLoop) return { conversations, messages };
+
+  // T-053c: bila API key tersedia → gunakan adapter HTTP produksi (DeepSeek/GLM).
+  // Bila tidak → fallback deterministik (dev tanpa key).
+  const apiKey = env.DIGIMAESTRO_LLM_PROVIDER === 'glm' ? env.GLM_API_KEY : env.DEEPSEEK_API_KEY;
+  if (apiKey && apiKey.length > 0) {
+    const reply = createProductionAgentReplier(conversations, env);
+    return { conversations, messages, reply };
+  }
 
   const reply = createDeterministicAgentReplier(conversations);
   return { conversations, messages, reply };
@@ -142,6 +151,32 @@ function deterministicAgentResponder(): LlmAgentResponse {
       'Hai! Aku udah catat pesan kamu. Agent AI produksi lagi disiapin — sementara ' +
       'ini, cerita singkat ya: nama usaha dan website seperti apa yang kamu mau?',
   };
+}
+
+// T-053c: Replier produksi dengan adapter HTTP nyata (DeepSeek/GLM). Dipakai bila
+// API key tersedia. Error adapter → fallback stubReply di handle-incoming (chat tak mati).
+function createProductionAgentReplier(conversations: ConversationRepository, env: LlmEnv): ConversationReplier {
+  const isGlm = env.DIGIMAESTRO_LLM_PROVIDER === 'glm';
+  const apiKey = isGlm ? (env.GLM_API_KEY ?? '') : (env.DEEPSEEK_API_KEY ?? '');
+  const model = isGlm ? (env.GLM_MODEL ?? 'glm-4.5') : (env.DEEPSEEK_MODEL ?? 'deepseek-chat');
+  const baseUrl = isGlm
+    ? (env.GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/paas/v4')
+    : (env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1');
+
+  const agentLlm = new OpenAiCompatibleAgentAdapter({
+    provider: isGlm ? 'glm' : 'deepseek',
+    model,
+    apiKey,
+    baseUrl,
+  });
+
+  return createAgentReplier({
+    router: { conversations },
+    loop: {
+      llm: agentLlm,
+      tools: createAgentToolRegistry([]),
+    },
+  });
 }
 
 export function createLlmJsonPort(options: CreateLlmJsonPortOptions = {}): LlmJsonPort {
