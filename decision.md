@@ -12,7 +12,7 @@
 - Lokal: `C:\Users\daruzboy\Documents\A_PROJECT\02_digimaestro\glm2-adminweb`
 - Produk: **digimaestro.id** (platform website builder chatbot & agentic AI untuk UMKM)
 - Pemilik/PO: Darusman · Model coding agent: GLM 5.2 · QA: TestSprite
-- Terakhir diperbarui: 2026-07-09
+- Terakhir diperbarui: 2026-07-10
 
 ---
 
@@ -348,10 +348,23 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `S3_ENDPOINT=http://minio:9000`. Data di VPS (residensi, ADR-8). **Diverifikasi**: MinIO up →
   bucket dibuat → **put/list/get object via S3 API sukses**. → sisi S3 T-063 **tak lagi
   terblokir**; tinggal adapter `@aws-sdk` (kode) + isi `S3_KEY/S3_SECRET` = `MINIO_ROOT_*`.
+- 🔧 **T-063 (slice S3)** Adapter `ArtifactStorePort` di object storage S3-compatible
+  (EPIC-06, FR-PUB-009) — **PR #33, 2026-07-10:** `packages/adapters/src/publish/
+  s3-artifact-store.ts` `S3ArtifactStore` bergantung interface **sempit** `S3ObjectClient`
+  (bukan `@aws-sdk` langsung) → offline-testable dgn fake in-memory; kontrak Port identik
+  `LocalArtifactStore`. Simpan tiap file + `_manifest.json` sbg objek terpisah (key
+  `/`-separator S3) → `retrieve` utuh utk rollback (FR-PUB-005); artifact rusak (objek
+  hilang) → `err STORE`. `aws-s3-client.ts` `createAwsS3ObjectClient()` = **satu-satunya**
+  file impor vendor SDK S3 (SOLID-D); dukung **MinIO** via `endpoint`+`forcePathStyle`
+  (ADR-8), `NoSuchKey`/404 → `null`. Dep `@aws-sdk/client-s3 ^3.1083.0`. **Diverifikasi
+  end-to-end melawan MinIO nyata** (jalur produksi `createAwsS3ObjectClient` →
+  `S3ArtifactStore`): store 4 file + manifest → objek mendarat di bucket → retrieve utuh
+  (contentType terjaga) → key absen = `null`. Gate 21/21 (adapters 57 tes, +4 S3). **Belum**:
+  wiring worker BullMQ + composition root (pilih `S3ArtifactStore` via env `S3_*`).
 - ⏳ Sisanya (**terblokir kredensial/PO**): CHN WABA (T-030..033, terblokir T-001), **deploy
-  cPanel/SSH nyata** (butuh CPANEL_HOST/UAPI token/SSH key — sedang dikumpulkan PO), adapter S3
-  `@aws-sdk` (kode, tak terblokir), adapter Prisma preview (desain token); ops sisa (T-071..073),
-  QA (T-080..083, butuh app hidup + TestSprite restart).
+  cPanel/SSH nyata** (butuh CPANEL_HOST/UAPI token/SSH key — sedang dikumpulkan PO), adapter
+  Prisma preview (desain token); ops sisa (T-071..073), QA (T-080..083, butuh app hidup +
+  TestSprite restart). _(Adapter S3 sudah dibuat — lihat T-063 slice S3.)_
 
 ---
 

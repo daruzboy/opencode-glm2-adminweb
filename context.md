@@ -46,6 +46,13 @@
   cPanel ssh2) + subdomain cPanel API + wiring worker BullMQ; CHN WABA (T-001); QA T-08x
   (app hidup + restart opencode). T-050 sudah final (DeepSeek). Perbandingan GLM opsional.
 - _Default LLM_: DeepSeek (`DIGIMAESTRO_LLM_PROVIDER=deepseek`) per eval T-050 2026-07-09.
+- **T-063 adapter S3 SELESAI** (PR #33, 2026-07-10): `packages/adapters/src/publish/`
+  `S3ArtifactStore` (impl `ArtifactStorePort` di S3-compatible) bergantung interface sempit
+  `S3ObjectClient` (offline-testable, fake in-memory) + `createAwsS3ObjectClient()` (satu-satunya
+  impor `@aws-sdk/client-s3`, dukung MinIO via `endpoint`+`forcePathStyle`). Simpan objek+manifest
+  → retrieve utuh (rollback). Diverifikasi end-to-end melawan MinIO nyata (store→bucket→retrieve;
+  key absen=null). Gate 21/21 (adapters +4 tes). **Blocker storage S3 tuntas** → sisa: wiring
+  worker BullMQ + composition root (env `S3_*`) & deploy cPanel/SSH nyata (nunggu kredensial PO).
 - **Object storage = MinIO self-host** (2026-07-10): service `minio`+`minio-init` di compose
   (profil `storage`), bucket `digimaestro-artifacts`, kredensial `MINIO_ROOT_*` (=S3_KEY/SECRET),
   `S3_ENDPOINT=http://minio:9000`. Diverifikasi put/get object via S3 API. Sisi S3 T-063 tak
