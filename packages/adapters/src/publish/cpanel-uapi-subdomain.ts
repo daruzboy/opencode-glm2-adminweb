@@ -1,8 +1,10 @@
 // Adapter: SubdomainPort via cPanel UAPI (T-063, FR-PUB-004b). Buat `<slug>.<rootDomain>`
 // sebelum deploy (SubDomain::addsubdomain). Idempoten: subdomain sudah ada → ok(created:false).
-// fetch DI-INJECT → offline-testable tanpa jaringan. Auth cPanel API token (bukan password):
-// header `Authorization: cpanel <user>:<token>`. Endpoint panel HTTPS (default :2083).
+// fetch DI-INJECT → offline-testable tanpa jaringan. Auth: cPanel API token (preferensi,
+// header `Authorization: cpanel <user>:<token>`) ATAU Basic auth password (fallback host tanpa
+// menu API token, header `Authorization: Basic base64(user:pass)`). Endpoint panel HTTPS (:2083).
 
+import { Buffer } from 'node:buffer';
 import { err, ok } from '@digimaestro/shared';
 import type { PublishError, Result, SubdomainPort, SubdomainProvision, SubdomainResult } from '@digimaestro/shared';
 
@@ -21,8 +23,17 @@ export interface CpanelUapiConfig {
   readonly host: string; // hostname panel cPanel (mis. cikapundung.iixcp.rumahweb.net)
   readonly port?: number; // default 2083 (cPanel HTTPS)
   readonly username: string; // akun cPanel utama (pemilik domain)
-  readonly apiToken: string; // cPanel API token (Security → Manage API Tokens)
+  // Auth: isi salah satu — apiToken (preferensi) ATAU password (Basic auth fallback).
+  readonly apiToken?: string; // cPanel API token (Security → Manage API Tokens)
+  readonly password?: string; // password cPanel (fallback bila menu API token tak tersedia)
   readonly fetch?: UapiFetch;
+}
+
+// Header Authorization: token cPanel bila ada, else Basic auth password.
+function authHeader(config: CpanelUapiConfig): string {
+  if (config.apiToken) return `cpanel ${config.username}:${config.apiToken}`;
+  if (config.password) return `Basic ${Buffer.from(`${config.username}:${config.password}`).toString('base64')}`;
+  throw new Error('CpanelUapiConfig butuh apiToken atau password');
 }
 
 // Bentuk respons UAPI: { status: 0|1, errors: string[]|null, ... }.
@@ -40,6 +51,7 @@ function defaultFetch(): UapiFetch {
 export function createCpanelUapiSubdomain(config: CpanelUapiConfig): SubdomainPort {
   const fetchImpl = config.fetch ?? defaultFetch();
   const port = config.port ?? 2083;
+  const authorization = authHeader(config); // validasi auth di konstruksi (fail-fast)
 
   return {
     async ensureSubdomain(input: SubdomainProvision): Promise<Result<SubdomainResult, PublishError>> {
@@ -55,7 +67,7 @@ export function createCpanelUapiSubdomain(config: CpanelUapiConfig): SubdomainPo
       try {
         res = await fetchImpl(url, {
           method: 'GET',
-          headers: { Authorization: `cpanel ${config.username}:${config.apiToken}` },
+          headers: { Authorization: authorization },
         });
       } catch (e) {
         return err({ code: 'SUBDOMAIN', message: `gagal memanggil UAPI addsubdomain: ${(e as Error).message}` });

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { Buffer } from 'node:buffer';
 import { createCpanelUapiSubdomain, type UapiFetch, type UapiFetchResponse } from '../cpanel-uapi-subdomain.js';
 
 function resp(status: number, body: string): UapiFetchResponse {
@@ -63,5 +64,22 @@ describe('createCpanelUapiSubdomain', () => {
     const res = await createCpanelUapiSubdomain(cfg(fetch)).ensureSubdomain(input);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.message).toContain('ETIMEDOUT');
+  });
+
+  it('fallback Basic auth (password, tanpa apiToken) → header Basic base64', async () => {
+    let seenAuth = '';
+    const fetch: UapiFetch = async (_url, init) => {
+      seenAuth = init.headers.Authorization;
+      return resp(200, JSON.stringify({ status: 1 }));
+    };
+    const port = createCpanelUapiSubdomain({ host: 'panel.host', username: 'akun', password: 'rahasia', fetch });
+    const res = await port.ensureSubdomain(input);
+    expect(res.ok).toBe(true);
+    expect(seenAuth).toBe(`Basic ${Buffer.from('akun:rahasia').toString('base64')}`);
+  });
+
+  it('tanpa apiToken maupun password → throw saat konstruksi (fail-fast)', () => {
+    const fetch: UapiFetch = async () => resp(200, '{}');
+    expect(() => createCpanelUapiSubdomain({ host: 'h', username: 'u', fetch })).toThrow(/apiToken atau password/);
   });
 });
