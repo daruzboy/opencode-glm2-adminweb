@@ -315,6 +315,16 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   **belum dipasang ke rute** (chat/publish/preview masih `x-tenant-id`) → NFR-07 belum tegak;
   endpoint token mencetak OWNER tanpa kredensial (aktif bila `JWT_SECRET` diisi) → butuh guard
   produksi + wiring rute. Merged atas keputusan PO meski temuan dipaparkan. Gate 21/21.
+- ✅ **T-002auth-wiring** Pasang auth ke rute + amankan endpoint token (EPIC-00/NFR-07; **bayar utang #45**) —
+  **PR tersendiri, 2026-07-11:** (1) `buildServer` **selalu** memasang `app.resolveTenant` (JWT bila
+  `JWT_SECRET` diisi → rute wajib Bearer token; tanpa JWT → fallback `x-tenant-id` dev). Rute
+  **chat REST + publish** kini panggil `resolveTenant` (bukan baca `x-tenant-id` langsung) → token
+  invalid/absen = 401; `x-tenant-id` TAK menembus saat auth aktif (kecuali `AUTH_DISABLED=1`). (2)
+  Endpoint dev `POST /api/auth/token` kini **hanya terpasang bila `AUTH_DEV_TOKEN=1`** → produksi
+  tak mengekspos pencetak token tanpa kredensial. `AuthDeps.devTokenEnabled` + `.env.example`
+  `AUTH_DEV_TOKEN`. Gate 21/21 (api +4 tes route-guard: 401 tanpa token, 202 dgn token valid, 401
+  token sampah, 404 endpoint token tanpa flag). **NFR-07 tegak utk rute REST.** _Sisa (follow-up):_
+  auth WS `/api/chat` (masih query `tenantId`; butuh token-query) + slug→tenantId mapping riil.
 - ✅ **T-080slice** Integration test repo + tenant guard DB nyata (EPIC-08/NFR-11) — **PR #47,
   2026-07-10:** `repo-integration.test.ts`. **UTANG:** di-gate `RUN_INTEGRATION_TESTS=1` yang tak
   pernah diset → **selalu skip di CI**; cleanup `deleteMany()` tanpa `where` kena tenant-guard →

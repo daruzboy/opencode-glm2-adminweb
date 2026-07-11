@@ -4,7 +4,6 @@
 
 import { z } from 'zod';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { tenantId } from '@digimaestro/shared';
 import { handlePublishRequest, type PublishRequestDeps } from './handle-publish.js';
 
 interface PublishParams {
@@ -19,9 +18,10 @@ export function registerPublishRoutes(app: FastifyInstance, deps: PublishRequest
   app.post(
     '/api/websites/:websiteId/publish',
     async (req: FastifyRequest<{ Params: PublishParams }>, reply: FastifyReply) => {
-      const tid = req.headers['x-tenant-id'];
-      if (typeof tid !== 'string' || tid.length === 0) {
-        return reply.code(401).send({ error: 'missing x-tenant-id header' });
+      // T-002auth: tenant dari token JWT (atau x-tenant-id fallback dev). Null → 401.
+      const { tenantId: tid } = await app.resolveTenant(req);
+      if (!tid) {
+        return reply.code(401).send({ error: 'unauthorized: token/tenant tidak valid' });
       }
 
       const parsed = publishBodySchema.safeParse(req.body);
@@ -30,7 +30,7 @@ export function registerPublishRoutes(app: FastifyInstance, deps: PublishRequest
       }
 
       const outcome = await handlePublishRequest(deps, {
-        tenantId: tenantId(tid),
+        tenantId: tid,
         websiteId: req.params.websiteId,
         revisionNumber: parsed.data.revisionNumber,
       });

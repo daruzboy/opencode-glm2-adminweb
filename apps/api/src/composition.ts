@@ -280,6 +280,9 @@ function parseLlmProvider(value: string | undefined): LlmProviderName {
 export interface AuthDeps {
   readonly auth: AuthPort;
   readonly allowHeaderFallback: boolean;
+  // Endpoint dev /api/auth/token (cetak token dari slug, TANPA kredensial) — hanya bila
+  // AUTH_DEV_TOKEN=1. Produksi biarkan kosong agar endpoint tak terpasang (keamanan #45).
+  readonly devTokenEnabled: boolean;
 }
 
 export function createAuthDeps(env: NodeJS.ProcessEnv = process.env): AuthDeps | undefined {
@@ -288,5 +291,6 @@ export function createAuthDeps(env: NodeJS.ProcessEnv = process.env): AuthDeps |
   return {
     auth: new JwtAuthPort({ secret }),
     allowHeaderFallback: env.AUTH_DISABLED === '1',
+    devTokenEnabled: env.AUTH_DEV_TOKEN === '1',
   };
 }

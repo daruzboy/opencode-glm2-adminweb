@@ -132,6 +132,13 @@
   brief; (3) router `START_INTERVIEW` scope `['sitebuilder']` + prompt → agent membangun DRAFT setelah
   brief cukup. **Jalur situs baru (interview→build→DRAFT) & revisi (patch) kini lengkap**; approval-first
   terjaga (draft≠publish). Gate 21/21 (api +6 tes). Sisa: E2E dgn API key nyata + auth rute (T-002).
+- **T-002auth-wiring SELESAI (bayar utang #45)** (PR tersendiri, 2026-07-11): auth JWT kini benar-benar
+  MENEGAKKAN. `buildServer` selalu pasang `app.resolveTenant` (JWT bila `JWT_SECRET` → rute wajib Bearer
+  token; tanpa JWT → fallback `x-tenant-id` dev). Rute **chat REST + publish** panggil `resolveTenant`
+  → 401 tanpa token; `x-tenant-id` tak menembus saat auth aktif. Endpoint `/api/auth/token` **hanya bila
+  `AUTH_DEV_TOKEN=1`** (produksi tak ekspos pencetak token tanpa kredensial). Gate 21/21 (api +4 tes
+  route-guard). **NFR-07 tegak utk REST.** Sisa: auth WS (query token) + E2E LLM. Lihat memory
+  `auth-t002-security-debt` (utang rute & endpoint token: TERTUTUP; WS menyusul).
 - **Object storage = MinIO self-host** (2026-07-10): service `minio`+`minio-init` di compose
   (profil `storage`), bucket `digimaestro-artifacts`, kredensial `MINIO_ROOT_*` (=S3_KEY/SECRET),
   `S3_ENDPOINT=http://minio:9000`. Diverifikasi put/get object via S3 API. Sisi S3 T-063 tak

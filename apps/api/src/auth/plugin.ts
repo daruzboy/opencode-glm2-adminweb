@@ -12,28 +12,32 @@ export interface AuthenticatedRequest extends FastifyRequest {
 }
 
 export interface AuthPluginOptions {
-  readonly auth: AuthPort;
-  // Bila true: fallback ke x-tenant-id header (dev mode). Produksi = false.
+  // AuthPort JWT. Bila undefined → mode DEV tanpa JWT (resolusi tenant via x-tenant-id).
+  readonly auth?: AuthPort;
+  // Bila true: izinkan fallback x-tenant-id meski auth aktif (dev; AUTH_DISABLED=1).
+  // Produksi = false. Bila `auth` undefined, fallback SELALU aktif (tak ada JWT).
   readonly allowHeaderFallback?: boolean;
 }
 
-// Resolve tenantId dari request: JWT bila ada, fallback header bila diizinkan.
-// Return null bila tak ter-auth (route harus 401).
+// Resolve tenantId dari request (T-002auth): JWT terverifikasi bila ada; else fallback
+// x-tenant-id bila diizinkan (dev) atau bila tak ada AuthPort (mode dev tanpa JWT).
+// Return null bila tak ter-auth → route WAJIB balas 401. Token ADA tapi invalid → null
+// (tak jatuh ke header, agar token palsu tak bisa di-bypass dgn header).
 export async function resolveTenant(
   req: FastifyRequest,
-  auth: AuthPort,
+  auth: AuthPort | undefined,
   allowFallback: boolean,
 ): Promise<{ tenantId: TenantId | null; payload: AuthPayload | null }> {
   const token = extractBearerToken(req.headers.authorization);
-  if (token) {
+  if (token && auth) {
     const result = await auth.verifyToken(token);
     if (result.ok) {
       return { tenantId: result.value.tenantId, payload: result.value };
     }
     return { tenantId: null, payload: null };
   }
-  // Dev fallback: x-tenant-id header (tidak aman, hanya dev/staging).
-  if (allowFallback) {
+  // Fallback header hanya bila diizinkan (dev) ATAU tak ada AuthPort (dev tanpa JWT).
+  if (allowFallback || !auth) {
     const headerTid = req.headers['x-tenant-id'];
     if (typeof headerTid === 'string' && headerTid.length > 0) {
       return { tenantId: tenantId(headerTid), payload: null };
@@ -42,7 +46,7 @@ export async function resolveTenant(
   return { tenantId: null, payload: null };
 }
 
-export function registerAuthPlugin(app: FastifyInstance, options: AuthPluginOptions): void {
+export function registerAuthPlugin(app: FastifyInstance, options: AuthPluginOptions = {}): void {
   const { auth, allowHeaderFallback = false } = options;
 
   // Decorate semua request dgn resolveTenant (dipanggil per-route, bukan global hook,
