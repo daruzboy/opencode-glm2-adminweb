@@ -6,7 +6,7 @@
 import { pathToFileURL } from 'node:url';
 import type { Worker } from 'bullmq';
 import { createPublishDeps, createRedisConnection } from './composition.js';
-import { createInboundDeps } from './chat-composition.js';
+import { createInboundDeps, createPublishNotifier } from './chat-composition.js';
 import { startChatInboundWorker } from './chat-inbound-worker.js';
 import { startPublishWorker } from './publish-worker.js';
 
@@ -16,7 +16,12 @@ export type { PublishQueueJob, PublishJobData, RollbackJobData } from './publish
 export { startPublishWorker } from './publish-worker.js';
 export { createPublishDeps, createRedisConnection } from './composition.js';
 export { startChatInboundWorker } from './chat-inbound-worker.js';
-export { createInboundDeps, createTelegramChannel, createChatReplier } from './chat-composition.js';
+export {
+  createInboundDeps,
+  createPublishNotifier,
+  createTelegramChannel,
+  createChatReplier,
+} from './chat-composition.js';
 
 export const WORKER_NAME = 'digimaestro-worker';
 
@@ -37,7 +42,12 @@ export function startWorker(name: string = WORKER_NAME): WorkerHandle {
 export async function runWorker(): Promise<void> {
   const handle = startWorker();
   const connection = createRedisConnection();
-  const workers: Worker[] = [startPublishWorker(createPublishDeps(), { connection })];
+  // T-032tg: notifier mengabari pengguna di chat saat situsnya live / gagal terbit.
+  // undefined tanpa TELEGRAM_BOT_TOKEN → publish tetap jalan, hanya tanpa kabar.
+  const notifier = createPublishNotifier();
+  const workers: Worker[] = [
+    startPublishWorker(createPublishDeps(), { connection, ...(notifier ? { notifier } : {}) }),
+  ];
   console.log(`[${handle.name}] started — konsumen antrean 'publish' aktif (BullMQ).`);
 
   if (process.env.TELEGRAM_BOT_TOKEN) {

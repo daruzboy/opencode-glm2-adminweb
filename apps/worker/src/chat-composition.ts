@@ -36,13 +36,17 @@ import {
   createSitebuilderApplyPatchTool,
   createSitebuilderBuildSiteTool,
   createSitebuilderGetSiteOutlineTool,
+  notifyPublishOutcome,
   type ApprovalDeps,
   type BuildDeps,
   type ConversationReplier,
   type InboundDeps,
+  type NotifyDeps,
 } from '@digimaestro/core';
 import { siteDocumentSchema } from '@digimaestro/sites-kit';
+import { tenantId } from '@digimaestro/shared';
 import type { ChannelPort, ConversationRepository, LlmJsonPort } from '@digimaestro/shared';
+import type { PublishNotifier } from './publish-worker.js';
 
 export interface ChatWorkerEnv {
   readonly TELEGRAM_BOT_TOKEN?: string;
@@ -183,6 +187,43 @@ export function createApprovalDeps(env: ChatWorkerEnv = process.env): ApprovalDe
   };
 }
 
+// T-032tg: pengabar hasil publish → chat. Dipakai worker publish (bukan chat-inbound):
+// job publish selesai/dead-letter → pengguna dikabari di percakapan Telegram-nya.
+// Tanpa TELEGRAM_BOT_TOKEN → undefined (publish tetap jalan, hanya senyap).
+export function createPublishNotifier(env: ChatWorkerEnv = process.env): PublishNotifier | undefined {
+  if (!env.TELEGRAM_BOT_TOKEN) return undefined;
+
+  const prisma = createPrismaClient();
+  const deps: NotifyDeps = {
+    conversations: new ConversationRepositoryPrisma(
+      prisma.conversation as unknown as ConversationDelegate,
+    ),
+    messages: new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate),
+    // Rate limit ikut berlaku: notifikasi tetap pesan keluar ke pengguna.
+    channel: rateLimited(createTelegramChannel(env), env),
+  };
+
+  return {
+    async publishSucceeded(tid: string, url: string): Promise<void> {
+      await notifyPublishOutcome(deps, { tenantId: tenantId(tid), notice: { kind: 'live', url } });
+    },
+    async publishFailed(tid: string, reason: string): Promise<void> {
+      await notifyPublishOutcome(deps, {
+        tenantId: tenantId(tid),
+        notice: { kind: 'failed', reason },
+      });
+    },
+  };
+}
+
+// Rate limit di tepi keluar (T-031tg) — dipakai baik oleh balasan chat maupun notifikasi.
+function rateLimited(inner: ChannelPort, env: ChatWorkerEnv): ChannelPort {
+  return new RateLimitedChannel(inner, {
+    limit: Number(env.CHANNEL_RATE_LIMIT ?? DEFAULT_RATE_LIMIT.limit),
+    windowMs: Number(env.CHANNEL_RATE_WINDOW_MS ?? DEFAULT_RATE_LIMIT.windowMs),
+  });
+}
+
 export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps {
   const prisma = createPrismaClient();
   const conversations = new ConversationRepositoryPrisma(
@@ -196,10 +237,7 @@ export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps
     messages,
     // Rate limit di TEPI KELUAR (T-031tg): menahan banjir pesan (bug/loop agent) dan
     // menghindari 429 Telegram. Membungkus kanal → berlaku untuk teks maupun tombol.
-    channel: new RateLimitedChannel(createTelegramChannel(env), {
-      limit: Number(env.CHANNEL_RATE_LIMIT ?? DEFAULT_RATE_LIMIT.limit),
-      windowMs: Number(env.CHANNEL_RATE_WINDOW_MS ?? DEFAULT_RATE_LIMIT.windowMs),
-    }),
+    channel: rateLimited(createTelegramChannel(env), env),
     reply: createChatReplier(conversations, prisma, env),
     ...(approval ? { approval } : {}),
   };

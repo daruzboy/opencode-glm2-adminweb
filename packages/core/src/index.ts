@@ -128,6 +128,17 @@ export {
   type PublishRequestDeps,
 } from './publish/handle-publish.js';
 
+// Notifikasi hasil publish ke chat (T-032tg) — dipakai worker publish.
+export {
+  failedPublishMessage,
+  livePublishMessage,
+  notifyPublishOutcome,
+  type NotifyDeps,
+  type NotifyRequest,
+  type NotifyResult,
+  type PublishOutcomeNotice,
+} from './conversation/notify-publish.js';
+
 // Pesan masuk kanal eksternal (T-030tg, FR-CHN-001/004/005) — dipakai worker.
 export {
   approvalButtons,

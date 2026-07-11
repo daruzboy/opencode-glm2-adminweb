@@ -27,7 +27,7 @@ export interface ConversationDelegate {
       | { tenantId: string; channel: string; externalId: string };
   }): Promise<PrismaConversation | null>;
   findMany(args: {
-    where: { tenantId: string; state?: string };
+    where: { tenantId: string; state?: string; channel?: string };
   }): Promise<PrismaConversation[]>;
   create(args: {
     data: { tenantId: string; channel: string; externalId?: string | null; state?: string };
@@ -97,8 +97,9 @@ export class ConversationRepositoryPrisma implements ConversationRepository {
     filter?: ConversationFilter,
   ): Promise<Result<ConversationEntity[], RepositoryError>> {
     try {
-      const where: { tenantId: string; state?: string } = { tenantId };
+      const where: { tenantId: string; state?: string; channel?: string } = { tenantId };
       if (filter?.state) where.state = filter.state;
+      if (filter?.channel) where.channel = filter.channel;
       const rows = await this.delegate.findMany({ where });
       return ok(rows.map(toEntity));
     } catch (e) {
