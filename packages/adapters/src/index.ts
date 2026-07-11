@@ -68,3 +68,9 @@ export * from './publish/bullmq-queue-factory.js';
 export * from './publish/publish-job-options.js';
 export * from './builder/sitebuilder-tool-adapter.js';
 export * from './auth/jwt-auth.js';
+// Kanal Telegram (T-030tg) — rencana B; WABA menyusul saat verifikasi Meta tuntas.
+export * from './telegram/normalize.js';
+export * from './telegram/allowlist.js';
+export * from './telegram/telegram-channel.js';
+export * from './telegram/bullmq-chat-inbound-queue.js';
+export * from './telegram/bullmq-chat-inbound-factory.js';

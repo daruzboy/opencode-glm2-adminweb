@@ -1,0 +1,184 @@
+import { describe, expect, it, vi } from 'vitest';
+import { tenantId } from '@digimaestro/shared';
+import type { InboundChannelMessage } from '@digimaestro/shared';
+import {
+  handleInboundMessage,
+  inboundFallbackReply,
+  unsupportedTypeReply,
+  type InboundDeps,
+} from './handle-inbound.js';
+
+const TENANT = tenantId('t1');
+
+const textMsg: InboundChannelMessage = {
+  channel: 'TELEGRAM',
+  externalId: '555',
+  providerMsgId: 'tg-555-1',
+  type: 'TEXT',
+  text: 'halo, mau bikin website warung',
+};
+
+function conversationRow(over: Record<string, unknown> = {}) {
+  return {
+    id: 'c1',
+    tenantId: 't1',
+    channel: 'TELEGRAM',
+    externalId: '555',
+    state: 'ONBOARDING',
+    escalatedAt: null,
+    createdAt: '',
+    updatedAt: '',
+    ...over,
+  };
+}
+
+function messageRow(over: Record<string, unknown> = {}) {
+  return {
+    id: 'm1',
+    tenantId: 't1',
+    conversationId: 'c1',
+    direction: 'IN',
+    type: 'TEXT',
+    text: 'x',
+    mediaId: null,
+    providerMsgId: 'tg-555-1',
+    status: 'DELIVERED',
+    createdAt: '',
+    ...over,
+  };
+}
+
+function fakeDeps(over: Partial<Record<'existing' | 'createMsg' | 'send' | 'reply', unknown>> = {}) {
+  return {
+    conversations: {
+      findByExternalId: vi.fn(async () => ({
+        ok: true as const,
+        value: (over.existing ?? null) as never,
+      })),
+      create: vi.fn(async () => ({ ok: true as const, value: conversationRow() as never })),
+    } as never,
+    messages: {
+      create:
+        (over.createMsg as never) ??
+        vi.fn(async () => ({ ok: true as const, value: messageRow() as never })),
+    } as never,
+    channel: {
+      channel: 'TELEGRAM' as const,
+      sendText:
+        (over.send as never) ??
+        vi.fn(async () => ({ ok: true as const, value: { providerMsgId: 'tg-555-2' } })),
+    } as never,
+    reply: (over.reply as never) ?? {
+      reply: vi.fn(async () => ({ ok: true as const, value: { text: 'Siap! Nama usahanya apa?' } })),
+    },
+  } as unknown as InboundDeps;
+}
+
+describe('handleInboundMessage — kanal eksternal (T-030tg)', () => {
+  it('chat baru → buat Conversation, balas agent, kirim ke kanal', async () => {
+    const deps = fakeDeps();
+    const res = await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.duplicate).toBe(false);
+      expect(res.value.replyText).toBe('Siap! Nama usahanya apa?');
+      expect(res.value.sent).toBe(true);
+    }
+    // Percakapan dibuat dgn externalId → pesan berikutnya nempel ke percakapan yang sama.
+    expect(deps.conversations.create).toHaveBeenCalledWith(TENANT, {
+      channel: 'TELEGRAM',
+      externalId: '555',
+    });
+    expect(deps.channel.sendText).toHaveBeenCalledWith('555', 'Siap! Nama usahanya apa?');
+  });
+
+  it('percakapan sudah ada → dipakai ulang, tidak bikin baru', async () => {
+    const deps = fakeDeps({ existing: conversationRow({ id: 'c-lama' }) });
+    const res = await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.conversationId).toBe('c-lama');
+    expect(deps.conversations.create).not.toHaveBeenCalled();
+  });
+
+  // Inti idempotensi (FR-CHN-005): Telegram mengirim ulang update saat kita lambat/5xx.
+  it('providerMsgId sudah ada (CONFLICT) → duplikat: TIDAK membalas & TIDAK mengirim', async () => {
+    const createMsg = vi.fn(async () => ({
+      ok: false as const,
+      error: { code: 'CONFLICT' as const, message: 'sudah tercatat' },
+    }));
+    const reply = { reply: vi.fn() };
+    const deps = fakeDeps({ createMsg, reply });
+
+    const res = await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.duplicate).toBe(true);
+    // Tidak ada balasan dobel ke pengguna, dan LLM tak dipanggil dua kali.
+    expect(reply.reply).not.toHaveBeenCalled();
+    expect(deps.channel.sendText).not.toHaveBeenCalled();
+  });
+
+  it('error DB sungguhan (UNKNOWN) → err (bukan diperlakukan duplikat)', async () => {
+    const createMsg = vi.fn(async () => ({
+      ok: false as const,
+      error: { code: 'UNKNOWN' as const, message: 'koneksi putus' },
+    }));
+    const res = await handleInboundMessage(fakeDeps({ createMsg }), {
+      tenantId: TENANT,
+      message: textMsg,
+    });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.code).toBe('UNKNOWN');
+  });
+
+  it('agent gagal → balasan fallback tetap terkirim (chat tak mati bisu)', async () => {
+    const reply = {
+      reply: vi.fn(async () => ({ ok: false as const, error: { code: 'AGENT' as const, message: 'timeout' } })),
+    };
+    const deps = fakeDeps({ reply });
+
+    const res = await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(res.ok).toBe(true);
+    expect(deps.channel.sendText).toHaveBeenCalledWith('555', inboundFallbackReply());
+  });
+
+  it('pesan non-teks (foto) → dijawab jujur tanpa memanggil LLM', async () => {
+    const reply = { reply: vi.fn() };
+    const deps = fakeDeps({ reply });
+    const photo: InboundChannelMessage = {
+      channel: 'TELEGRAM',
+      externalId: '555',
+      providerMsgId: 'tg-555-9',
+      type: 'IMAGE',
+      mediaRef: 'file-abc',
+    };
+
+    const res = await handleInboundMessage(deps, { tenantId: TENANT, message: photo });
+
+    expect(res.ok).toBe(true);
+    expect(reply.reply).not.toHaveBeenCalled();
+    expect(deps.channel.sendText).toHaveBeenCalledWith('555', unsupportedTypeReply());
+  });
+
+  it('kirim ke kanal gagal → pesan OUT dicatat FAILED (tidak mengaku terkirim)', async () => {
+    const send = vi.fn(async () => ({
+      ok: false as const,
+      error: { code: 'NETWORK' as const, message: 'telegram down' },
+    }));
+    const createMsg = vi.fn(async () => ({ ok: true as const, value: messageRow() as never }));
+    const deps = fakeDeps({ send, createMsg });
+
+    const res = await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.sent).toBe(false);
+    const outCall = createMsg.mock.calls.find(
+      (c) => (c[1] as { direction: string }).direction === 'OUT',
+    );
+    expect((outCall?.[1] as { status: string }).status).toBe('FAILED');
+  });
+});

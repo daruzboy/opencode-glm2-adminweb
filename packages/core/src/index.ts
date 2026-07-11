@@ -25,6 +25,14 @@ export {
   type SitebuilderToolPort,
 } from './agent/builtin-tools.js';
 
+// Tool `sitebuilder_build_site` (T-053e; dipindah dari apps/api pada T-030tg agar api &
+// worker sama-sama bisa merakit agent loop).
+export {
+  createSitebuilderBuildSiteTool,
+  deriveSlug,
+  parseBriefInput,
+} from './agent/build-site-tool.js';
+
 export {
   executeFunctionToolCalls,
   type ToolCallResultMessage,
@@ -101,6 +109,16 @@ export {
   type ConversationReplierError,
   type ConversationReplierRequest,
 } from './conversation/replier.js';
+
+// Pesan masuk kanal eksternal (T-030tg, FR-CHN-001/004/005) — dipakai worker.
+export {
+  handleInboundMessage,
+  inboundFallbackReply,
+  unsupportedTypeReply,
+  type InboundDeps,
+  type InboundRequest,
+  type InboundResult,
+} from './conversation/handle-inbound.js';
 
 // Builder use case (T-053b, FR-AGT-001/002).
 export {

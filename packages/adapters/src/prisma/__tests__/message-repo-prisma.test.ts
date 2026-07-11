@@ -77,3 +77,40 @@ describe('MessageRepositoryPrisma — NFR-09: tenantId always scoped', () => {
     if (!r.ok) expect(r.error.code).toBe('UNKNOWN');
   });
 });
+
+// T-030tg: dasar idempotensi webhook (FR-CHN-005). providerMsgId @unique → INSERT ke-2
+// atas pesan yang sama melanggar constraint; itu duplikat, bukan kegagalan DB.
+describe('MessageRepositoryPrisma.create — dedup providerMsgId', () => {
+  it('P2002 → CONFLICT (dipakai use case sbg penanda duplikat)', async () => {
+    const create = vi.fn().mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002' }));
+    const repo = new MessageRepositoryPrisma(makeDelegate({ create }));
+
+    const r = await repo.create(tenantId('tA'), {
+      conversationId: 'c1',
+      direction: 'IN',
+      type: 'TEXT',
+      text: 'halo',
+      providerMsgId: 'tg-555-42',
+      status: 'DELIVERED',
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('CONFLICT');
+  });
+
+  it('error DB lain tetap UNKNOWN (tidak disalahartikan sbg duplikat)', async () => {
+    const create = vi.fn().mockRejectedValue(new Error('koneksi putus'));
+    const repo = new MessageRepositoryPrisma(makeDelegate({ create }));
+
+    const r = await repo.create(tenantId('tA'), {
+      conversationId: 'c1',
+      direction: 'IN',
+      type: 'TEXT',
+      providerMsgId: 'tg-555-43',
+      status: 'DELIVERED',
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('UNKNOWN');
+  });
+});

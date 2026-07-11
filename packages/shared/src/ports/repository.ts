@@ -19,7 +19,10 @@ export interface RepositoryError {
 
 // ── Enum literal (mirror Prisma enum; shared tidak boleh import @prisma/client) ─
 
-export type ConversationChannel = 'WA' | 'WEB';
+// TELEGRAM (T-030tg): kanal masuk Fase 0. WABA (WA) diparkir menunggu verifikasi Meta —
+// keduanya dinormalisasi ke InboundChannelMessage (ports/channel.ts) sehingga use case
+// percakapan tak tahu-menahu soal vendor kanal.
+export type ConversationChannel = 'WA' | 'WEB' | 'TELEGRAM';
 
 export type ConversationState =
   | 'ONBOARDING'
@@ -35,6 +38,10 @@ export interface ConversationEntity {
   id: string;
   tenantId: string;
   channel: ConversationChannel;
+  // Id percakapan di sisi penyedia kanal (Telegram chat_id, nomor WA). NULL untuk WEB
+  // (percakapan dirujuk via id internal). Unik per (tenantId, channel, externalId) →
+  // pesan berikutnya dari chat yang sama mendarat di Conversation yang sama.
+  externalId: string | null;
   state: ConversationState;
   escalatedAt: string | null;
   createdAt: string;
@@ -47,6 +54,7 @@ export interface ConversationFilter {
 
 export interface ConversationCreateInput {
   channel: ConversationChannel;
+  externalId?: string | null;
   state?: ConversationState;
 }
 
@@ -62,6 +70,14 @@ export interface ConversationUpdateInput {
 export interface ConversationRepository extends Port {
   readonly name: 'ConversationRepository';
   findById(tenantId: TenantId, id: string): Promise<Result<ConversationEntity | null, RepositoryError>>;
+  // Resolusi percakapan untuk kanal eksternal (T-030tg): chat_id Telegram → Conversation.
+  // Kunci (tenantId, channel, externalId) unik → dipakai webhook agar pesan susulan dari
+  // chat yang sama tidak membuat percakapan baru.
+  findByExternalId(
+    tenantId: TenantId,
+    channel: ConversationChannel,
+    externalId: string,
+  ): Promise<Result<ConversationEntity | null, RepositoryError>>;
   findMany(
     tenantId: TenantId,
     filter?: ConversationFilter,

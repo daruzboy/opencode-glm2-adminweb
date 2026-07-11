@@ -32,6 +32,7 @@ enum UserRole {
 enum Channel {
   WA
   WEB
+  TELEGRAM
 }
 
 enum ConversationState {
@@ -141,6 +142,8 @@ model Conversation {
   id          String            @id @default(cuid())
   tenantId    String
   channel     Channel
+  // Id chat di sisi penyedia kanal (Telegram chat_id; nomor WA). NULL untuk WEB.
+  externalId  String?
   state       ConversationState @default(ONBOARDING)
   escalatedAt DateTime?
   createdAt   DateTime          @default(now())
@@ -149,6 +152,7 @@ model Conversation {
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   messages Message[]
 
+  @@unique([tenantId, channel, externalId])
   @@index([tenantId])
 }
 

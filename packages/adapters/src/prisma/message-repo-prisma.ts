@@ -50,6 +50,15 @@ function toEntity(row: PrismaMessage): MessageEntity {
 }
 
 function toError(e: unknown): RepositoryError {
+  // P2002 = pelanggaran unique. Di Message satu-satunya unique adalah providerMsgId →
+  // pesan ini sudah pernah tercatat. Ini BUKAN kegagalan: webhook kanal (Telegram/WABA)
+  // me-retry kiriman yang sama saat kita lambat/5xx, jadi INSERT ke-2 = duplikat yang
+  // harus diabaikan (FR-CHN-005 idempotensi). Dipetakan ke CONFLICT agar use case bisa
+  // membedakannya dari error DB sungguhan. Constraint DB = sumber kebenaran → aman
+  // terhadap race dua worker memproses update yang sama bersamaan.
+  if (typeof e === 'object' && e !== null && (e as { code?: unknown }).code === 'P2002') {
+    return { code: 'CONFLICT', message: 'providerMsgId sudah tercatat (pesan duplikat).' };
+  }
   return { code: 'UNKNOWN', message: e instanceof Error ? e.message : String(e) };
 }
 
