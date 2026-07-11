@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { tenantId, type AgentToolContext } from '@digimaestro/shared';
 import type { BuildDeps } from '@digimaestro/core';
-import { createSitebuilderBuildSiteTool, parseBriefInput } from './build-site-tool.js';
+import { createSitebuilderBuildSiteTool, deriveSlug, parseBriefInput } from './build-site-tool.js';
 
 const TENANT = tenantId('t1');
 const ctx: AgentToolContext = { tenantId: TENANT, actor: 'chatbot', scopes: ['sitebuilder'] };
@@ -16,6 +16,7 @@ function fakeDeps(over: Partial<Record<'website' | 'revision' | 'llm', unknown>>
           ? { ok: true as const, value: over.website as never }
           : { ok: true as const, value: { id: 'w1', tenantId: 't1', slug: 'warung', status: 'DRAFTING', publishedRevisionId: null, themeId: null, deploymentTargetId: null, createdAt: '', updatedAt: '' } },
       ),
+      create: vi.fn(async () => ({ ok: true as const, value: { id: 'w-new', tenantId: 't1', slug: 'warung-sari-abc123', status: 'DRAFTING', publishedRevisionId: null, themeId: null, deploymentTargetId: null, createdAt: '', updatedAt: '' } })),
       update: vi.fn(),
     } as never,
     revisions: {
@@ -74,11 +75,43 @@ describe('createSitebuilderBuildSiteTool', () => {
     expect(deps.websites.findByTenantId).not.toHaveBeenCalled();
   });
 
-  it('website tenant belum ada → NOT_FOUND', async () => {
+  it('website tenant belum ada → AUTO-CREATE (onboarding) lalu build (opsi A)', async () => {
     const deps = fakeDeps({ website: null });
+    // Fake stateful: findByTenantId null dulu → setelah create, kembalikan website baru
+    // (meniru DB nyata; buildSiteFromBrief me-resolve ulang via findByTenantId).
+    const createdWebsite = { id: 'w-new', tenantId: 't1', slug: 'warung-sari-abc123', status: 'DRAFTING', publishedRevisionId: null, themeId: null, deploymentTargetId: null, createdAt: '', updatedAt: '' };
+    let current: typeof createdWebsite | null = null;
+    (deps.websites.findByTenantId as ReturnType<typeof vi.fn>).mockImplementation(async () => ({ ok: true, value: current }));
+    (deps.websites.create as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      current = createdWebsite;
+      return { ok: true, value: createdWebsite };
+    });
+
+    const tool = createSitebuilderBuildSiteTool(deps);
+    const res = await tool.execute({ businessName: 'Warung Sari', businessType: 'warung makan' }, ctx);
+    expect(res.ok).toBe(true);
+    expect(deps.websites.create).toHaveBeenCalled();
+    // websiteId hasil create diteruskan ke revisi (bukan gagal NOT_FOUND).
+    expect(deps.revisions.create).toHaveBeenCalled();
+  });
+
+  it('auto-create gagal → err UNKNOWN (tak lanjut build)', async () => {
+    const deps = fakeDeps({ website: null });
+    (deps.websites.create as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ok: false, error: { code: 'CONFLICT', message: 'slug terpakai' } });
     const tool = createSitebuilderBuildSiteTool(deps);
     const res = await tool.execute({ businessName: 'A', businessType: 'B' }, ctx);
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error.code).toBe('NOT_FOUND');
+    if (!res.ok) expect(res.error.code).toBe('UNKNOWN');
+  });
+});
+
+describe('deriveSlug', () => {
+  it('kebab-case dari nama usaha + sufiks acak', () => {
+    const slug = deriveSlug('Warung Sari Rasa!');
+    expect(slug).toMatch(/^warung-sari-rasa-[a-z0-9]{1,6}$/);
+  });
+
+  it('nama non-alfanumerik → fallback "situs-..."', () => {
+    expect(deriveSlug('!!!')).toMatch(/^situs-[a-z0-9]{1,6}$/);
   });
 });

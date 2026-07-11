@@ -8,6 +8,7 @@ import type {
   RepositoryError,
   Result,
   TenantId,
+  WebsiteCreateInput,
   WebsiteEntity,
   WebsiteRepository,
   WebsiteUpdateInput,
@@ -24,6 +25,15 @@ export interface WebsiteDelegate {
     where: { tenantId: string; id: string };
     data: { status?: string; publishedRevisionId?: string | null };
   }): Promise<{ count: number }>;
+  create(args: {
+    data: { tenantId: string; slug: string; status: string; themeId?: string | null };
+  }): Promise<PrismaWebsite>;
+}
+
+// Prisma P2002 = pelanggaran unique constraint (tenantId/slug) → CONFLICT (BRU-01: satu
+// website/tenant; slug global unik). Cek berbasis `code` tanpa import tipe error vendor.
+function isUniqueViolation(e: unknown): boolean {
+  return typeof e === 'object' && e !== null && (e as { code?: unknown }).code === 'P2002';
 }
 
 function toEntity(row: PrismaWebsite): WebsiteEntity {
@@ -56,6 +66,30 @@ export class WebsiteRepositoryPrisma implements WebsiteRepository {
       const row = await this.delegate.findFirst({ where: { tenantId } });
       return ok(row ? toEntity(row) : null);
     } catch (e) {
+      return err(toError(e));
+    }
+  }
+
+  // Onboarding: buat Website (DRAFTING) untuk tenant. tenantId disuntik (NFR-09). Tenant
+  // sudah punya website ATAU slug terpakai → CONFLICT (BRU-01: satu website/tenant).
+  async create(
+    tenantId: TenantId,
+    input: WebsiteCreateInput,
+  ): Promise<Result<WebsiteEntity, RepositoryError>> {
+    try {
+      const row = await this.delegate.create({
+        data: {
+          tenantId,
+          slug: input.slug,
+          status: input.status ?? 'DRAFTING',
+          themeId: input.themeId ?? null,
+        },
+      });
+      return ok(toEntity(row));
+    } catch (e) {
+      if (isUniqueViolation(e)) {
+        return err({ code: 'CONFLICT', message: 'Website sudah ada untuk tenant ini atau slug terpakai.' });
+      }
       return err(toError(e));
     }
   }

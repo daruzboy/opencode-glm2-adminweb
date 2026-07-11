@@ -159,9 +159,21 @@ export interface WebsiteUpdateInput {
   publishedRevisionId?: string | null;
 }
 
+// Input pembuatan Website (onboarding, T-020ext/A). slug @unique global; status default
+// DRAFTING. tenantId @unique → satu website per tenant (BRU-01) → create ke-2 = CONFLICT.
+export interface WebsiteCreateInput {
+  slug: string;
+  status?: WebsiteStatus;
+  themeId?: string | null;
+}
+
 export interface WebsiteRepository extends Port {
   readonly name: 'WebsiteRepository';
   findByTenantId(tenantId: TenantId): Promise<Result<WebsiteEntity | null, RepositoryError>>;
+  create(
+    tenantId: TenantId,
+    input: WebsiteCreateInput,
+  ): Promise<Result<WebsiteEntity, RepositoryError>>;
   update(
     tenantId: TenantId,
     websiteId: string,

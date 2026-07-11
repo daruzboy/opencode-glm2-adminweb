@@ -23,10 +23,12 @@ function row(over: Partial<PrismaWebsite> = {}): PrismaWebsite {
 function makeDelegate(impl: {
   findFirst?: ReturnType<typeof vi.fn>;
   updateMany?: ReturnType<typeof vi.fn>;
+  create?: ReturnType<typeof vi.fn>;
 }): WebsiteDelegate {
   return {
     findFirst: impl.findFirst ?? vi.fn(),
     updateMany: impl.updateMany ?? vi.fn(),
+    create: impl.create ?? vi.fn(),
   } as unknown as WebsiteDelegate;
 }
 
@@ -132,5 +134,40 @@ describe('WebsiteRepositoryPrisma.update — tenant-scoped', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('CONFLICT');
     expect(updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('WebsiteRepositoryPrisma.create — onboarding (opsi A)', () => {
+  it('buat Website DRAFTING + tenantId disuntik (happy)', async () => {
+    const create = vi.fn().mockResolvedValue(row({ slug: 'warung-baru' }));
+    const repo = new WebsiteRepositoryPrisma(makeDelegate({ create }));
+
+    const r = await repo.create(tenantId('tA'), { slug: 'warung-baru' });
+
+    expect(r.ok).toBe(true);
+    expect(create).toHaveBeenCalledWith({
+      data: { tenantId: 'tA', slug: 'warung-baru', status: 'DRAFTING', themeId: null },
+    });
+    if (r.ok) expect(r.value.slug).toBe('warung-baru');
+  });
+
+  it('P2002 (tenant sudah punya website / slug terpakai) → CONFLICT', async () => {
+    const create = vi.fn().mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002' }));
+    const repo = new WebsiteRepositoryPrisma(makeDelegate({ create }));
+
+    const r = await repo.create(tenantId('tA'), { slug: 'dipakai' });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('CONFLICT');
+  });
+
+  it('error DB lain → UNKNOWN', async () => {
+    const create = vi.fn().mockRejectedValue(new Error('connection lost'));
+    const repo = new WebsiteRepositoryPrisma(makeDelegate({ create }));
+
+    const r = await repo.create(tenantId('tA'), { slug: 's' });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('UNKNOWN');
   });
 });
