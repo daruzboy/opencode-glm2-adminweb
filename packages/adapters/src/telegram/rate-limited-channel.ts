@@ -7,9 +7,11 @@
 // membanjiri pengguna; batas ini menahannya di tepi keluar.
 //
 // Kunci = `to` (chat_id). Karena allowlist memetakan satu chat ke satu tenant (ADR-12),
-// per-chat = per-tenant. CATATAN: state ada di MEMORI PROSES — dengan >1 replika worker,
-// batas efektifnya adalah N×limit. Cukup untuk Fase 0 (satu worker); bila nanti diskalakan
-// horizontal, ganti isi kelas ini dengan token bucket di Redis — kontraknya tak berubah.
+// per-chat = per-tenant.
+//
+// P1 (audit): state memori-proses membuat batas efektif jadi N×limit saat worker diskalakan
+// >1 replika → Telegram bisa membalas 429. Karena itu limiter Redis dapat DISUNTIK
+// (`options.shared`); tanpa itu, fallback ke jendela geser di memori (dev / satu proses).
 
 import { err } from '@digimaestro/shared';
 import type {
@@ -17,6 +19,7 @@ import type {
   ChannelError,
   ChannelPort,
   ConversationChannel,
+  InboundRateLimiterPort,
   Result,
   SendResult,
 } from '@digimaestro/shared';
@@ -27,9 +30,11 @@ export interface RateLimitOptions {
   readonly windowMs: number;
   // Disuntik agar teruji tanpa menunggu waktu nyata.
   readonly now?: () => number;
+  // Limiter bersama (Redis) → benar juga saat worker >1 replika. Bila absen: memori proses.
+  readonly shared?: InboundRateLimiterPort;
 }
 
-export const DEFAULT_RATE_LIMIT: Omit<Required<RateLimitOptions>, 'now'> = {
+export const DEFAULT_RATE_LIMIT: Pick<RateLimitOptions, 'limit' | 'windowMs'> = {
   limit: 20,
   windowMs: 60_000,
 };
@@ -42,6 +47,7 @@ export class RateLimitedChannel implements ChannelPort {
   private readonly limit: number;
   private readonly windowMs: number;
   private readonly now: () => number;
+  private readonly shared?: InboundRateLimiterPort;
 
   constructor(
     private readonly inner: ChannelPort,
@@ -51,6 +57,14 @@ export class RateLimitedChannel implements ChannelPort {
     this.limit = options.limit;
     this.windowMs = options.windowMs;
     this.now = options.now ?? Date.now;
+    this.shared = options.shared;
+  }
+
+  // Redis bila disuntik (benar lintas replika), else jendela geser di memori.
+  private async allowShared(to: string): Promise<boolean> {
+    if (!this.shared) return this.allow(to);
+    const d = await this.shared.check(to as never);
+    return d.allowed;
   }
 
   // true = boleh kirim (dan kuota dicatat). Jendela geser: buang jejak yang sudah lewat.
@@ -77,7 +91,7 @@ export class RateLimitedChannel implements ChannelPort {
   }
 
   async sendText(to: string, text: string): Promise<Result<SendResult, ChannelError>> {
-    if (!this.allow(to)) return err(this.limitError(to));
+    if (!(await this.allowShared(to))) return err(this.limitError(to));
     return this.inner.sendText(to, text);
   }
 
@@ -86,7 +100,7 @@ export class RateLimitedChannel implements ChannelPort {
     text: string,
     buttons: readonly ChannelButton[],
   ): Promise<Result<SendResult, ChannelError>> {
-    if (!this.allow(to)) return err(this.limitError(to));
+    if (!(await this.allowShared(to))) return err(this.limitError(to));
     return this.inner.sendButtons(to, text, buttons);
   }
 

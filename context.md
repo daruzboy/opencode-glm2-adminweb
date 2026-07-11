@@ -3,8 +3,43 @@
 > **Baca paling awal** (bersama `decision.md` & `AGENTS.md`) agar tidak kehilangan
 > konteks saat memulai sesi baru. Perbarui di akhir tiap sesi kerja berarti.
 
-- Sesi: recovery branch lokal `setup/ai-workflow` → 3 PR · Tanggal: 2026-07-09
-- Cabang aktif: `main` (trunk). Branch feature dihapus post-merge.
+- Sesi terakhir: **kanal Telegram → produk HIDUP & dipakai PO** · Tanggal: **2026-07-11**
+- Cabang aktif: `main` (trunk) @ `82a0776`. Branch feature dihapus post-merge.
+
+---
+
+## ⭐ RINGKASAN 2026-07-11 — Fase 0 TUNTAS end-to-end (PR #51–#62)
+
+**T-083 (gerbang keluar Fase 0) TERCAPAI di produksi nyata, tanpa intervensi manual:**
+chat Telegram → wawancara (agent ingat konteks) → agent bangun situs → tombol approval →
+tap "✅ Setuju & publish" → job antrean → deploy FTPS → verify HTTP 200 → **notifikasi
+"Situsmu sudah LIVE 🎉"** ke chat.
+
+- **Situs live:** https://digimaestro.id/sate-pak-dar-pap917/ (+ foto pelanggan di galeri, WebP)
+- **Bot produk:** **@Opencode1993_bot** (long-polling; ≠ bot ops @vps_boy_1993_bot)
+- **Kanal:** Telegram (ADR-11) — **WABA ditunda, bukan dibatalkan**; masuk belakangan sbg adapter
+  `ChannelPort` tanpa membongkar core.
+- **URL situs:** path `digimaestro.id/<slug>/` (**ADR-13**), bukan subdomain.
+- **Media:** foto chat → `sharp` (WebP, hemat 95%) → hosting `media/<tenantId>/` → galeri (T-033).
+- Gerbang: `pnpm turbo lint test build` **21/21 hijau, 549 tes**.
+
+**Delapan bug ditemukan HANYA karena produknya dijalankan sungguhan** — tak satu pun terdeteksi
+test suite yang hijau (detail per-PR di `decision.md` §2):
+1. **Agent amnesia** — riwayat tak pernah dimuat → wawancara mustahil selesai (#56).
+2. **Prompt vs schema bertabrakan** — LLM diminta mengarang `websiteId` & design token → build
+   SELALU gagal (#56).
+3. **Markup tool-call bocor** ke pengguna — tools dimatikan tapi prompt masih menyuruh memanggil (#57).
+4. **Timeout 30 dtk** tak pernah cukup untuk membangun situs (#57).
+5. **Worker cuma stub** di compose — container "sehat" tapi antrean TAK PERNAH dikonsumsi (infra).
+6. **Verify sekali-tembak** → publish SUKSES dilaporkan gagal (#58).
+7. **State percakapan diabaikan** — jawaban singkat pelanggan → prompt penolakan tanpa tool (#61).
+8. **Anggaran token habis untuk REASONING** — v4-pro berpikir dulu; 512 token → jawaban 0 char (#62).
+
+**Dua kali dihentikan pengaman — dan benar:** (a) hendak `DELETE` seluruh tabel Website/Revision
+di DB live demi uji bersih; (b) hendak membuat DNS record produksi tanpa PO menyebut namanya.
+Data & DNS PO utuh.
+
+---
 - Status umum: 4 commit lokal yang tadinya hanya ada di VPS (SPOF) sudah didaratkan ke
   `main` lewat 3 PR: **#22** hardening T-050/T-051 lanjutan (`8dbc2e4`), **#23** Docker
   staging image / T-012 sebagian (`cbae68f`), dan **PR docs** (workflow README + update
@@ -154,11 +189,18 @@
   (`9e5a783`). Semua sebelum sesi ini.
 
 ## Di mana kita sekarang
-Fase 0 — Sprint 0.2. EPIC-01 (T-010/011/013) & EPIC-02 (T-020/021) merged ke `main`.
-**T-040 web chat (EPIC-04) — backend slice MERGED** (Fastify composition root pertama,
-guard T-021 ter-wire via `createPrismaClient`; endpoint `/healthz`, WS `/api/chat`,
-REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijalan PO).
-`.git` sudah di luar Google Drive (`C:\dev\glm2-adminweb.git`).
+**Fase 0 — vertical slice TUNTAS & LIVE** (T-083 tercapai, lihat ringkasan di atas).
+
+- **EPIC-03 (kanal) — AKTIF via Telegram** (ADR-11/12). _Catatan lama "EPIC-03 terblokir T-001"
+  sudah USANG_: yang terblokir hanya **WABA/WhatsApp**; kanal Telegram jalan penuh & dipakai PO
+  sungguhan. Webhook + long-polling keduanya ada; live memakai **polling** (VPS tanpa domain publik).
+- **Loop agent tersambung penuh**: chat → router (state-aware) → agent loop (riwayat + tool
+  sitebuilder) → build/patch Site Document → Revision DRAFT → tombol approval → publish → notifikasi.
+- **Media (T-033) jalan**: foto chat → WebP → hosting → galeri situs.
+- **Deploy live** (`/opt/containers/glm2/`, di luar repo): api + worker + redis + postgres, semua
+  sehat. Kredensial (DeepSeek, Telegram, cPanel FTPS) terpasang di `.env` deploy — **bukan di repo**.
+- EPIC-01/02 (T-010/011/013, T-020/021) & T-040 web chat: merged (tak berubah).
+- `.git` sudah di luar Google Drive (`C:\dev\glm2-adminweb.git`).
 
 ## Yang baru saja terjadi
 - **PR #2 (T-020) di-merge** ke `main` (squash commit `883ab29`, 2026-07-03T17:34Z),
@@ -215,6 +257,30 @@ REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijala
   - `pnpm turbo lint test build` → **21/21 hijau** (adapter 22 test: tenant-guard 13 +
     conversation-repo 6 + index 3). DB-free (mock/fake delegate).
 
+## Keputusan desain kanal Telegram + media + URL (2026-07-11, ADR-11/12/13)
+- **Kanal di balik Port** (`ChannelPort`, `ChatInboundQueuePort`): Telegram & WABA sama-sama
+  dinormalisasi ke `InboundChannelMessage` di adapter → core tak kenal vendor kanal. Menambah
+  WABA nanti = menambah adapter, bukan membongkar core.
+- **Idempotensi bertumpu constraint DB, bukan cek-lalu-tulis**: `Message.providerMsgId` @unique →
+  P2002 = duplikat (retry webhook / tombol ditekan 2×) → diabaikan. Aman terhadap race dua worker.
+  `providerMsgId` diprefiks `chat_id` karena `message_id` Telegram hanya unik **per-chat** — tanpa
+  prefiks, pesan #42 dari dua pelanggan berbeda saling dianggap duplikat.
+- **`callback_data` = input TAK tepercaya** (bisa dikarang lewat Bot API) → diparse ketat ke bentuk
+  tertutup, argumennya TETAP divalidasi ke DB tenant. `websiteId` sengaja tak ikut di payload:
+  satu website per tenant (BRU-01) → tombol **secara struktural** tak bisa menunjuk website tenant lain.
+- **Tombol approval muncul berbasis NOMOR REVISI** (snapshot sebelum vs sesudah giliran agent),
+  bukan menebak dari teks LLM — teks berubah-ubah, nomor revisi tidak.
+- **Long-polling, bukan webhook** (live): webhook menuntut HTTPS publik; VPS tak punya domain.
+  Jalur sesudah update diambil SAMA PERSIS dgn webhook → tak ada cabang logika kedua yang bisa
+  menyimpang. Offset di memori → restart bisa ambil ulang update lama = AMAN (dedup di DB).
+- **Media di LUAR docroot situs** (`media/<tenantId>/`): deploy publish = **mirror penuh** (upload +
+  hapus file usang) → media di dalam docroot situs akan LENYAP tiap publish ulang. Nama file
+  content-addressed (sha256) → foto identik = nama sama → tak menumpuk duplikat, URL stabil.
+- **URL foto disisipkan ke prompt build** ("gunakan HANYA url ini, jangan mengarang") — tanpa itu
+  LLM mengarang URL dan galeri jadi `<img>` rusak (situs lama memang punya `/_assets/…` yang 404).
+- **Satu sumber kebenaran bentuk URL** (`publicSiteUrl` di shared): dipakai produsen job DAN adapter
+  deploy. Kalau keduanya menyimpang, publish SUKSES pun dilaporkan gagal (URL dijanjikan ≠ diverifikasi).
+
 ## Keputusan desain T-020 (catatan)
 - **Penempatan Prisma**: schema + client + migrasi + seed di `packages/adapters/prisma`.
   `@prisma/client` di-block import di `core`/`shared` oleh ESLint (boundary rule).
@@ -263,18 +329,25 @@ REST riwayat). EPIC-03 (WABA) terblokir T-001 (verifikasi Meta+WABA belum dijala
   smoke manual; REST riwayat teruji via `app.inject()`.
 
 ## Langkah segera berikutnya
-1. **T-053+ (agent loop)** atau **T-060 (builder slice)** — tugas berikutnya setelah
-   T-052 merge (pilih satu per sesi). T-053: sambungkan router ke agent loop nyata
-   (ganti `stubReply` di `handle-incoming` dgn use case CNV + tool registry T-051).
-2. (T-050 target final) **Isi `DEEPSEEK_API_KEY`/`GLM_API_KEY`** → jalankan
-   `pnpm --filter @digimaestro/worker eval:llm` → putuskan default LLM produksi.
-3. (Non-kode) **Restart opencode** di VPS agar tool MCP TestSprite termuat (T-014).
-4. (Jalur kritis EPIC-00) **Dorong PO**: verifikasi Meta+WABA (T-001), kumpulkan
-   kredensial (T-002) — agar EPIC-03 (T-030..033) tak tersendat.
+1. **T-070** alert n8n (job gagal/webhook error → notifikasi internal) — ops, tak terblokir.
+2. **T-082** dashboard biaya AI per tenant (token/biaya harian) — `LlmUsage` sudah dicatat;
+   tinggal agregasi + tampilan. Relevan karena anggaran LLM kini benar-benar terbakar.
+3. **T-081** regresi visual sites-kit (Playwright screenshot per section × tema) di CI.
+4. **Bayar utang T-080** integration test: di-gate `RUN_INTEGRATION_TESTS=1` yang tak pernah
+   diset (**selalu skip di CI**) + cleanup `deleteMany()` tanpa `where` kena tenant-guard →
+   `TenantGuardError` (tak bisa lulus saat diaktifkan). Butuh klien unguarded + wiring flag CI.
+5. **Auth WS** `/api/chat` (masih query `tenantId`; REST sudah tegak lewat T-002auth-wiring).
+6. **Rotasi kredensial ter-ekspos** (lihat "Hal yang ditunggu dari PO").
 
-## Hal yang ditunggu dari PO (jalur kritis, EPIC-00)
-- Ajukan verifikasi Meta + WABA (T-001) — lead time terpanjang.
-- Kumpulkan: akun Xendit, VPS DC Indonesia, SSH cPanel, API key DeepSeek+GLM (T-002).
+## Hal yang ditunggu dari PO
+- ⚠️ **ROTASI kredensial yang ter-ekspos di chat** (plaintext): `DEEPSEEK_API_KEY`,
+  `TELEGRAM_BOT_TOKEN`, password FTP `Deploy@…`, password cPanel `digs2416`. Semuanya kini
+  terpasang di `.env` deploy (di luar repo) — tapi sudah terlanjur muncul di percakapan.
+- **T-001** verifikasi Meta + WABA — **tidak lagi memblokir** Fase 0 (Telegram jadi kanal A),
+  tapi tetap perlu untuk WhatsApp.
+- **Xendit** (recurring) + `GLM_API_KEY` (perbandingan T-050) — sisa T-002.
+- Keputusan produk: buka **auto-provision tenant** (self-serve) atau tetap allowlist? Bila
+  dibuka, WAJIB disertai kuota per tenant (ADR-12).
 
 ## Catatan teknis penting (jangan lupa)
 - **`.git` direlokasi keluar Google Drive (2026-07-04).** Worktree tetap di

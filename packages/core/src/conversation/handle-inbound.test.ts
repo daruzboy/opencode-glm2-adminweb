@@ -294,3 +294,132 @@ describe('balasan kosong tak pernah dikirim', () => {
     expect(text.trim().length).toBeGreaterThan(0);
   });
 });
+
+// P0 (audit Telegram): rate limit LAMA hanya membungkus pesan KELUAR, sedangkan LLM dipanggil
+// LEBIH DULU → anggaran token TIDAK terlindungi sama sekali. Gerbang ini menolak SEBELUM biaya.
+describe('gerbang biaya pesan masuk (P0)', () => {
+  function limiter(over: Partial<{ allowed: boolean; shouldWarn: boolean }> = {}) {
+    return {
+      check: vi.fn(async () => ({
+        allowed: over.allowed ?? false,
+        shouldWarn: over.shouldWarn ?? false,
+        retryAfterSec: 60,
+      })),
+    };
+  }
+
+  it('melewati batas → LLM TIDAK dipanggil (inti perbaikannya)', async () => {
+    const reply = { reply: vi.fn() };
+    const deps = fakeDeps({ reply });
+    (deps as { rateLimiter?: unknown }).rateLimiter = limiter({ allowed: false });
+
+    const res = await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.rateLimited).toBe(true);
+    // Token TIDAK terbakar.
+    expect(reply.reply).not.toHaveBeenCalled();
+  });
+
+  it('peringatan dikirim sekali; pesan spam berikutnya DIAM (tak ikut membanjiri)', async () => {
+    const deps1 = fakeDeps();
+    (deps1 as { rateLimiter?: unknown }).rateLimiter = limiter({ allowed: false, shouldWarn: true });
+    await handleInboundMessage(deps1, { tenantId: TENANT, message: textMsg });
+    const [, warn] = (deps1.channel.sendText as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(warn).toContain('kecepetan');
+
+    const deps2 = fakeDeps();
+    (deps2 as { rateLimiter?: unknown }).rateLimiter = limiter({ allowed: false, shouldWarn: false });
+    await handleInboundMessage(deps2, { tenantId: TENANT, message: textMsg });
+    expect(deps2.channel.sendText).not.toHaveBeenCalled();
+  });
+
+  it('di bawah batas → jalan normal (LLM dipanggil)', async () => {
+    const reply = { reply: vi.fn(async () => ({ ok: true as const, value: { text: 'halo!' } })) };
+    const deps = fakeDeps({ reply });
+    (deps as { rateLimiter?: unknown }).rateLimiter = limiter({ allowed: true });
+
+    await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(reply.reply).toHaveBeenCalled();
+  });
+
+  // Foto juga memakan biaya (unduh + sharp + FTP) → ikut dibatasi.
+  it('foto juga lewat gerbang (unduh/optimasi tak dijalankan saat limit)', async () => {
+    const deps = fakeDeps();
+    const ingest = vi.fn();
+    (deps as { media?: unknown }).media = { ingest, count: vi.fn(async () => 0) };
+    (deps as { rateLimiter?: unknown }).rateLimiter = limiter({ allowed: false });
+
+    await handleInboundMessage(deps, {
+      tenantId: TENANT,
+      message: { channel: 'TELEGRAM', externalId: '555', providerMsgId: 'p', type: 'IMAGE', mediaRef: 'f1' },
+    });
+
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
+  // Tombol SENGAJA tak dibatasi: aksi diskrit, sudah idempoten, dan menahannya bikin UI menggantung.
+  it('tombol TIDAK dibatasi laju', async () => {
+    const deps = fakeDeps();
+    const check = vi.fn();
+    (deps as { rateLimiter?: unknown }).rateLimiter = { check };
+
+    (deps.channel as { answerCallback?: unknown }).answerCallback = vi.fn(async () => ({ ok: true }));
+
+    await handleInboundMessage(deps, {
+      tenantId: TENANT,
+      message: { channel: 'TELEGRAM', externalId: '555', providerMsgId: 'cb', type: 'INTERACTIVE', callbackId: 'c', callbackData: 'pub:1' },
+    });
+
+    expect(check).not.toHaveBeenCalled();
+  });
+});
+
+// P1 (audit): callback HARUS dijawab SEGERA. Telegram membatalkan callback yang dijawab
+// >10 dtk ("query is too old") → tombol BERPUTAR TERUS di UI meski publish BERHASIL.
+describe('tombol: callback dijawab sebelum kerja berat (P1)', () => {
+  it('answerCallback dipanggil SEBELUM publish menyentuh DB/Redis', async () => {
+    const urutan: string[] = [];
+    const deps = fakeDeps();
+    (deps.channel as { answerCallback?: unknown }).answerCallback = vi.fn(async () => {
+      urutan.push('ack');
+      return { ok: true };
+    });
+    (deps as { approval?: unknown }).approval = {
+      websites: {
+        findByTenantId: vi.fn(async () => {
+          urutan.push('db');
+          return { ok: true, value: { id: 'w1' } };
+        }),
+      },
+      revisions: { findLatest: vi.fn(async () => ({ ok: true, value: null })) },
+      publish: {
+        source: { getPublishSource: vi.fn(async () => { urutan.push('db'); return { ok: true, value: null }; }) },
+        queue: { enqueuePublish: vi.fn(async () => { urutan.push('redis'); return { ok: true, value: { jobId: 'j' } }; }) },
+        rootDomain: 'digimaestro.id',
+      },
+    };
+
+    await handleInboundMessage(deps, {
+      tenantId: TENANT,
+      message: { channel: 'TELEGRAM', externalId: '555', providerMsgId: 'cb1', type: 'INTERACTIVE', callbackId: 'c1', callbackData: 'pub:1' },
+    });
+
+    // ACK harus yang PERTAMA — bukan setelah DB/Redis.
+    expect(urutan[0]).toBe('ack');
+  });
+
+  it('aksi tak dikenal → callback tetap dijawab (tombol tak menggantung)', async () => {
+    const deps = fakeDeps();
+    const ack = vi.fn(async () => ({ ok: true }));
+    (deps.channel as { answerCallback?: unknown }).answerCallback = ack;
+
+    await handleInboundMessage(deps, {
+      tenantId: TENANT,
+      message: { channel: 'TELEGRAM', externalId: '555', providerMsgId: 'cb2', type: 'INTERACTIVE', callbackId: 'c2', callbackData: 'ngawur' },
+    });
+
+    expect(ack).toHaveBeenCalled();
+  });
+});

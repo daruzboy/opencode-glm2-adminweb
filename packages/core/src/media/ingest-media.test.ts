@@ -75,7 +75,7 @@ describe('ingestMedia — dedup', () => {
   it('foto sudah pernah masuk → TIDAK diunduh & TIDAK diproses ulang', async () => {
     const media = {
       findByProviderFileId: vi.fn(async () => ok(asset())),
-      findMany: vi.fn(),
+      findMany: vi.fn(async () => ok([])),
       create: vi.fn(),
     };
     const deps = fakeDeps({ media });
@@ -98,7 +98,7 @@ describe('ingestMedia — dedup', () => {
         seen = true;
         return res;
       }),
-      findMany: vi.fn(),
+      findMany: vi.fn(async () => ok([])),
       create: vi.fn(async () => err({ code: 'CONFLICT' as const, message: 'sudah ada' })),
     };
     const res = await ingestMedia(fakeDeps({ media }), { tenantId: TENANT, mediaRef: REF });
@@ -143,5 +143,49 @@ describe('ingestMedia — kegagalan tiap lapis', () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.code).toBe('STORE');
     expect(deps.media.create).not.toHaveBeenCalled();
+  });
+});
+
+// P1 (audit): tanpa kuota, SATU tenant bisa memenuhi kuota hosting shared yang dipakai
+// bersama SEMUA situs klien — dan tak ada jalur penghapusan.
+describe('ingestMedia — kuota per tenant', () => {
+  function penuh(n: number) {
+    return {
+      findByProviderFileId: vi.fn(async () => ok(null)),
+      findMany: vi.fn(async () => ok(Array.from({ length: n }, () => asset()))),
+      create: vi.fn(async () => ok(asset())),
+    };
+  }
+
+  it('kuota tercapai → err QUOTA, TANPA mengunduh/memproses/menyimpan', async () => {
+    const deps = fakeDeps({ media: penuh(50) });
+
+    const res = await ingestMedia(deps, { tenantId: TENANT, mediaRef: 'baru' });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.code).toBe('QUOTA');
+    // Percuma menarik & memproses foto yang memang tak akan disimpan.
+    expect(deps.download.download).not.toHaveBeenCalled();
+    expect(deps.processor.optimize).not.toHaveBeenCalled();
+    expect(deps.store.store).not.toHaveBeenCalled();
+  });
+
+  it('di bawah kuota → jalan normal', async () => {
+    const deps = fakeDeps({ media: penuh(10) });
+
+    const res = await ingestMedia(deps, { tenantId: TENANT, mediaRef: 'baru' });
+
+    expect(res.ok).toBe(true);
+    expect(deps.download.download).toHaveBeenCalled();
+  });
+
+  it('kuota bisa dikonfigurasi', async () => {
+    const deps = fakeDeps({ media: penuh(3) });
+    (deps as { maxPerTenant?: number }).maxPerTenant = 3;
+
+    const res = await ingestMedia(deps, { tenantId: TENANT, mediaRef: 'baru' });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.code).toBe('QUOTA');
   });
 });

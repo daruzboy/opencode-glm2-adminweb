@@ -9,7 +9,7 @@
 // BullMQ → worker → use case percakapan → balasan via ChannelPort.sendText.
 
 import type { ConversationChannel, MessageType } from './repository.js';
-import type { Result } from '../index.js';
+import type { Result, TenantId } from '../index.js';
 
 // Nama antrean = kontrak bersama produsen (api) & konsumen (worker), seperti antrean
 // `publish` (T-063). Satu antrean untuk semua kanal — payload membawa `channel`.
@@ -90,4 +90,24 @@ export interface ChannelPort {
   // Wajib dipanggil setelah menangani penekanan tombol: Telegram menampilkan spinner di
   // tombol sampai callback query dijawab. `notice` = toast singkat di UI (opsional).
   answerCallback(callbackId: string, notice?: string): Promise<Result<void, ChannelError>>;
+}
+
+// ── Batas laju pesan MASUK (P0 audit Telegram) ────────────────────────────────
+//
+// Kenapa terpisah dari rate limit pesan KELUAR: `RateLimitedChannel` membungkus
+// `ChannelPort`, sedangkan LLM dipanggil SEBELUM balasan dikirim. Jadi rate limit keluar
+// TIDAK melindungi anggaran LLM sama sekali — token sudah terbakar saat balasan ditahan.
+//
+// Gerbang ini menolak SEBELUM LLM tersentuh. Allowlist (ADR-12) menahan orang asing;
+// ini menahan tenant TERDAFTAR yang membanjiri (sengaja, atau karena bug klien).
+export interface RateDecision {
+  readonly allowed: boolean;
+  // Peringatkan pengguna HANYA sekali per jendela — kalau tidak, tiap pesan spam dibalas
+  // peringatan dan kita justru ikut membanjiri pengguna (amplifikasi).
+  readonly shouldWarn: boolean;
+  readonly retryAfterSec: number;
+}
+
+export interface InboundRateLimiterPort {
+  check(tenantId: TenantId): Promise<RateDecision>;
 }
