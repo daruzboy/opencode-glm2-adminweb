@@ -9,6 +9,7 @@ import {
   type LlmError,
   type LlmJsonPort,
   type LlmJsonRequest,
+  type LlmTokenPrice,
   type LlmUsageLoggerPort,
   type LlmUsageRecord,
   type Result,
@@ -23,6 +24,7 @@ export interface OpenAiCompatibleJsonAdapterConfig {
   readonly baseUrl: string;
   readonly fetch?: RuntimeFetch;
   readonly usageLogger?: LlmUsageLoggerPort;
+  readonly price?: LlmTokenPrice;
   readonly maxAttempts?: number;
   readonly inputTokenCostPer1M?: number;
   readonly outputTokenCostPer1M?: number;
@@ -146,8 +148,11 @@ export class OpenAiCompatibleJsonAdapter implements LlmJsonPort {
       latencyMs: Date.now() - startedAt,
       provider: this.config.provider,
       model: this.config.model,
-      inputTokenCostPer1M: this.config.inputTokenCostPer1M ?? 0,
-      outputTokenCostPer1M: this.config.outputTokenCostPer1M ?? 0,
+      // T-082: harga dari config (env). Sebelumnya `?? 0` diam-diam membuat SELURUH biaya
+      // tercatat $0.0000 meski ratusan ribu token terbakar.
+      inputTokenCostPer1M: this.config.inputTokenCostPer1M ?? this.config.price?.inputPer1M ?? 0,
+      outputTokenCostPer1M:
+        this.config.outputTokenCostPer1M ?? this.config.price?.outputPer1M ?? 0,
     });
 
     const logged = await this.config.usageLogger?.recordUsage(usageRecord);

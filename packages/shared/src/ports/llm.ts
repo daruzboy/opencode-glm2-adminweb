@@ -101,3 +101,47 @@ export const DEFAULT_TEMPERATURE_BY_TASK: Readonly<Record<LlmTask, number>> = Ob
 export function defaultTemperatureForTask(task: LlmTask): number {
   return DEFAULT_TEMPERATURE_BY_TASK[task];
 }
+
+// ── Harga token (T-082) ───────────────────────────────────────────────────────
+//
+// SATU sumber kebenaran harga. Sebelumnya harga tercecer & SALAH:
+//   - JSON adapter memakai `inputTokenCostPer1M ?? 0` → composition tak pernah mengisinya
+//     → `cost` yang tercatat SELALU 0 (terbukti di produksi: 123k token, biaya $0.0000).
+//   - Agent adapter memakai konstanta hardcoded (0.14/0.28) — harga model lama.
+//
+// Harga BUKAN sesuatu yang boleh ditebak kode: ia berubah, berbeda per model, dan salah
+// menebaknya = laporan biaya yang menyesatkan (lebih buruk daripada tak ada laporan).
+// Karena itu harga datang dari ENV, dan `LlmUsage.tokenIn/tokenOut` (fakta terukur) yang
+// jadi dasar hitung — bukan kolom `cost` historis.
+export interface LlmTokenPrice {
+  // USD per 1 JUTA token.
+  readonly inputPer1M: number;
+  readonly outputPer1M: number;
+}
+
+// Default = 0 (SENGAJA). Nol memaksa biaya tampil sebagai "belum dikonfigurasi" alih-alih
+// diam-diam melaporkan angka karangan yang dikira benar oleh PO.
+export const DEFAULT_TOKEN_PRICE: LlmTokenPrice = { inputPer1M: 0, outputPer1M: 0 };
+
+export function parseTokenPrice(
+  input: string | undefined,
+  output: string | undefined,
+): LlmTokenPrice {
+  const num = (v: string | undefined): number => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  };
+  return { inputPer1M: num(input), outputPer1M: num(output) };
+}
+
+export function estimateCostUsd(
+  tokenIn: number,
+  tokenOut: number,
+  price: LlmTokenPrice,
+): number {
+  return (tokenIn / 1_000_000) * price.inputPer1M + (tokenOut / 1_000_000) * price.outputPer1M;
+}
+
+export function isPriceConfigured(price: LlmTokenPrice): boolean {
+  return price.inputPer1M > 0 || price.outputPer1M > 0;
+}
