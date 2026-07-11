@@ -110,16 +110,41 @@ export function createDeploy(env: PublishEnv): DeployPort {
   });
 }
 
-// Verifikasi HTTP 200 pasca-deploy (FR-PUB-004) via fetch global (Node 20+). Error jaringan
-// → false (dianggap gagal verifikasi).
-export function createHttpVerify(fetchImpl: typeof fetch = fetch): (url: string) => Promise<boolean> {
+// Verifikasi HTTP 200 pasca-deploy (FR-PUB-004) via fetch global (Node 20+).
+//
+// SABAR, bukan sekali tembak: subdomain yang baru dibuat butuh waktu untuk propagasi DNS
+// dan penerbitan AutoSSL. Sekali-tembak akan melaporkan GAGAL padahal situsnya sebenarnya
+// terbit — dan pengguna menerima kabar kegagalan yang keliru. Jadi coba berulang dengan
+// jeda sampai batas waktu; error jaringan/TLS diperlakukan sebagai "belum siap", bukan
+// kegagalan final.
+export interface HttpVerifyOptions {
+  readonly attempts?: number;
+  readonly delayMs?: number;
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
+export const DEFAULT_VERIFY_ATTEMPTS = 6;
+export const DEFAULT_VERIFY_DELAY_MS = 15_000; // ±75 dtk total sebelum menyerah
+
+export function createHttpVerify(
+  fetchImpl: typeof fetch = fetch,
+  options: HttpVerifyOptions = {},
+): (url: string) => Promise<boolean> {
+  const attempts = options.attempts ?? DEFAULT_VERIFY_ATTEMPTS;
+  const delayMs = options.delayMs ?? DEFAULT_VERIFY_DELAY_MS;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+
   return async (url: string) => {
-    try {
-      const res = await fetchImpl(url, { method: 'GET' });
-      return res.ok;
-    } catch {
-      return false;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const res = await fetchImpl(url, { method: 'GET' });
+        if (res.ok) return true;
+      } catch {
+        // DNS belum menyebar / sertifikat AutoSSL belum terbit → coba lagi.
+      }
+      if (attempt < attempts) await sleep(delayMs);
     }
+    return false;
   };
 }
 
