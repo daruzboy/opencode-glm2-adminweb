@@ -63,6 +63,10 @@ export interface BuildDeps {
   readonly assembleDoc: (draft: unknown, websiteId: string) => unknown;
   // Nilai sah (tema & tipe section) untuk disisipkan ke prompt.
   readonly catalog?: SiteCatalog;
+  // T-033: URL foto milik tenant (hasil ingest). Disisipkan ke prompt agar galeri memakai
+  // foto NYATA pelanggan. Tanpa ini LLM akan mengarang URL gambar yang tak pernah ada →
+  // galeri penuh <img> rusak.
+  readonly mediaUrls?: (tenantId: TenantId) => Promise<readonly string[]>;
 }
 
 export interface BuildRequest {
@@ -151,9 +155,11 @@ export async function buildSiteFromBrief(
   }
 
   // 2. Generate Site Document via LLM.
-  const system =
+  const media = deps.mediaUrls ? await deps.mediaUrls(req.tenantId) : [];
+  const base =
     req.systemPrompt ??
     (deps.catalog ? buildSystemPrompt(deps.catalog) : DEFAULT_BUILD_SYSTEM_PROMPT);
+  const system = media.length > 0 ? `${base}\n\n${mediaInstruction(media)}` : base;
   const userMessage = formatBriefForLlm(req.brief);
   const messages: readonly LlmChatMessage[] = [{ role: 'user', content: userMessage }];
 
@@ -219,3 +225,16 @@ function generateSummary(brief: InterviewBrief): string {
 
 // Re-export untuk konsumen
 export type { LlmError };
+
+// Foto pelanggan yang sudah masuk (T-033). Model HANYA boleh memakai URL dari daftar ini —
+// URL karangan akan menghasilkan galeri dengan gambar rusak.
+export function mediaInstruction(urls: readonly string[]): string {
+  return [
+    `Pelanggan sudah mengirim ${urls.length} foto. Pakai foto ini di situs (section "gallery",`,
+    'dan boleh juga sebagai image di hero/about bila cocok).',
+    'GUNAKAN HANYA url berikut PERSIS seperti tertulis — JANGAN mengarang url gambar lain,',
+    'jangan memakai placeholder, jangan mengubah huruf/pathnya:',
+    ...urls.map((u) => `- ${u}`),
+    'Setiap image WAJIB punya "alt" deskriptif dalam bahasa Indonesia.',
+  ].join('\n');
+}

@@ -40,6 +40,7 @@ export * from './ports/audit-log.js';
 export * from './ports/channel.js';
 export * from './ports/auth.js';
 export * from './ports/llm.js';
+export * from './ports/media.js';
 export * from './ports/llm-agent.js';
 export * from './ports/preview.js';
 export * from './ports/publish.js';

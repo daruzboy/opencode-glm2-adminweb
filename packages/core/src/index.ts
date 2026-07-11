@@ -128,6 +128,14 @@ export {
   type PublishRequestDeps,
 } from './publish/handle-publish.js';
 
+// Media dari chat → storage (T-033, FR-MED-001/002).
+export {
+  ingestMedia,
+  type IngestMediaDeps,
+  type IngestMediaRequest,
+  type IngestMediaResult,
+} from './media/ingest-media.js';
+
 // Notifikasi hasil publish ke chat (T-032tg) — dipakai worker publish.
 export {
   failedPublishMessage,
@@ -144,10 +152,13 @@ export {
   approvalButtons,
   handleInboundMessage,
   inboundFallbackReply,
+  mediaFailedReply,
+  mediaReceivedReply,
   unsupportedTypeReply,
   type ApprovalDeps,
   type InboundDeps,
   type InboundLogger,
+  type MediaDeps,
   type InboundRequest,
   type InboundResult,
 } from './conversation/handle-inbound.js';

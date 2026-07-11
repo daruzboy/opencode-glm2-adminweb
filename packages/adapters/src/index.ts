@@ -70,6 +70,11 @@ export * from './builder/sitebuilder-tool-adapter.js';
 export * from './auth/jwt-auth.js';
 // Kanal Telegram (T-030tg) — rencana B; WABA menyusul saat verifikasi Meta tuntas.
 export * from './llm/sanitize-tool-markup.js';
+// Media dari kanal (T-033).
+export * from './media/telegram-media-download.js';
+export * from './media/sharp-media-processor.js';
+export * from './media/ftps-media-store.js';
+export * from './prisma/media-repo-prisma.js';
 export * from './telegram/normalize.js';
 export * from './telegram/allowlist.js';
 export * from './telegram/telegram-channel.js';

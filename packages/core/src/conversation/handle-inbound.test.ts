@@ -213,3 +213,57 @@ describe('kegagalan agent harus terlihat di log (bukan senyap)', () => {
     expect(errors.some((e) => e.includes('tidak disuntik'))).toBe(true);
   });
 });
+
+// T-033: foto pelanggan → ingest (unduh+optimasi+simpan), TANPA memanggil LLM.
+describe('foto masuk (T-033)', () => {
+  const photo = {
+    channel: 'TELEGRAM' as const,
+    externalId: '555',
+    providerMsgId: 'tg-555-photo',
+    type: 'IMAGE' as const,
+    mediaRef: 'tg-file-abc',
+  };
+
+  it('foto → di-ingest & dikonfirmasi, LLM tidak dipanggil (hemat token)', async () => {
+    const reply = { reply: vi.fn() };
+    const deps = fakeDeps({ reply });
+    (deps as { media?: unknown }).media = {
+      ingest: vi.fn(async () => ({ ok: true, value: { url: 'https://x.id/media/t1/a.webp' } })),
+      count: vi.fn(async () => 2),
+    };
+
+    const res = await handleInboundMessage(deps, { tenantId: TENANT, message: photo });
+
+    expect(res.ok).toBe(true);
+    expect(reply.reply).not.toHaveBeenCalled();
+    const [, text] = (deps.channel.sendText as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(text).toContain('Foto kesimpan');
+    expect(text).toContain('2 foto');
+  });
+
+  it('ingest gagal → pesan jujur ke pengguna, sebabnya masuk log', async () => {
+    const errors: string[] = [];
+    const deps = fakeDeps();
+    (deps as { logger?: unknown }).logger = { error: (m: string) => errors.push(m) };
+    (deps as { media?: unknown }).media = {
+      ingest: vi.fn(async () => ({ ok: false, error: { message: 'ftp putus' } })),
+      count: vi.fn(async () => 0),
+    };
+
+    await handleInboundMessage(deps, { tenantId: TENANT, message: photo });
+
+    const [, text] = (deps.channel.sendText as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(text).toContain('gagal kuproses');
+    expect(errors.some((e) => e.includes('ftp putus'))).toBe(true);
+  });
+
+  // Tanpa kredensial hosting, media deps tak dirakit → foto ditolak sopan, bot tetap hidup.
+  it('media deps tak ada → jawab sopan, tak crash', async () => {
+    const deps = fakeDeps();
+    const res = await handleInboundMessage(deps, { tenantId: TENANT, message: photo });
+
+    expect(res.ok).toBe(true);
+    const [, text] = (deps.channel.sendText as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(text).toContain('teks dan foto');
+  });
+});
