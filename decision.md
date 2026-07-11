@@ -661,6 +661,28 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   interview 2048, revision 2560, status/fallback 1536. Adapter kini menyebut sebabnya
   ("anggaran token habis untuk reasoning") — "teks kosong" saja menyesatkan.
 
+### Audit kanal Telegram (2026-07-11) — temuan & perbaikan
+- ✅ **P0** (**PR #65**): (1) **Tidak ada timeout** di poller & unduhan media → `fetch` menggantung
+  sampai default undici (**±5 menit**) bila koneksi stall → bot **BERHENTI menerima pesan tanpa
+  error/log**, container tetap "sehat" (pola bug yang SAMA dgn worker-stub). → `AbortSignal.timeout`
+  eksplisit. (2) **Rate limit TIDAK melindungi anggaran LLM** — `RateLimitedChannel` hanya membungkus
+  pesan KELUAR, sedangkan LLM dipanggil LEBIH DULU → tenant terdaftar yang membanjiri 100 pesan =
+  100 panggilan `deepseek-v4-pro`. Allowlist (ADR-12) hanya menahan ORANG ASING. → `InboundRateLimiterPort`
+  + `RedisInboundRateLimiter`, ditegakkan **sebelum** LLM/media disentuh (15 pesan/60 dtk per tenant).
+  State di **Redis** (bukan memori proses) → benar juga saat worker >1 replika. Tanpa dep baru
+  (klien Redis dari `Queue.client` BullMQ). Peringatan dikirim **sekali per jendela** (kalau tiap
+  pesan spam dibalas, kita ikut membanjiri pengguna). Tombol sengaja tak dibatasi (idempoten).
+- ✅ **P1** (**PR #66**): (1) **`answerCallback` dijawab terlambat** — dipanggil SETELAH DB+Redis;
+  Telegram membatalkan callback >10 dtk → **tombol berputar meski publish BERHASIL**. → ACK segera.
+  (2) **Tidak ada kuota media** → satu tenant bisa memenuhi kuota hosting SHARED (dipakai semua situs
+  klien). → `MEDIA_MAX_PER_TENANT`=50, dicek SEBELUM unduh; error `QUOTA` + balasan yang menyebut sebab.
+  (3) **Rate limit keluar** dipindah ke Redis (memori proses → N×limit saat >1 replika → 429 Telegram).
+- ⏳ **P2 (butuh PO, non-kode):** `can_join_groups` masih aktif → matikan di BotFather
+  (`/setjoingroups` → Disable). Chat grup sudah ditolak allowlist, tapi permukaan tak perlu.
+- ✅ **Terverifikasi aman** (audit jujur dua arah): token bot **tak pernah bocor ke log** (0 kemunculan);
+  webhook **fail-closed** (tanpa secret → rute tak dipasang, terbukti 404 di live); allowlist fail-closed;
+  idempotensi bertumpu constraint DB; `callback_data` divalidasi ketat; TLS diverifikasi penuh.
+
 ### Gerbang keluar Fase 0
 - ✅ **T-083 — DEMO E2E TERCAPAI** (2026-07-11, produksi nyata, tanpa intervensi manual):
   **chat Telegram → wawancara (agent ingat konteks) → agent bangun situs → tombol approval →
