@@ -53,7 +53,7 @@ import {
   siteDocumentSchema,
   siteDraftSchema,
 } from '@digimaestro/sites-kit';
-import { tenantId } from '@digimaestro/shared';
+import { BUILD_LLM_TIMEOUT_MS, DEFAULT_DEEPSEEK_MODEL, tenantId } from '@digimaestro/shared';
 import type { ChannelPort, ConversationRepository, LlmJsonPort } from '@digimaestro/shared';
 import type { PublishNotifier } from './publish-worker.js';
 import type { PollerHandle } from '@digimaestro/adapters';
@@ -100,12 +100,16 @@ function createLlmJsonPort(
         apiKey: env.GLM_API_KEY ?? '',
         baseUrl: env.GLM_BASE_URL,
         usageLogger,
+        timeoutMs: BUILD_LLM_TIMEOUT_MS,
       })
     : createDeepSeekJsonAdapter({
-        model: env.DEEPSEEK_MODEL ?? 'deepseek-chat',
+        model: env.DEEPSEEK_MODEL ?? DEFAULT_DEEPSEEK_MODEL,
         apiKey: env.DEEPSEEK_API_KEY ?? '',
         baseUrl: env.DEEPSEEK_BASE_URL,
         usageLogger,
+        // Build situs = JSON besar & penalaran berat → 30 dtk default tak cukup (timeout
+        // konsisten di uji nyata).
+        timeoutMs: BUILD_LLM_TIMEOUT_MS,
       });
 }
 
@@ -119,7 +123,7 @@ export function createChatReplier(
   const isGlm = env.DIGIMAESTRO_LLM_PROVIDER === 'glm';
   const agentLlm = new OpenAiCompatibleAgentAdapter({
     provider: isGlm ? 'glm' : 'deepseek',
-    model: isGlm ? (env.GLM_MODEL ?? 'glm-4.5') : (env.DEEPSEEK_MODEL ?? 'deepseek-chat'),
+    model: isGlm ? (env.GLM_MODEL ?? 'glm-4.5') : (env.DEEPSEEK_MODEL ?? DEFAULT_DEEPSEEK_MODEL),
     apiKey: isGlm ? (env.GLM_API_KEY ?? '') : (env.DEEPSEEK_API_KEY ?? ''),
     baseUrl: isGlm
       ? (env.GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/paas/v4')

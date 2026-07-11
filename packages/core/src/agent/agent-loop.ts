@@ -56,6 +56,14 @@ export const DEFAULT_AGENT_MAX_TOKENS = 512;
 
 // Pesan NEEDS_INFO terakhir saat loop menyentuh batas langkah (FR-AGT-006). Tidak
 // menebak data penting; meminta klien merinci.
+// Instruksi penutup saat tools dimatikan (langkah terakhir). Tanpa ini model mencoba
+// "memanggil tool" lewat teks biasa.
+export const NO_TOOLS_INSTRUCTION = [
+  'PENTING: tool sudah TIDAK tersedia pada giliran ini.',
+  'Jangan menulis pemanggilan tool dalam bentuk apa pun (tanpa markup, tanpa "Memanggil ...").',
+  'Balas langsung ke pengguna dengan bahasa Indonesia yang wajar berdasarkan hasil yang sudah ada.',
+].join(' ');
+
 export const AGENT_MAX_STEPS_REPLY =
   'Maaf, aku masih butuh beberapa detail lagi biar bisa lanjut. ' +
   'Bisa tolong sebutkan poin utama yang kamu maksud agar aku bantu lebih tepat?';
@@ -86,11 +94,17 @@ export async function runAgentLoop(
     const forceText = step === maxSteps - 1; // langkah terakhir: tanpa tools → ringkasan
     const activeTools = forceText ? [] : tools;
 
+    // T-053h: mematikan tools saja TIDAK cukup. System prompt masih menyuruh memanggil
+    // tool, jadi model yang kehilangan saluran protokol malah MENULIS pemanggilan tool ke
+    // teks (markup DSML / "Memanggil nama_tool(...)") dan itu bocor ke pengguna. Saat tools
+    // dimatikan, katakan terang-terangan bahwa tool tak tersedia lagi.
+    const system = forceText ? `${req.system}\n\n${NO_TOOLS_INSTRUCTION}` : req.system;
+
     const response = await deps.llm.completeWithTools({
       tenantId: req.tenantId,
       jobId: req.jobId,
       task: req.task,
-      system: req.system,
+      system,
       messages,
       tools: activeTools,
       temperature: req.temperature,

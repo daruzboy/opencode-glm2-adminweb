@@ -162,3 +162,55 @@ describe('OpenAiCompatibleAgentAdapter — factories', () => {
     expect(adapter.name).toBe('llm-agent:deepseek');
   });
 });
+
+// T-053h — bocoran NYATA: pengguna Telegram menerima markup mentah
+// "<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name=...>" sebagai isi pesan. Model menulis
+// pemanggilan tool ke `content` saat tools dimatikan. Markup vendor harus BERHENTI di adapter.
+describe('OpenAiCompatibleAgentAdapter — tool markup tak boleh bocor ke pengguna', () => {
+  const DSML =
+    '<｜｜DSML｜｜tool_calls> <｜｜DSML｜｜invoke name="sitebuilder_build_site"> ' +
+    '<｜｜DSML｜｜parameter name="businessName" string="true">Sate Pak Dar</｜｜DSML｜｜parameter>';
+
+  function adapterWith(content: string) {
+    const fetch = mockFetch({
+      ok: true,
+      status: 200,
+      json: { choices: [{ message: { role: 'assistant', content } }] },
+    });
+    return new OpenAiCompatibleAgentAdapter({
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      apiKey: 'k',
+      baseUrl: 'https://api.test/v1',
+      fetch,
+    });
+  }
+
+  it('teks sah + markup → markup dibuang, teks sah tetap terkirim', async () => {
+    const res = await adapterWith(`Siap, situsmu lagi kubangun ya!\n${DSML}`).completeWithTools(baseRequest);
+
+    expect(res.ok).toBe(true);
+    if (res.ok && res.value.kind === 'text') {
+      expect(res.value.content).toContain('Siap, situsmu lagi kubangun ya!');
+      expect(res.value.content).not.toContain('DSML');
+    }
+  });
+
+  // Tak ada isi yang layak dikirim → error, supaya pemanggil memakai fallback sopan
+  // ketimbang mengirim pesan kosong ke pengguna.
+  it('balasan yang isinya HANYA markup → err PROVIDER (bukan pesan kosong)', async () => {
+    const res = await adapterWith(DSML).completeWithTools(baseRequest);
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.code).toBe('PROVIDER');
+  });
+
+  it('teks normal tidak tersentuh', async () => {
+    const res = await adapterWith('Situsmu sudah jadi 🎉').completeWithTools(baseRequest);
+
+    expect(res.ok).toBe(true);
+    if (res.ok && res.value.kind === 'text') {
+      expect(res.value.content).toBe('Situsmu sudah jadi 🎉');
+    }
+  });
+});
