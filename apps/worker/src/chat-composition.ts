@@ -21,8 +21,10 @@ import {
   createBullMqPublishQueue,
   createDeepSeekJsonAdapter,
   createGlmJsonAdapter,
+  createBullMqChatInboundQueue,
   createPreviewToken,
   createPrismaClient,
+  startTelegramPoller,
   type ConversationDelegate,
   type LlmUsageDelegate,
   type MessageDelegate,
@@ -47,6 +49,7 @@ import { siteDocumentSchema } from '@digimaestro/sites-kit';
 import { tenantId } from '@digimaestro/shared';
 import type { ChannelPort, ConversationRepository, LlmJsonPort } from '@digimaestro/shared';
 import type { PublishNotifier } from './publish-worker.js';
+import type { PollerHandle } from '@digimaestro/adapters';
 
 export interface ChatWorkerEnv {
   readonly TELEGRAM_BOT_TOKEN?: string;
@@ -56,6 +59,8 @@ export interface ChatWorkerEnv {
   readonly PUBLISH_BASE_DOMAIN?: string;
   readonly CHANNEL_RATE_LIMIT?: string;
   readonly CHANNEL_RATE_WINDOW_MS?: string;
+  readonly TELEGRAM_MODE?: string;
+  readonly TELEGRAM_ALLOWLIST?: string;
   readonly DIGIMAESTRO_LLM_PROVIDER?: string;
   readonly DEEPSEEK_API_KEY?: string;
   readonly DEEPSEEK_MODEL?: string;
@@ -241,4 +246,27 @@ export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps
     reply: createChatReplier(conversations, prisma, env),
     ...(approval ? { approval } : {}),
   };
+}
+
+// T-030tg-poll: poller long-polling. Dipakai saat TELEGRAM_MODE=polling (VPS tanpa domain
+// publik → webhook tak bisa dipanggil Telegram). Update masuk ke antrean `chat-inbound`
+// YANG SAMA dengan webhook → tak ada cabang pemrosesan kedua.
+export function startPoller(env: ChatWorkerEnv = process.env): PollerHandle | undefined {
+  if (env.TELEGRAM_MODE !== 'polling' || !env.TELEGRAM_BOT_TOKEN || !env.REDIS_URL) return undefined;
+
+  const url = new URL(env.REDIS_URL);
+  const queue = createBullMqChatInboundQueue({
+    host: url.hostname,
+    port: url.port ? Number(url.port) : 6379,
+    username: url.username || undefined,
+    password: url.password || undefined,
+    maxRetriesPerRequest: null,
+  });
+
+  return startTelegramPoller({
+    botToken: env.TELEGRAM_BOT_TOKEN,
+    queue,
+    fetch: globalThis.fetch as never,
+    ...(env.TELEGRAM_ALLOWLIST ? { allowlistRaw: env.TELEGRAM_ALLOWLIST } : {}),
+  });
 }

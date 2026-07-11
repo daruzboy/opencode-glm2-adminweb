@@ -6,7 +6,7 @@
 import { pathToFileURL } from 'node:url';
 import type { Worker } from 'bullmq';
 import { createPublishDeps, createRedisConnection } from './composition.js';
-import { createInboundDeps, createPublishNotifier } from './chat-composition.js';
+import { createInboundDeps, createPublishNotifier, startPoller } from './chat-composition.js';
 import { startChatInboundWorker } from './chat-inbound-worker.js';
 import { startPublishWorker } from './publish-worker.js';
 
@@ -21,6 +21,7 @@ export {
   createPublishNotifier,
   createTelegramChannel,
   createChatReplier,
+  startPoller,
 } from './chat-composition.js';
 
 export const WORKER_NAME = 'digimaestro-worker';
@@ -50,9 +51,15 @@ export async function runWorker(): Promise<void> {
   ];
   console.log(`[${handle.name}] started — konsumen antrean 'publish' aktif (BullMQ).`);
 
+  let poller: ReturnType<typeof startPoller>;
   if (process.env.TELEGRAM_BOT_TOKEN) {
     workers.push(startChatInboundWorker(createInboundDeps(), { connection }));
     console.log(`[${handle.name}] konsumen antrean 'chat-inbound' aktif (Telegram).`);
+
+    // TELEGRAM_MODE=polling → kita yang menarik update dari Telegram (VPS tanpa domain
+    // publik). Tanpa itu, update masuk lewat webhook di apps/api.
+    poller = startPoller();
+    if (poller) console.log(`[${handle.name}] long-polling Telegram aktif (tanpa webhook).`);
   } else {
     console.log(`[${handle.name}] TELEGRAM_BOT_TOKEN kosong — konsumen 'chat-inbound' dilewati.`);
   }
@@ -60,6 +67,7 @@ export async function runWorker(): Promise<void> {
   await new Promise<void>((resolve) => {
     const shutdown = (signal: NodeJS.Signals): void => {
       console.log(`[${handle.name}] ${signal} diterima — menutup worker...`);
+      poller?.stop();
       void Promise.all(workers.map((w) => w.close())).then(() => resolve());
     };
     process.once('SIGTERM', () => shutdown('SIGTERM'));
