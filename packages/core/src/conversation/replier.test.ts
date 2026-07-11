@@ -283,3 +283,20 @@ describe('composeAgentPlan — hormati state percakapan', () => {
     expect(composeAgentPlan('REPORT_STATUS', 'INTERVIEW', 'status?').scopes).toContain('ops');
   });
 });
+
+// DITEMUKAN SAAT BOT DIPAKAI SUNGGUHAN + diukur langsung ke API DeepSeek:
+// deepseek-v4-pro adalah model REASONING — ia menghabiskan token untuk "berpikir" DULU,
+// baru menulis jawaban. Dengan maxTokens 512, SELURUH anggaran habis di reasoning
+// (finish_reason 'length', reasoning 1912 char) dan `content` yang sampai ke pengguna
+// KOSONG → bot tampak mati tanpa sebab. Terukur: 2048 cukup.
+describe('anggaran token — cukup untuk model reasoning', () => {
+  it.each([
+    ['START_INTERVIEW', 'ONBOARDING'],
+    ['HANDLE_REVISION', 'REVIEW'],
+    ['REPORT_STATUS', 'IDLE'],
+    ['FALLBACK', 'IDLE'],
+  ] as const)('%s → maxTokens ≥ 1536 (menyisakan ruang untuk jawaban)', (action, state) => {
+    const plan = composeAgentPlan(action, state, 'halo');
+    expect(plan.maxTokens).toBeGreaterThanOrEqual(1536);
+  });
+});

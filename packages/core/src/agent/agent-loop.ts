@@ -52,7 +52,12 @@ export interface AgentLoopResult {
 }
 
 export const DEFAULT_AGENT_MAX_STEPS = 4;
-export const DEFAULT_AGENT_MAX_TOKENS = 512;
+// Anggaran token balasan. HARUS memperhitungkan model REASONING (deepseek-v4-pro & sejenis):
+// model itu menghabiskan token untuk "berpikir" DULU, lalu menulis jawaban. Dengan 512
+// token, seluruh anggaran habis di reasoning (terukur: 1912 char reasoning, finish_reason
+// 'length') dan `content` yang sampai ke pengguna KOSONG — bot tampak mati tanpa sebab.
+// Diukur langsung ke API: 2048 cukup (reasoning ~1000 char + jawaban ~600 char).
+export const DEFAULT_AGENT_MAX_TOKENS = 2048;
 
 // Pesan NEEDS_INFO terakhir saat loop menyentuh batas langkah (FR-AGT-006). Tidak
 // menebak data penting; meminta klien merinci.

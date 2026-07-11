@@ -189,9 +189,16 @@ export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
       // sendMessage tanpa isi, dan pengguna tak menerima apa-apa. Perlakukan sebagai
       // balasan tak sah agar pemanggil memakai fallback yang sopan.
       if (raw.trim().length === 0) {
+        // Model REASONING (deepseek-v4-pro dsb) menghabiskan anggaran token untuk berpikir
+        // lebih dulu. Bila habis sebelum sempat menulis, `content` kosong & finish_reason
+        // 'length'. Sebutkan itu terang-terangan — "teks kosong" saja menyesatkan dan
+        // memakan waktu lama untuk didiagnosis.
+        const truncated = choice.finish_reason === 'length';
         return err({
           code: 'PROVIDER',
-          message: 'model membalas teks kosong',
+          message: truncated
+            ? 'anggaran token habis untuk reasoning — tak tersisa untuk jawaban (naikkan maxTokens)'
+            : 'model membalas teks kosong',
           retryable: false,
           attempt,
         });
@@ -248,6 +255,9 @@ export function createGlmAgentAdapter(config: Omit<OpenAiCompatibleAgentAdapterC
 // Response shape dari OpenAI-compatible /chat/completions.
 interface ChatCompletionResponse {
   readonly choices?: readonly [{
+    // 'length' = anggaran token habis sebelum model selesai (pada model reasoning: habis
+    // saat berpikir, sehingga `content` kosong).
+    readonly finish_reason?: string;
     readonly message?: {
       readonly role: string;
       readonly content?: string | null;

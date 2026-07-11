@@ -247,3 +247,25 @@ describe('OpenAiCompatibleAgentAdapter — balasan kosong', () => {
     expect(res.ok).toBe(false);
   });
 });
+
+// Pesan error harus MENYEBUT sebabnya: "teks kosong" saja menyesatkan dan lama didiagnosis.
+describe('OpenAiCompatibleAgentAdapter — anggaran token habis di reasoning', () => {
+  it('content kosong + finish_reason length → err menyebut anggaran token', async () => {
+    const fetch = mockFetch({
+      ok: true,
+      status: 200,
+      json: { choices: [{ finish_reason: 'length', message: { role: 'assistant', content: '' } }] },
+    });
+    const adapter = new OpenAiCompatibleAgentAdapter({
+      provider: 'deepseek', model: 'm', apiKey: 'k', baseUrl: 'https://api.test/v1', fetch,
+    });
+
+    const res = await adapter.completeWithTools(baseRequest);
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error.message).toContain('anggaran token');
+      expect(res.error.message).toContain('reasoning');
+    }
+  });
+});
