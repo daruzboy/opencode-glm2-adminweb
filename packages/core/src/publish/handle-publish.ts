@@ -8,6 +8,7 @@
 // tepercaya (PublishSourcePort, tenant-scoped) — BUKAN dari body — lalu di-enqueue ke worker
 // (PublishQueuePort). Bergantung hanya pada Port → diuji dengan fake tanpa DB/Redis.
 
+import { publicSiteUrl, type PublishUrlMode } from '@digimaestro/shared';
 import type { PublishQueuePort, PublishSourcePort, TenantId } from '@digimaestro/shared';
 
 export interface PublishRequestDeps {
@@ -15,6 +16,8 @@ export interface PublishRequestDeps {
   readonly queue: PublishQueuePort;
   // Domain induk situs klien (mis. 'digimaestro.id') → baseUrl + rootDomain job.
   readonly rootDomain: string;
+  // Bentuk URL: subdomain (butuh UAPI) atau path (subfolder domain utama). Default subdomain.
+  readonly urlMode?: PublishUrlMode;
 }
 
 export interface PublishRequest {
@@ -36,11 +39,12 @@ export async function handlePublishRequest(deps: PublishRequestDeps, req: Publis
   if (!src.value) return { ok: false, status: 404, message: 'revisi tidak ditemukan' };
 
   const { slug, siteDocument, websiteId, revisionNumber } = src.value;
-  const url = `https://${slug}.${deps.rootDomain}`;
+  const url = publicSiteUrl(slug, deps.rootDomain, deps.urlMode ?? 'subdomain');
 
   const enq = await deps.queue.enqueuePublish({
     tenantId: req.tenantId,
     websiteId,
+    ...(deps.urlMode ? { urlMode: deps.urlMode } : {}),
     revisionNumber,
     slug,
     baseUrl: url,

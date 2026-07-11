@@ -43,7 +43,7 @@ import {
   siteDocumentSchema,
   siteDraftSchema,
 } from '@digimaestro/sites-kit';
-import { BUILD_LLM_TIMEOUT_MS, DEFAULT_DEEPSEEK_MODEL } from '@digimaestro/shared';
+import { BUILD_LLM_TIMEOUT_MS, DEFAULT_DEEPSEEK_MODEL, parsePublishUrlMode } from '@digimaestro/shared';
 import type {
   AgentToolDefinition,
   AuthPort,
@@ -154,7 +154,9 @@ export function createPublishRequestDeps(options: CreatePublishRequestDepsOption
     maxRetriesPerRequest: null,
   });
   const rootDomain = options.rootDomain ?? process.env.PUBLISH_BASE_DOMAIN ?? 'digimaestro.id';
-  return { source, queue, rootDomain };
+  // URL yang DIJANJIKAN ke pengguna harus sama dengan yang nanti diverifikasi worker.
+  const urlMode = parsePublishUrlMode(process.env.PUBLISH_URL_MODE);
+  return { source, queue, rootDomain, urlMode };
 }
 
 export interface CreateTelegramWebhookDepsOptions {
