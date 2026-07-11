@@ -18,6 +18,12 @@ const TELEGRAM_API = 'https://api.telegram.org';
 // realtime tanpa membanjiri API dengan permintaan kosong.
 const DEFAULT_POLL_TIMEOUT_SEC = 30;
 
+// P0 (audit): margin di atas long-poll. TANPA timeout eksplisit, `fetch` menggantung sampai
+// default undici (±5 MENIT) bila koneksi stall (TCP hidup tapi tak ada respons) → bot
+// BERHENTI menerima pesan, tanpa error, tanpa log, container tetap "sehat". Pola bug yang
+// sama dengan worker-stub: tampak hidup, tapi tak bekerja.
+const POLL_TIMEOUT_MARGIN_MS = 10_000;
+
 export interface TelegramPollerOptions {
   readonly botToken: string;
   readonly queue: ChatInboundQueuePort;
@@ -54,6 +60,8 @@ export async function pollOnce(
       // Hanya jenis update yang kita pahami — sisanya tak perlu dikirim Telegram.
       allowed_updates: ['message', 'edited_message', 'callback_query'],
     }),
+    // Timeout > long-poll: koneksi stall diputus & loop dilanjutkan (bukan menggantung).
+    signal: AbortSignal.timeout(timeout * 1000 + POLL_TIMEOUT_MARGIN_MS),
   });
 
   if (res.status < 200 || res.status >= 300) {

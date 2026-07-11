@@ -154,6 +154,7 @@ export {
   inboundFallbackReply,
   mediaFailedReply,
   mediaReceivedReply,
+  rateLimitedReply,
   unsupportedTypeReply,
   type ApprovalDeps,
   type InboundDeps,

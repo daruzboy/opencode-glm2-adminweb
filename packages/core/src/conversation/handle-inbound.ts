@@ -19,6 +19,7 @@ import { err, ok } from '@digimaestro/shared';
 import type {
   ChannelButton,
   ChannelPort,
+  InboundRateLimiterPort,
   ConversationRepository,
   InboundChannelMessage,
   MessageRepository,
@@ -63,6 +64,10 @@ export interface InboundDeps {
   readonly reply?: ConversationReplier;
   readonly approval?: ApprovalDeps;
   readonly media?: MediaDeps;
+  // P0 (audit): gerbang biaya pesan MASUK. Ditegakkan SEBELUM LLM dipanggil — rate limit
+  // pesan KELUAR (RateLimitedChannel) tak melindungi anggaran token, karena LLM sudah
+  // terlanjur dipanggil saat balasan ditahan.
+  readonly rateLimiter?: InboundRateLimiterPort;
   readonly logger?: InboundLogger;
 }
 
@@ -81,6 +86,8 @@ export interface InboundResult {
   // Revisi yang tombolnya ditawarkan / ditindak pada giliran ini.
   readonly revisionNumber?: number;
   readonly action?: ChannelAction['kind'];
+  // true → ditolak gerbang biaya; LLM/media TIDAK disentuh.
+  readonly rateLimited?: boolean;
 }
 
 // Balasan saat agent tak tersedia/gagal. Chat tidak boleh mati bisu (PRD: persona
@@ -104,6 +111,13 @@ export function mediaReceivedReply(total: number): string {
 
 export function mediaFailedReply(): string {
   return 'Waduh, fotonya gagal kuproses 😔 Coba kirim ulang ya, atau pakai foto lain.';
+}
+
+export function rateLimitedReply(retryAfterSec: number): string {
+  return (
+    `Waduh, pesanmu kecepetan nih 😅 Aku butuh waktu buat mikir tiap pesan.\n\n` +
+    `Tunggu ~${retryAfterSec} detik ya, terus lanjut lagi.`
+  );
 }
 
 export function approvalButtons(revisionNumber: number): ChannelButton[] {
@@ -141,12 +155,36 @@ export async function handleInboundMessage(
     return err(incoming.error);
   }
 
-  // 3) Penekanan tombol → jalur aksi (bukan LLM).
+  // 3) Penekanan tombol → jalur aksi (bukan LLM). SENGAJA tak dibatasi laju: aksi diskrit
+  //    & sudah idempoten (dobel-tap ditahan providerMsgId @unique), dan menahan tombol
+  //    justru membuat UI menggantung.
   if (message.type === 'INTERACTIVE') {
     return handleAction(deps, tenantId, conversationId, message);
   }
 
-  // 4) Foto (T-033): unduh → optimasi → simpan. Tak memanggil LLM (buang biaya token).
+  // 4) GERBANG BIAYA (P0): pesan berikutnya akan memanggil LLM (teks) atau mengunduh +
+  //    memproses gambar (foto). Tolak DI SINI, sebelum biaya terjadi.
+  if (deps.rateLimiter) {
+    const decision = await deps.rateLimiter.check(tenantId);
+    if (!decision.allowed) {
+      deps.logger?.error(`[rate-limit] tenant ${tenantId} melewati batas pesan masuk`);
+      // Peringatkan sekali per jendela; sisanya DIAM — membalas tiap pesan spam =
+      // ikut membanjiri pengguna & membakar kuota kirim.
+      if (decision.shouldWarn) {
+        return replyAndPersist(
+          deps,
+          tenantId,
+          conversationId,
+          message,
+          rateLimitedReply(decision.retryAfterSec),
+          [],
+        );
+      }
+      return ok({ conversationId, duplicate: false, rateLimited: true });
+    }
+  }
+
+  // 5) Foto (T-033): unduh → optimasi → simpan. Tak memanggil LLM (buang biaya token).
   if (message.type === 'IMAGE' && message.mediaRef && deps.media) {
     const ingested = await deps.media.ingest(tenantId, message.mediaRef);
     if (!ingested.ok) {
@@ -157,7 +195,7 @@ export async function handleInboundMessage(
     return replyAndPersist(deps, tenantId, conversationId, message, mediaReceivedReply(total), []);
   }
 
-  // 5) Tipe lain yang belum didukung → jawab jujur tanpa memanggil LLM.
+  // 6) Tipe lain yang belum didukung → jawab jujur tanpa memanggil LLM.
   if (message.type !== 'TEXT' || !message.text) {
     return replyAndPersist(deps, tenantId, conversationId, message, unsupportedTypeReply(), []);
   }
