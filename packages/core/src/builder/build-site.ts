@@ -93,6 +93,8 @@ export const DEFAULT_BUILD_SYSTEM_PROMPT = [
   '- Tulis copywriting konkret (bukan placeholder) berdasarkan info brief.',
   '- Pilih section yang relevan untuk jenis usaha ini (minimum: hero, about, services, contact).',
   '- Halaman pertama WAJIB ber-slug "index" (beranda).',
+  '- JANGAN mengarang gambar. Bila tak ada foto yang diberikan, hilangkan field image dan',
+  '  jangan pakai section gallery — gambar karangan menghasilkan <img> rusak di situs nyata.',
   '',
   'Format JSON yang WAJIB diikuti:',
   '{ "title": string, "themeId": string, "pages": [ { "slug": string (kebab-case), "title": string, "sections": [ { "type": string, "variant": string, "props": object } ] } ] }',
@@ -232,6 +234,7 @@ export function mediaInstruction(urls: readonly string[]): string {
   return [
     `Pelanggan sudah mengirim ${urls.length} foto. Pakai foto ini di situs (section "gallery",`,
     'dan boleh juga sebagai image di hero/about bila cocok).',
+    'Tulis di field "url" milik image (BUKAN "assetId").',
     'GUNAKAN HANYA url berikut PERSIS seperti tertulis — JANGAN mengarang url gambar lain,',
     'jangan memakai placeholder, jangan mengubah huruf/pathnya:',
     ...urls.map((u) => `- ${u}`),

@@ -25,9 +25,15 @@ function ctaButton(cta: { readonly label: string; readonly href: string } | unde
   return `<a class="dm-btn" href="${escapeAttr(safeUrl(cta.href))}">${escapeHtml(cta.label)}</a>`;
 }
 
-function image(img: { readonly assetId: string; readonly alt: string } | undefined): string {
+function image(
+  img: { readonly assetId?: string; readonly url?: string; readonly alt: string } | undefined,
+): string {
   if (!img) return '';
-  return `<img src="${escapeAttr(assetPath(img.assetId))}" alt="${escapeAttr(img.alt)}" loading="lazy">`;
+  // URL absolut (foto pelanggan, T-033) dipakai apa adanya — TIDAK boleh di-encode sebagai
+  // segmen path. safeUrl tetap menyaring skema berbahaya (javascript:, data:) → anti-XSS.
+  const src = img.url ? safeUrl(img.url) : img.assetId ? assetPath(img.assetId) : '';
+  if (!src) return '';
+  return `<img src="${escapeAttr(src)}" alt="${escapeAttr(img.alt)}" loading="lazy">`;
 }
 
 function list(items: readonly string[]): string {

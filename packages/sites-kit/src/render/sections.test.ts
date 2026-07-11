@@ -74,3 +74,43 @@ describe('renderSection (FR-CMP-004)', () => {
     }
   });
 });
+
+// T-033 — BUG NYATA (ditemukan dengan membuka halaman live, bukan dari tes): foto pelanggan
+// dititipkan ke `assetId`, lalu renderer memetakannya ke `/_assets/<encodeURIComponent(...)>`
+// → URL ter-encode ganda (`https%3A%2F%2F...`) dan <img> menunjuk alamat 404. Gambarnya sehat,
+// HTML-nya yang salah.
+describe('render image — URL absolut foto pelanggan (T-033)', () => {
+  it('url absolut dipakai APA ADANYA (tidak di-encode sebagai segmen path)', () => {
+    const url = 'https://digimaestro.id/media/t1/abc123.webp';
+    const html = renderSection({
+      type: 'gallery',
+      variant: 'masonry',
+      props: { images: [{ url, alt: 'Sate ayam' }] },
+    } as never);
+
+    expect(html).toContain(`src="${url}"`);
+    expect(html).not.toContain('%2F'); // inti bug-nya
+    expect(html).not.toContain('/_assets/https');
+  });
+
+  it('assetId (aset internal) tetap dipetakan ke /_assets/', () => {
+    const html = renderSection({
+      type: 'gallery',
+      variant: 'masonry',
+      props: { images: [{ assetId: 'logo-warung', alt: 'Logo' }] },
+    } as never);
+
+    expect(html).toContain('/_assets/logo-warung');
+  });
+
+  // safeUrl tetap menjaga anti-XSS meski kini menerima URL absolut.
+  it('skema berbahaya di url → disaring (anti-XSS)', () => {
+    const html = renderSection({
+      type: 'gallery',
+      variant: 'masonry',
+      props: { images: [{ url: 'javascript:alert(1)', alt: 'x' }] },
+    } as never);
+
+    expect(html).not.toContain('javascript:');
+  });
+});
