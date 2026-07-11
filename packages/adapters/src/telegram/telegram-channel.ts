@@ -3,8 +3,9 @@
 // Tanpa SDK vendor — Bot API adalah HTTPS+JSON biasa, jadi cukup `fetch` (tak ada
 // dependensi baru; lihat AGENTS.md §5). `fetch` disuntik → adapter teruji offline.
 
-import { err, ok } from '@digimaestro/shared';
+import { CHANNEL_ACTION_MAX_BYTES, err, ok } from '@digimaestro/shared';
 import type {
+  ChannelButton,
   ChannelError,
   ChannelPort,
   ConversationChannel,
@@ -32,14 +33,26 @@ export function truncateForTelegram(text: string): string {
   return `${text.slice(0, TELEGRAM_MAX_TEXT - 1)}…`;
 }
 
+interface TelegramBody {
+  ok?: boolean;
+  description?: string;
+  result?: { message_id?: number; chat?: { id?: number } };
+}
+
 export class TelegramChannel implements ChannelPort {
   readonly channel: ConversationChannel = 'TELEGRAM';
 
   constructor(private readonly options: TelegramChannelOptions) {}
 
-  async sendText(to: string, text: string): Promise<Result<SendResult, ChannelError>> {
+  // Satu pintu ke Bot API: pemetaan status → ChannelError dipusatkan di sini supaya
+  // sendText/sendButtons/answerCallback tak menyalin aturan yang sama (dan tak bisa
+  // menyimpang satu sama lain).
+  private async call(
+    method: string,
+    payload: Record<string, unknown>,
+  ): Promise<Result<TelegramBody, ChannelError>> {
     const base = this.options.baseUrl ?? TELEGRAM_API;
-    const url = `${base}/bot${this.options.botToken}/sendMessage`;
+    const url = `${base}/bot${this.options.botToken}/${method}`;
     const controller = new AbortController();
     const timer = setTimeout(
       () => controller.abort(),
@@ -50,7 +63,7 @@ export class TelegramChannel implements ChannelPort {
       const res = await this.options.fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chat_id: to, text: truncateForTelegram(text) }),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
 
@@ -65,26 +78,79 @@ export class TelegramChannel implements ChannelPort {
         return err({ code: 'NETWORK', message: `Telegram HTTP ${res.status}.` });
       }
 
-      const body = (await res.json()) as {
-        ok?: boolean;
-        description?: string;
-        result?: { message_id?: number; chat?: { id?: number } };
-      };
-      // Bot API bisa membalas HTTP 200 dengan ok:false — sukses HTTP ≠ pesan terkirim.
-      if (body.ok !== true || typeof body.result?.message_id !== 'number') {
+      const body = (await res.json()) as TelegramBody;
+      // Bot API bisa membalas HTTP 200 dengan ok:false — sukses HTTP ≠ operasi berhasil.
+      if (body.ok !== true) {
         return err({
           code: 'UNKNOWN',
-          message: `Telegram menolak pesan: ${body.description ?? 'respons tak terduga'}`,
+          message: `Telegram menolak permintaan: ${body.description ?? 'respons tak terduga'}`,
         });
       }
-
-      const chatId = body.result.chat?.id ?? to;
-      return ok({ providerMsgId: `tg-${chatId}-${body.result.message_id}` });
+      return ok(body);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       return err({ code: 'NETWORK', message: `gagal menghubungi Telegram: ${message}` });
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  private toSendResult(
+    body: TelegramBody,
+    to: string,
+  ): Result<SendResult, ChannelError> {
+    if (typeof body.result?.message_id !== 'number') {
+      return err({ code: 'UNKNOWN', message: 'Telegram tak mengembalikan message_id.' });
+    }
+    const chatId = body.result.chat?.id ?? to;
+    return ok({ providerMsgId: `tg-${chatId}-${body.result.message_id}` });
+  }
+
+  async sendText(to: string, text: string): Promise<Result<SendResult, ChannelError>> {
+    const res = await this.call('sendMessage', {
+      chat_id: to,
+      text: truncateForTelegram(text),
+    });
+    if (!res.ok) return err(res.error);
+    return this.toSendResult(res.value, to);
+  }
+
+  // Tombol inline (T-031tg). callback_data DIBATASI 64 byte oleh Telegram — tombol yang
+  // melewatinya ditolak diam-diam oleh API, jadi lebih baik gagal keras di sini daripada
+  // mengirim pesan yang tombolnya tak berfungsi.
+  async sendButtons(
+    to: string,
+    text: string,
+    buttons: readonly ChannelButton[],
+  ): Promise<Result<SendResult, ChannelError>> {
+    for (const b of buttons) {
+      if (Buffer.byteLength(b.action, 'utf8') > CHANNEL_ACTION_MAX_BYTES) {
+        return err({
+          code: 'UNKNOWN',
+          message: `callback_data "${b.action}" melebihi ${CHANNEL_ACTION_MAX_BYTES} byte.`,
+        });
+      }
+    }
+
+    const res = await this.call('sendMessage', {
+      chat_id: to,
+      text: truncateForTelegram(text),
+      // Satu tombol per baris → label panjang tetap terbaca di layar ponsel.
+      reply_markup: {
+        inline_keyboard: buttons.map((b) => [{ text: b.label, callback_data: b.action }]),
+      },
+    });
+    if (!res.ok) return err(res.error);
+    return this.toSendResult(res.value, to);
+  }
+
+  // Tanpa ini, tombol berputar (loading) di UI Telegram sampai timeout.
+  async answerCallback(callbackId: string, notice?: string): Promise<Result<void, ChannelError>> {
+    const res = await this.call('answerCallbackQuery', {
+      callback_query_id: callbackId,
+      ...(notice ? { text: notice } : {}),
+    });
+    if (!res.ok) return err(res.error);
+    return ok(undefined);
   }
 }

@@ -80,3 +80,57 @@ describe('TelegramChannel.sendText', () => {
     expect(truncateForTelegram('halo')).toBe('halo');
   });
 });
+
+// T-031tg: tombol interaktif + jawaban callback.
+describe('TelegramChannel.sendButtons / answerCallback', () => {
+  it('tombol dikirim sebagai inline_keyboard (satu tombol per baris)', async () => {
+    const fetch = fakeFetch({ status: 200, body: okBody });
+    const res = await channel(fetch).sendButtons('555', 'Situsmu jadi!', [
+      { label: '✅ Setuju & publish', action: 'pub:2' },
+      { label: '✏️ Minta revisi', action: 'rev:2' },
+    ]);
+
+    expect(res.ok).toBe(true);
+    const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      { body: string },
+    ];
+    expect(url).toContain('/sendMessage');
+    expect(JSON.parse(init.body)).toMatchObject({
+      chat_id: '555',
+      text: 'Situsmu jadi!',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '✅ Setuju & publish', callback_data: 'pub:2' }],
+          [{ text: '✏️ Minta revisi', callback_data: 'rev:2' }],
+        ],
+      },
+    });
+  });
+
+  // Telegram menolak callback_data > 64 byte — lebih baik gagal keras daripada mengirim
+  // pesan yang tombolnya tak berfungsi.
+  it('callback_data > 64 byte → err, tidak dikirim', async () => {
+    const fetch = fakeFetch({ status: 200, body: okBody });
+    const res = await channel(fetch).sendButtons('555', 'x', [
+      { label: 'panjang', action: 'pub:' + '9'.repeat(70) },
+    ]);
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.message).toContain('64 byte');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('answerCallback memanggil answerCallbackQuery (agar tombol berhenti berputar)', async () => {
+    const fetch = fakeFetch({ status: 200, body: { ok: true, result: true } });
+    const res = await channel(fetch).answerCallback('cb-9', 'Oke!');
+
+    expect(res.ok).toBe(true);
+    const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      { body: string },
+    ];
+    expect(url).toContain('/answerCallbackQuery');
+    expect(JSON.parse(init.body)).toMatchObject({ callback_query_id: 'cb-9', text: 'Oke!' });
+  });
+});

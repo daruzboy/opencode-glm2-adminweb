@@ -12,7 +12,7 @@ import {
   type PublishSource,
   type RepositoryError,
 } from '@digimaestro/shared';
-import { handlePublishRequest, type PublishRequestDeps } from '../handle-publish.js';
+import { handlePublishRequest, type PublishRequestDeps } from './handle-publish.js';
 
 const TENANT = tenantId('t1');
 const SITE_DOC = { website: { name: 'Warung' } };

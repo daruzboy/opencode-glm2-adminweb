@@ -1,18 +1,23 @@
-// T-030tg: use case pesan masuk dari kanal eksternal (Telegram; nanti WABA).
-// FR-CHN-001/004/005. Murni Port — tak kenal Telegram, tak kenal Prisma, tak kenal BullMQ.
+// T-030tg/T-031tg: use case pesan masuk dari kanal eksternal (Telegram; nanti WABA).
+// FR-CHN-001/002/004/005. Murni Port — tak kenal Telegram, Prisma, maupun BullMQ.
 //
 // Dijalankan di worker (bukan webhook) karena melibatkan LLM: webhook wajib balas cepat
 // atau Telegram menganggapnya gagal lalu mengirim ulang update yang sama.
 //
-// Alur:
+// Alur pesan teks:
 //   1. Resolve Conversation via (tenant, kanal, chat_id) — buat bila belum ada.
-//   2. Persist pesan IN. providerMsgId @unique → CONFLICT = duplikat (retry webhook)
-//      → BERHENTI tanpa membalas. Ini titik idempotensi (FR-CHN-005).
+//   2. Persist pesan IN. providerMsgId @unique → CONFLICT = duplikat (retry webhook /
+//      tombol ditekan dua kali) → BERHENTI tanpa membalas. Titik idempotensi (FR-CHN-005).
 //   3. Balasan agent (ConversationReplier). Gagal → teks fallback, chat tak pernah mati.
-//   4. Kirim via ChannelPort, lalu persist pesan OUT dengan status hasil kirim.
+//   4. Bila giliran ini MENGHASILKAN revisi baru → kirim balasan BESERTA tombol
+//      "Setuju & publish" / "Minta revisi" (T-031tg). Selain itu → teks biasa.
+//
+// Alur tombol (type INTERACTIVE): parse aksi → jalankan (publish = persetujuan eksplisit
+// klien, BRU-02) → jawab callback agar tombol berhenti berputar.
 
 import { err, ok } from '@digimaestro/shared';
 import type {
+  ChannelButton,
   ChannelPort,
   ConversationRepository,
   InboundChannelMessage,
@@ -20,15 +25,30 @@ import type {
   MessageStatus,
   RepositoryError,
   Result,
+  RevisionRepository,
   TenantId,
+  WebsiteRepository,
 } from '@digimaestro/shared';
+import { handlePublishRequest, type PublishRequestDeps } from '../publish/handle-publish.js';
+import { encodeChannelAction, parseChannelAction, type ChannelAction } from './channel-actions.js';
 import type { ConversationReplier } from './replier.js';
+
+// Kemampuan approval lewat chat. Opsional: tanpa ini bot tetap bisa mengobrol & membangun
+// situs, hanya tombol persetujuan yang tak muncul (mis. lingkungan tanpa Redis/publish).
+export interface ApprovalDeps {
+  readonly websites: WebsiteRepository;
+  readonly revisions: RevisionRepository;
+  readonly publish: PublishRequestDeps;
+  // URL preview draft ber-token (T-064). Tanpa ini, pesan tetap dikirim tanpa tautan.
+  readonly previewUrl?: (revisionId: string) => string;
+}
 
 export interface InboundDeps {
   readonly conversations: ConversationRepository;
   readonly messages: MessageRepository;
   readonly channel: ChannelPort;
   readonly reply?: ConversationReplier;
+  readonly approval?: ApprovalDeps;
 }
 
 export interface InboundRequest {
@@ -43,6 +63,9 @@ export interface InboundResult {
   readonly replyText?: string;
   // false → balasan tersusun tapi gagal dikirim ke kanal (pesan OUT tercatat FAILED).
   readonly sent?: boolean;
+  // Revisi yang tombolnya ditawarkan / ditindak pada giliran ini.
+  readonly revisionNumber?: number;
+  readonly action?: ChannelAction['kind'];
 }
 
 // Balasan saat agent tak tersedia/gagal. Chat tidak boleh mati bisu (PRD: persona
@@ -51,9 +74,16 @@ export function inboundFallbackReply(): string {
   return 'Maaf ya, aku lagi tersendat sebentar. Coba kirim ulang pesannya sebentar lagi 🙏';
 }
 
-// Pesan untuk tipe non-teks: media belum diproses (unduh media = T-033).
+// Media belum diproses (unduh media = T-033).
 export function unsupportedTypeReply(): string {
   return 'Untuk sekarang aku baru bisa baca pesan teks ya. Boleh tulis pesannya? 🙂';
+}
+
+export function approvalButtons(revisionNumber: number): ChannelButton[] {
+  return [
+    { label: '✅ Setuju & publish', action: encodeChannelAction({ kind: 'publish', revisionNumber }) },
+    { label: '✏️ Minta revisi', action: encodeChannelAction({ kind: 'revise', revisionNumber }) },
+  ];
 }
 
 export async function handleInboundMessage(
@@ -63,32 +93,18 @@ export async function handleInboundMessage(
   const { tenantId, message } = req;
 
   // 1) Resolve/buat percakapan untuk chat ini (tenant-scoped, NFR-09).
-  const found = await deps.conversations.findByExternalId(
-    tenantId,
-    message.channel,
-    message.externalId,
-  );
-  if (!found.ok) return err(found.error);
+  const conv = await resolveConversation(deps, tenantId, message);
+  if (!conv.ok) return err(conv.error);
+  const conversationId = conv.value;
 
-  let conversationId: string;
-  if (found.value) {
-    conversationId = found.value.id;
-  } else {
-    const created = await deps.conversations.create(tenantId, {
-      channel: message.channel,
-      externalId: message.externalId,
-    });
-    if (!created.ok) return err(created.error);
-    conversationId = created.value.id;
-  }
-
-  // 2) Persist pesan masuk. CONFLICT = providerMsgId sudah ada = kiriman ulang webhook →
-  //    hentikan di sini supaya pengguna tidak menerima balasan dobel.
+  // 2) Persist pesan masuk. CONFLICT = providerMsgId sudah ada = kiriman ulang webhook
+  //    ATAU tombol ditekan dua kali → hentikan supaya tak ada aksi/balasan dobel.
+  //    Untuk tombol ini penting: menekan "Setuju & publish" 2× tidak boleh publish 2×.
   const incoming = await deps.messages.create(tenantId, {
     conversationId,
     direction: 'IN',
     type: message.type,
-    text: message.text ?? null,
+    text: message.text ?? message.callbackData ?? null,
     mediaId: message.mediaRef ?? null,
     providerMsgId: message.providerMsgId,
     status: 'DELIVERED',
@@ -98,15 +114,129 @@ export async function handleInboundMessage(
     return err(incoming.error);
   }
 
-  // 3) Susun balasan. Non-teks belum didukung → jawab jujur, jangan panggil LLM.
-  const replyText =
-    message.type === 'TEXT' && message.text
-      ? await resolveReplyText(deps, tenantId, conversationId, message.text)
-      : unsupportedTypeReply();
+  // 3) Penekanan tombol → jalur aksi (bukan LLM).
+  if (message.type === 'INTERACTIVE') {
+    return handleAction(deps, tenantId, conversationId, message);
+  }
 
-  // 4) Kirim ke kanal, lalu catat pesan OUT dengan status sebenarnya (SENT/FAILED) —
-  //    jangan mengklaim terkirim kalau Telegram menolak.
-  const sent = await deps.channel.sendText(message.externalId, replyText);
+  // 4) Pesan biasa. Non-teks dijawab jujur tanpa memanggil LLM.
+  if (message.type !== 'TEXT' || !message.text) {
+    return replyAndPersist(deps, tenantId, conversationId, message, unsupportedTypeReply(), []);
+  }
+
+  // Snapshot revisi SEBELUM agent bekerja → pembanding untuk mendeteksi build baru.
+  const before = await latestRevisionNumber(deps, tenantId);
+  const replyText = await resolveReplyText(deps, tenantId, conversationId, message.text);
+  const after = await latestRevisionNumber(deps, tenantId);
+
+  // Giliran ini menghasilkan revisi baru (agent memanggil build/patch) → tawarkan approval.
+  // Deteksi berbasis nomor revisi, bukan menebak dari teks LLM — teks bisa berubah-ubah,
+  // nomor revisi tidak.
+  const built = after !== null && (before === null || after > before);
+  if (!built) {
+    return replyAndPersist(deps, tenantId, conversationId, message, replyText, []);
+  }
+
+  const withPreview = appendPreviewLink(deps, replyText, await latestRevisionId(deps, tenantId));
+  const res = await replyAndPersist(
+    deps,
+    tenantId,
+    conversationId,
+    message,
+    withPreview,
+    approvalButtons(after),
+  );
+  if (!res.ok) return res;
+  return ok({ ...res.value, revisionNumber: after });
+}
+
+// ── Tombol ────────────────────────────────────────────────────────────────────
+
+async function handleAction(
+  deps: InboundDeps,
+  tenantId: TenantId,
+  conversationId: string,
+  message: InboundChannelMessage,
+): Promise<Result<InboundResult, RepositoryError>> {
+  const action = parseChannelAction(message.callbackData);
+
+  // callback_data datang dari luar dan bisa dikarang → aksi tak dikenal ditolak, bukan
+  // ditebak-tebak.
+  if (!action || !deps.approval) {
+    await answer(deps, message, 'Aksi ini tidak tersedia.');
+    const text = !deps.approval
+      ? 'Maaf, tombol persetujuan lagi tidak aktif. Coba lagi nanti ya 🙏'
+      : 'Aku nggak paham tombol itu. Coba ketik permintaanmu ya 🙂';
+    return replyAndPersist(deps, tenantId, conversationId, message, text, []);
+  }
+
+  if (action.kind === 'revise') {
+    await answer(deps, message, 'Oke, ceritakan revisinya.');
+    const text = 'Siap! Bagian mana yang mau diubah? Tulis aja detailnya, nanti aku perbaiki ✏️';
+    const res = await replyAndPersist(deps, tenantId, conversationId, message, text, []);
+    if (!res.ok) return res;
+    return ok({ ...res.value, action: 'revise', revisionNumber: action.revisionNumber });
+  }
+
+  // publish = persetujuan eksplisit klien (BRU-02). Konten diambil dari DB tepercaya
+  // (PublishSourcePort, tenant-scoped) — nomor revisi dari tombol TETAP divalidasi di sana,
+  // jadi menempel nomor revisi milik tenant lain tidak akan menemukan apa pun.
+  const website = await deps.approval.websites.findByTenantId(tenantId);
+  if (!website.ok) return err(website.error);
+  if (!website.value) {
+    await answer(deps, message, 'Website belum ada.');
+    const text = 'Hmm, aku belum nemu website kamu. Coba mulai dari bikin situsnya dulu ya 🙏';
+    return replyAndPersist(deps, tenantId, conversationId, message, text, []);
+  }
+
+  const outcome = await handlePublishRequest(deps.approval.publish, {
+    tenantId,
+    websiteId: website.value.id,
+    revisionNumber: action.revisionNumber,
+  });
+
+  if (!outcome.ok) {
+    await answer(deps, message, 'Gagal publish.');
+    const text =
+      outcome.status === 404
+        ? 'Revisi itu nggak ketemu. Coba minta aku bangun ulang situsnya ya 🙏'
+        : `Aduh, publish-nya gagal: ${outcome.message}. Coba lagi sebentar lagi ya 🙏`;
+    const res = await replyAndPersist(deps, tenantId, conversationId, message, text, []);
+    if (!res.ok) return res;
+    return ok({ ...res.value, action: 'publish', revisionNumber: action.revisionNumber });
+  }
+
+  await answer(deps, message, 'Oke, dipublikasikan!');
+  const text =
+    `Sip! Situsmu lagi dipublikasikan 🚀\n\nSebentar lagi bisa dibuka di:\n${outcome.url}\n\n` +
+    'Aku kabari lagi kalau sudah live ya.';
+  const res = await replyAndPersist(deps, tenantId, conversationId, message, text, []);
+  if (!res.ok) return res;
+  return ok({ ...res.value, action: 'publish', revisionNumber: action.revisionNumber });
+}
+
+// Callback WAJIB dijawab atau tombol berputar terus di UI Telegram. Kegagalan di sini
+// tidak boleh menggagalkan job — aksi utamanya (mis. publish) sudah terjadi.
+async function answer(deps: InboundDeps, message: InboundChannelMessage, notice: string): Promise<void> {
+  if (!message.callbackId) return;
+  await deps.channel.answerCallback(message.callbackId, notice);
+}
+
+// ── Kirim + persist ───────────────────────────────────────────────────────────
+
+async function replyAndPersist(
+  deps: InboundDeps,
+  tenantId: TenantId,
+  conversationId: string,
+  message: InboundChannelMessage,
+  text: string,
+  buttons: readonly ChannelButton[],
+): Promise<Result<InboundResult, RepositoryError>> {
+  const sent =
+    buttons.length > 0
+      ? await deps.channel.sendButtons(message.externalId, text, buttons)
+      : await deps.channel.sendText(message.externalId, text);
+
   const status: MessageStatus = sent.ok ? 'SENT' : 'FAILED';
   const providerMsgId = sent.ok
     ? sent.value.providerMsgId
@@ -115,14 +245,67 @@ export async function handleInboundMessage(
   const outgoing = await deps.messages.create(tenantId, {
     conversationId,
     direction: 'OUT',
-    type: 'TEXT',
-    text: replyText,
+    type: buttons.length > 0 ? 'INTERACTIVE' : 'TEXT',
+    text,
     providerMsgId,
     status,
   });
   if (!outgoing.ok) return err(outgoing.error);
 
-  return ok({ conversationId, duplicate: false, replyText, sent: sent.ok });
+  return ok({ conversationId, duplicate: false, replyText: text, sent: sent.ok });
+}
+
+// ── Helper ────────────────────────────────────────────────────────────────────
+
+async function resolveConversation(
+  deps: InboundDeps,
+  tenantId: TenantId,
+  message: InboundChannelMessage,
+): Promise<Result<string, RepositoryError>> {
+  const found = await deps.conversations.findByExternalId(
+    tenantId,
+    message.channel,
+    message.externalId,
+  );
+  if (!found.ok) return err(found.error);
+  if (found.value) return ok(found.value.id);
+
+  const created = await deps.conversations.create(tenantId, {
+    channel: message.channel,
+    externalId: message.externalId,
+  });
+  if (!created.ok) return err(created.error);
+  return ok(created.value.id);
+}
+
+// null = tak ada website/revisi, atau approval tak dikonfigurasi. Kegagalan repo di sini
+// sengaja diperlakukan sebagai "tak ada": ini hanya penentu MUNCULNYA tombol — chat tetap
+// harus membalas meski deteksi revisi gagal.
+async function latestRevisionNumber(deps: InboundDeps, tenantId: TenantId): Promise<number | null> {
+  const latest = await latestRevision(deps, tenantId);
+  return latest?.number ?? null;
+}
+
+async function latestRevisionId(deps: InboundDeps, tenantId: TenantId): Promise<string | null> {
+  const latest = await latestRevision(deps, tenantId);
+  return latest?.id ?? null;
+}
+
+async function latestRevision(
+  deps: InboundDeps,
+  tenantId: TenantId,
+): Promise<{ id: string; number: number } | null> {
+  if (!deps.approval) return null;
+  const website = await deps.approval.websites.findByTenantId(tenantId);
+  if (!website.ok || !website.value) return null;
+  const rev = await deps.approval.revisions.findLatest(tenantId, website.value.id);
+  if (!rev.ok || !rev.value) return null;
+  return { id: rev.value.id, number: rev.value.number };
+}
+
+function appendPreviewLink(deps: InboundDeps, text: string, revisionId: string | null): string {
+  if (!deps.approval?.previewUrl || !revisionId) return text;
+  return `${text}\n\n👀 Lihat dulu preview-nya:\n${deps.approval.previewUrl(revisionId)}`;
 }
 
 async function resolveReplyText(

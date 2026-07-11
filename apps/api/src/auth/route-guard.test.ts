@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { ok, tenantId, type PublishSourcePort, type PublishQueuePort } from '@digimaestro/shared';
 import { JwtAuthPort } from '@digimaestro/adapters';
 import { buildServer } from '../index.js';
-import type { PublishRequestDeps } from '../publish/handle-publish.js';
+import type { PublishRequestDeps } from '@digimaestro/core';
 
 const SECRET = 'guard-secret';
 const auth = new JwtAuthPort({ secret: SECRET });

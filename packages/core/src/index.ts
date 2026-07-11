@@ -110,11 +110,31 @@ export {
   type ConversationReplierRequest,
 } from './conversation/replier.js';
 
+// Aksi tombol interaktif kanal (T-031tg, FR-CHN-002).
+export {
+  encodeChannelAction,
+  parseChannelAction,
+  ACTION_PUBLISH_PREFIX,
+  ACTION_REVISE_PREFIX,
+  type ChannelAction,
+} from './conversation/channel-actions.js';
+
+// Publish request (T-063, BRU-02; dipindah dari apps/api pada T-031tg karena tombol
+// "Setuju & publish" di worker memakai use case yang sama dengan rute HTTP).
+export {
+  handlePublishRequest,
+  type PublishOutcome,
+  type PublishRequest,
+  type PublishRequestDeps,
+} from './publish/handle-publish.js';
+
 // Pesan masuk kanal eksternal (T-030tg, FR-CHN-001/004/005) — dipakai worker.
 export {
+  approvalButtons,
   handleInboundMessage,
   inboundFallbackReply,
   unsupportedTypeReply,
+  type ApprovalDeps,
   type InboundDeps,
   type InboundRequest,
   type InboundResult,

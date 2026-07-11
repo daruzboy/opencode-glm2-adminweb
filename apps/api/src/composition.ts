@@ -32,6 +32,7 @@ import {
   createSitebuilderGetSiteOutlineTool,
   type BuildDeps,
   type ConversationReplier,
+  type PublishRequestDeps,
   type SitebuilderToolPort,
 } from '@digimaestro/core';
 import { siteDocumentSchema } from '@digimaestro/sites-kit';
@@ -46,7 +47,7 @@ import type {
 import type { TelegramWebhookDeps } from './channel/telegram-webhook.js';
 import type { ChatDeps } from './chat/handle-incoming.js';
 import type { PreviewDeps } from './preview/handle-preview.js';
-import type { PublishRequestDeps } from './publish/handle-publish.js';
+
 
 export type LlmProviderName = 'deepseek' | 'glm';
 

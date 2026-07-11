@@ -72,5 +72,6 @@ export * from './auth/jwt-auth.js';
 export * from './telegram/normalize.js';
 export * from './telegram/allowlist.js';
 export * from './telegram/telegram-channel.js';
+export * from './telegram/rate-limited-channel.js';
 export * from './telegram/bullmq-chat-inbound-queue.js';
 export * from './telegram/bullmq-chat-inbound-factory.js';
