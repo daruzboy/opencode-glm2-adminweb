@@ -35,7 +35,14 @@ import {
   type PublishRequestDeps,
   type SitebuilderToolPort,
 } from '@digimaestro/core';
-import { siteDocumentSchema } from '@digimaestro/sites-kit';
+import {
+  SECTION_REGISTRY,
+  THEME_IDS,
+  assembleSiteDocument,
+  siteDraftJsonSchema,
+  siteDocumentSchema,
+  siteDraftSchema,
+} from '@digimaestro/sites-kit';
 import type {
   AgentToolDefinition,
   AuthPort,
@@ -265,11 +272,24 @@ function createProductionAgentReplier(
   });
 
   // T-053e: tool build situs baru dari brief (buildSiteFromBrief) → menutup jalur situs baru.
-  const buildDeps: BuildDeps = { llm: jsonLlm, revisions, websites, siteDocSchema: siteDocumentSchema };
+  const buildDeps: BuildDeps = {
+    llm: jsonLlm,
+    revisions,
+    websites,
+    siteDocSchema: siteDraftSchema,
+    assembleDoc: assembleSiteDocument,
+    catalog: {
+      themeIds: THEME_IDS,
+      sections: sectionCatalog(),
+      draftJsonSchema: siteDraftJsonSchema(),
+    },
+  };
   const buildTool = createSitebuilderBuildSiteTool(buildDeps);
 
   return createAgentReplier({
     router: { conversations },
+    // T-053f: riwayat percakapan → agent ingat konteks (tanpa ini: amnesia tiap pesan).
+    messages: new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate),
     loop: {
       llm: agentLlm,
       tools: createSitebuilderToolRegistry(sitebuilder, [buildTool]),
@@ -328,4 +348,11 @@ export function createAuthDeps(env: NodeJS.ProcessEnv = process.env): AuthDeps |
     allowHeaderFallback: env.AUTH_DISABLED === '1',
     devTokenEnabled: env.AUTH_DEV_TOKEN === '1',
   };
+}
+
+// type → varian sah (dari registry sites-kit) untuk disisipkan ke prompt build.
+function sectionCatalog(): Record<string, readonly string[]> {
+  return Object.fromEntries(
+    Object.entries(SECTION_REGISTRY).map(([type, def]) => [type, def.variants]),
+  );
 }

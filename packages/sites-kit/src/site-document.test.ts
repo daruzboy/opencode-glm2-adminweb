@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { THEMES } from './design-tokens.js';
-import { parseSiteDocument, isSiteDocument, siteDocumentSchema, type SiteDocument } from './site-document.js';
+import { parseSiteDocument, isSiteDocument, siteDocumentSchema, siteDraftSchema, assembleSiteDocument, type SiteDocument } from './site-document.js';
+import { THEME_IDS } from './design-tokens.js';
 
 function validDoc(): SiteDocument {
   return {
@@ -76,3 +77,41 @@ describe('Site Document (FR-CMP-004)', () => {
     expect(siteDocumentSchema.safeParse(validDoc()).success).toBe(true);
   });
 });
+
+// T-053g — bug ditemukan saat uji bot NYATA: siteDocumentSchema utuh dipakai sebagai target
+// output LLM, padahal LLM tak mungkin tahu websiteId (id DB kita) dan design token harus
+// deterministik dari tema. Validasi SELALU gagal → situs tak pernah terbangun.
+describe('assembleSiteDocument — draft LLM → Site Document sah', () => {
+  const draft = {
+    title: 'Sate Pak Dar',
+    themeId: THEME_IDS[0],
+    pages: [
+      { slug: 'index', title: 'Beranda', sections: [{ type: 'hero', variant: 'centered', props: { headline: 'Sate Pak Dar', subheadline: 'Sate ayam & kambing khas Bandung' } }] },
+    ],
+  };
+
+  it('draft + websiteId → dokumen LOLOS siteDocumentSchema', () => {
+    const doc = assembleSiteDocument(draft, 'w-123');
+    const parsed = parseSiteDocument(doc);
+
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      // websiteId dari KITA (bukan karangan LLM), token dari tema (bukan warna karangan).
+      expect(parsed.value.websiteId).toBe('w-123');
+      expect(parsed.value.tokens.colors.primary).toMatch(/^#/);
+    }
+  });
+
+  // Satu halusinasi themeId tak boleh menggagalkan seluruh build.
+  it('themeId tak dikenal → jatuh ke tema default, dokumen tetap sah', () => {
+    const doc = assembleSiteDocument({ ...draft, themeId: 'tema-karangan-llm' }, 'w-1');
+    const parsed = parseSiteDocument(doc);
+
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(THEME_IDS).toContain(parsed.value.themeId);
+  });
+
+  it('draft yang sah lolos siteDraftSchema (tanpa websiteId/tokens)', () => {
+    expect(siteDraftSchema.safeParse(draft).success).toBe(true);
+  });
+})

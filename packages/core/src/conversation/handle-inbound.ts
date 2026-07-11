@@ -43,12 +43,19 @@ export interface ApprovalDeps {
   readonly previewUrl?: (revisionId: string) => string;
 }
 
+// Logger opsional (disuntik dari worker). Core tak boleh bergantung pada console/pino —
+// cukup kontrak sempit ini.
+export interface InboundLogger {
+  error(message: string): void;
+}
+
 export interface InboundDeps {
   readonly conversations: ConversationRepository;
   readonly messages: MessageRepository;
   readonly channel: ChannelPort;
   readonly reply?: ConversationReplier;
   readonly approval?: ApprovalDeps;
+  readonly logger?: InboundLogger;
 }
 
 export interface InboundRequest {
@@ -314,7 +321,17 @@ async function resolveReplyText(
   conversationId: string,
   text: string,
 ): Promise<string> {
-  if (!deps.reply) return inboundFallbackReply();
+  if (!deps.reply) {
+    // Bot tetap membalas, tapi jangan sampai ini SENYAP: tanpa replier, tiap pesan dijawab
+    // fallback dan dari luar tampak seperti "agent bodoh", bukan salah konfigurasi.
+    deps.logger?.error('[chat] ConversationReplier tidak disuntik — balasan memakai fallback');
+    return inboundFallbackReply();
+  }
   const result = await deps.reply.reply({ tenantId, conversationId, text });
-  return result.ok ? result.value.text : inboundFallbackReply();
+  if (result.ok) return result.value.text;
+
+  // Ditemukan saat uji nyata: API key LLM kosong → agent gagal tiap pesan → pengguna cuma
+  // melihat "aku lagi tersendat" tanpa satu pun petunjuk di log. Sebabnya HARUS terlihat.
+  deps.logger?.error(`[chat] agent gagal (${result.error.code}): ${result.error.message}`);
+  return inboundFallbackReply();
 }

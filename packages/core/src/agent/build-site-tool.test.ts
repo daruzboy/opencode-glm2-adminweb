@@ -31,6 +31,7 @@ function fakeDeps(over: Partial<Record<'website' | 'revision' | 'llm', unknown>>
       completeJson: vi.fn(async () => ({ ok: true as const, value: { name: 'Warung Sari', pages: [] } })),
     } as never,
     siteDocSchema: { safeParse: (v: unknown) => ({ success: true as const, data: v }) },
+    assembleDoc: (draft: unknown, websiteId: string) => ({ ...(draft as object), websiteId }),
   };
 }
 

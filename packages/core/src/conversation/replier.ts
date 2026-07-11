@@ -11,7 +11,9 @@ import { err, ok } from '@digimaestro/shared';
 import type {
   AgentToolScope,
   ConversationState,
+  LlmAgentChatMessage,
   LlmTask,
+  MessageRepository,
   Result,
   TenantId,
 } from '@digimaestro/shared';
@@ -107,7 +109,17 @@ export interface AgentReplierDeps {
   readonly router: ConversationRouterDeps;
   readonly loop: AgentLoopDeps;
   readonly loopOptions?: Pick<AgentLoopRequest, 'maxSteps' | 'temperature'>;
+  // Riwayat percakapan (T-053f). TANPA ini agent amnesia: tiap pesan diperlakukan seolah
+  // yang pertama, sehingga wawancara slot-filling (FR-CNV-003) tak pernah selesai —
+  // pengguna menyebut nama usaha di pesan #1, lalu di pesan #2 agent bertanya lagi.
+  // Ditemukan saat uji bot NYATA; fake di unit test tak pernah menangkapnya karena
+  // tiap tes hanya mengirim satu pesan.
+  readonly messages?: MessageRepository;
 }
+
+// Berapa pesan terakhir yang dibawa ke LLM. Cukup untuk wawancara 5 slot, tapi tak
+// membiarkan prompt (dan biaya token) tumbuh tanpa batas di percakapan panjang.
+export const DEFAULT_HISTORY_LIMIT = 20;
 
 const DEFAULT_ROUTER_ACTION: RouterAction = 'FALLBACK';
 
@@ -127,7 +139,11 @@ export function createAgentReplier(deps: AgentReplierDeps): ConversationReplier 
       // 2) Rencana agent berdasarkan aksi.
       const plan = composeAgentPlan(action, 'ONBOARDING', req.text);
 
-      // 3) Agent loop.
+      // 3) Riwayat percakapan → agent ingat apa yang sudah dibahas (best-effort:
+      //    kegagalan memuat riwayat tak boleh mematikan balasan).
+      const history = await loadHistory(deps, req);
+
+      // 4) Agent loop.
       const loopResult = await runAgentLoop(deps.loop, {
         tenantId: req.tenantId,
         actor: 'chatbot',
@@ -135,6 +151,7 @@ export function createAgentReplier(deps: AgentReplierDeps): ConversationReplier 
         task: plan.task,
         system: plan.system,
         userMessage: req.text,
+        ...(history.length > 0 ? { history } : {}),
         jobId: req.jobId,
         maxTokens: plan.maxTokens,
         ...deps.loopOptions,
@@ -145,4 +162,31 @@ export function createAgentReplier(deps: AgentReplierDeps): ConversationReplier 
       return ok({ text: loopResult.value.reply });
     },
   };
+}
+
+// Riwayat → pesan chat LLM. Pesan TERAKHIR dilewati bila itu pesan masuk yang sedang
+// diproses (handle-inbound sudah mem-persist-nya sebelum memanggil replier) — kalau tidak,
+// teks yang sama akan muncul dua kali: sekali di history, sekali sebagai userMessage.
+async function loadHistory(
+  deps: AgentReplierDeps,
+  req: ConversationReplierRequest,
+): Promise<readonly LlmAgentChatMessage[]> {
+  if (!deps.messages) return [];
+
+  const found = await deps.messages.findManyByConversation(req.tenantId, req.conversationId);
+  if (!found.ok) return [];
+
+  const rows = found.value.filter(
+    (m) => m.type === 'TEXT' && m.text !== null && m.text.trim().length > 0,
+  );
+
+  // Buang duplikat pesan yang sedang diproses (paling belakang, arah IN, teks sama).
+  const last = rows[rows.length - 1];
+  const withoutCurrent =
+    last && last.direction === 'IN' && last.text === req.text ? rows.slice(0, -1) : rows;
+
+  return withoutCurrent.slice(-DEFAULT_HISTORY_LIMIT).map((m) => ({
+    role: m.direction === 'IN' ? ('user' as const) : ('assistant' as const),
+    content: m.text as string,
+  }));
 }

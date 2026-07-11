@@ -182,3 +182,34 @@ describe('handleInboundMessage — kanal eksternal (T-030tg)', () => {
     expect((outCall?.[1] as { status: string }).status).toBe('FAILED');
   });
 });
+
+// Ditemukan saat uji NYATA (bot live): API key LLM kosong → agent gagal tiap pesan →
+// pengguna hanya melihat "aku lagi tersendat" dan TAK ADA petunjuk apa pun di log.
+describe('kegagalan agent harus terlihat di log (bukan senyap)', () => {
+  it('agent gagal → sebab dicatat logger', async () => {
+    const errors: string[] = [];
+    const reply = {
+      reply: vi.fn(async () => ({
+        ok: false as const,
+        error: { code: 'AGENT' as const, message: 'API key kosong' },
+      })),
+    };
+    const deps = fakeDeps({ reply });
+    (deps as { logger?: unknown }).logger = { error: (m: string) => errors.push(m) };
+
+    await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(errors.some((e) => e.includes('API key kosong'))).toBe(true);
+  });
+
+  it('replier tak disuntik → juga dicatat (salah konfigurasi, bukan "agent bodoh")', async () => {
+    const errors: string[] = [];
+    const deps = fakeDeps();
+    (deps as { reply?: unknown }).reply = undefined;
+    (deps as { logger?: unknown }).logger = { error: (m: string) => errors.push(m) };
+
+    await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(errors.some((e) => e.includes('tidak disuntik'))).toBe(true);
+  });
+});

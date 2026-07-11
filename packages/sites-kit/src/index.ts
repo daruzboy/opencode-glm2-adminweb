@@ -26,9 +26,13 @@ export {
 
 export {
   pageSchema,
+  siteDraftSchema,
   siteDocumentSchema,
   parseSiteDocument,
   isSiteDocument,
+  assembleSiteDocument,
+  siteDraftJsonSchema,
+  type SiteDraft,
   type Page,
   type SiteDocument,
   type SiteDocumentParseResult,

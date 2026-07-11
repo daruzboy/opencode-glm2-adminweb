@@ -45,7 +45,14 @@ import {
   type InboundDeps,
   type NotifyDeps,
 } from '@digimaestro/core';
-import { siteDocumentSchema } from '@digimaestro/sites-kit';
+import {
+  SECTION_REGISTRY,
+  THEME_IDS,
+  assembleSiteDocument,
+  siteDraftJsonSchema,
+  siteDocumentSchema,
+  siteDraftSchema,
+} from '@digimaestro/sites-kit';
 import { tenantId } from '@digimaestro/shared';
 import type { ChannelPort, ConversationRepository, LlmJsonPort } from '@digimaestro/shared';
 import type { PublishNotifier } from './publish-worker.js';
@@ -129,15 +136,26 @@ export function createChatReplier(
     llm: jsonLlm,
     siteDocSchema: siteDocumentSchema,
   });
+  // T-053g: LLM hanya mengarang DRAFT (title/themeId/pages); websiteId & design token
+  // dirakit kode. Katalog tema/section disisipkan ke prompt agar model tak menebak nilai
+  // yang akan ditolak schema.
   const buildDeps: BuildDeps = {
     llm: jsonLlm,
     revisions,
     websites,
-    siteDocSchema: siteDocumentSchema,
+    siteDocSchema: siteDraftSchema,
+    assembleDoc: assembleSiteDocument,
+    catalog: {
+      themeIds: THEME_IDS,
+      sections: sectionCatalog(),
+      draftJsonSchema: siteDraftJsonSchema(),
+    },
   };
 
   return createAgentReplier({
     router: { conversations },
+    // T-053f: riwayat percakapan → agent ingat konteks (tanpa ini: amnesia tiap pesan).
+    messages: new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate),
     loop: {
       llm: agentLlm,
       tools: createAgentToolRegistry([
@@ -244,6 +262,7 @@ export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps
     // menghindari 429 Telegram. Membungkus kanal → berlaku untuk teks maupun tombol.
     channel: rateLimited(createTelegramChannel(env), env),
     reply: createChatReplier(conversations, prisma, env),
+    logger: console,
     ...(approval ? { approval } : {}),
   };
 }
@@ -269,4 +288,11 @@ export function startPoller(env: ChatWorkerEnv = process.env): PollerHandle | un
     fetch: globalThis.fetch as never,
     ...(env.TELEGRAM_ALLOWLIST ? { allowlistRaw: env.TELEGRAM_ALLOWLIST } : {}),
   });
+}
+
+// type → varian sah (dari registry sites-kit) untuk disisipkan ke prompt build.
+function sectionCatalog(): Record<string, readonly string[]> {
+  return Object.fromEntries(
+    Object.entries(SECTION_REGISTRY).map(([type, def]) => [type, def.variants]),
+  );
 }
