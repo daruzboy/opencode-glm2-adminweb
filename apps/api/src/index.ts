@@ -29,11 +29,17 @@ export async function buildServer(opts: BuildServerOptions = {}): Promise<Fastif
   const app = Fastify({ logger: opts.logger ?? false });
   await app.register(websocket);
 
-  if (opts.auth) {
-    registerAuthPlugin(app, {
-      auth: opts.auth.auth,
-      allowHeaderFallback: opts.auth.allowHeaderFallback,
-    });
+  // T-002auth: SELALU pasang resolver tenant. Dengan JWT (opts.auth) → rute wajib token;
+  // tanpa JWT (dev) → fallback x-tenant-id. Rute terlindungi memanggil app.resolveTenant.
+  registerAuthPlugin(
+    app,
+    opts.auth
+      ? { auth: opts.auth.auth, allowHeaderFallback: opts.auth.allowHeaderFallback }
+      : {},
+  );
+  // Endpoint penerbit token dev HANYA aktif bila di-flag (AUTH_DEV_TOKEN=1). Di produksi
+  // tak terpasang → tak bisa mencetak token OWNER tanpa kredensial (menutup lubang #45).
+  if (opts.auth?.devTokenEnabled) {
     registerAuthRoutes(app, { auth: opts.auth.auth });
   }
 

@@ -9,7 +9,9 @@ function makeAuth(secret = 'test-secret'): AuthPort {
 }
 
 async function makeApp(auth?: AuthPort): Promise<FastifyInstance> {
-  return buildServer({ auth: auth ? { auth, allowHeaderFallback: true } : undefined });
+  return buildServer({
+    auth: auth ? { auth, allowHeaderFallback: true, devTokenEnabled: true } : undefined,
+  });
 }
 
 describe('POST /api/auth/token (T-002auth)', () => {

@@ -4,9 +4,9 @@ import { handleIncoming, type ChatDeps } from './handle-incoming.js';
 import { inboundMessageSchema, type InboundMessage } from './schema.js';
 
 // Rute chat: REST riwayat + WS realtime (FR-CHN-003; SRS §9 /api/chat WS).
-// Tenant resolusi v0 dari header `x-tenant-id` (REST) / query `tenantId` (WS).
-// Auth sungguhan (session/JWT) menyusul T-002; guard T-021 tetap menjamin tidak ada
-// query lintas-tenant walau tenantId dipalsukan (resiko = impersonasi, ditutup auth).
+// REST: tenant via app.resolveTenant (JWT T-002auth, atau x-tenant-id fallback dev).
+// WS: tenant via query `tenantId` (browser WS tak bisa set Authorization header) — token
+// query WS = follow-up; guard T-021 tetap mencegah query lintas-tenant di lapis repo.
 
 interface HistoryParams {
   conversationId: string;
@@ -20,12 +20,13 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatDeps): void {
   app.get(
     '/api/chat/:conversationId/messages',
     async (req: FastifyRequest<{ Params: HistoryParams }>, reply: FastifyReply) => {
-      const tid = req.headers['x-tenant-id'];
-      if (typeof tid !== 'string' || tid.length === 0) {
-        return reply.code(401).send({ error: 'missing x-tenant-id header' });
+      // T-002auth: tenant dari token JWT (atau x-tenant-id fallback dev). Null → 401.
+      const { tenantId: tid } = await app.resolveTenant(req);
+      if (!tid) {
+        return reply.code(401).send({ error: 'unauthorized: token/tenant tidak valid' });
       }
       const result = await deps.messages.findManyByConversation(
-        tenantId(tid),
+        tid,
         req.params.conversationId,
       );
       if (!result.ok) return reply.code(500).send({ error: result.error.message });
