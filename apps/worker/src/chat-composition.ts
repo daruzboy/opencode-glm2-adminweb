@@ -244,6 +244,7 @@ export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps
     // menghindari 429 Telegram. Membungkus kanal → berlaku untuk teks maupun tombol.
     channel: rateLimited(createTelegramChannel(env), env),
     reply: createChatReplier(conversations, prisma, env),
+    logger: console,
     ...(approval ? { approval } : {}),
   };
 }

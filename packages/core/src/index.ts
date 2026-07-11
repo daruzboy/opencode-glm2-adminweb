@@ -147,6 +147,7 @@ export {
   unsupportedTypeReply,
   type ApprovalDeps,
   type InboundDeps,
+  type InboundLogger,
   type InboundRequest,
   type InboundResult,
 } from './conversation/handle-inbound.js';
