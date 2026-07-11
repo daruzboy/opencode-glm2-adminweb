@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { CpanelFtpDeploy, CpanelSftpDeploy, LocalArtifactStore, LocalFilesystemDeploy, S3ArtifactStore } from '@digimaestro/adapters';
 import {
   createArtifactStore,
@@ -46,11 +46,14 @@ describe('worker composition (pilih adapter dari env)', () => {
   });
 
   it('createHttpVerify: res.ok → true, res tidak ok → false, error jaringan → false', async () => {
-    const okVerify = createHttpVerify((async () => ({ ok: true })) as unknown as typeof fetch);
-    const notOk = createHttpVerify((async () => ({ ok: false })) as unknown as typeof fetch);
+    // attempts:1 → perilaku sekali-tembak (verify kini SABAR & mengulang; lihat suite
+    // "menunggu DNS/AutoSSL siap" di bawah untuk perilaku retry-nya).
+    const once = { attempts: 1 };
+    const okVerify = createHttpVerify((async () => ({ ok: true })) as unknown as typeof fetch, once);
+    const notOk = createHttpVerify((async () => ({ ok: false })) as unknown as typeof fetch, once);
     const boom = createHttpVerify((async () => {
       throw new Error('ECONNREFUSED');
-    }) as unknown as typeof fetch);
+    }) as unknown as typeof fetch, once);
     expect(await okVerify('https://x')).toBe(true);
     expect(await notOk('https://x')).toBe(false);
     expect(await boom('https://x')).toBe(false);
@@ -84,5 +87,50 @@ describe('worker composition (pilih adapter dari env)', () => {
 
   it('createPublishDeps: tanpa env cPanel → subdomain undefined (dilewati)', () => {
     expect(createPublishDeps({}).subdomain).toBeUndefined();
+  });
+});
+
+// T-063v: verify harus SABAR. Subdomain baru butuh waktu (DNS + AutoSSL). Sekali-tembak
+// melaporkan GAGAL padahal situs sebenarnya terbit → pengguna dapat notifikasi keliru.
+describe('createHttpVerify — menunggu DNS/AutoSSL siap', () => {
+  const noSleep = async (): Promise<void> => {};
+
+  it('siap di percobaan pertama → true, tanpa menunggu', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true }) as Response);
+    const verify = createHttpVerify(fetchImpl as never, { attempts: 3, sleep: noSleep });
+
+    expect(await verify('https://x.id')).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  // Kasus nyata: beberapa detik pertama DNS belum menyebar / sertifikat belum terbit.
+  it('gagal dulu lalu siap → true (tidak menyerah terlalu cepat)', async () => {
+    let n = 0;
+    const fetchImpl = vi.fn(async () => {
+      n += 1;
+      if (n < 3) throw new Error('ENOTFOUND');
+      return { ok: true } as Response;
+    });
+    const verify = createHttpVerify(fetchImpl as never, { attempts: 5, sleep: noSleep });
+
+    expect(await verify('https://x.id')).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('tak pernah siap → false setelah semua percobaan habis', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false }) as Response);
+    const verify = createHttpVerify(fetchImpl as never, { attempts: 4, sleep: noSleep });
+
+    expect(await verify('https://x.id')).toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  it('error TLS/jaringan diperlakukan "belum siap", bukan crash', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('unable to verify the first certificate');
+    });
+    const verify = createHttpVerify(fetchImpl as never, { attempts: 2, sleep: noSleep });
+
+    expect(await verify('https://x.id')).toBe(false);
   });
 });
