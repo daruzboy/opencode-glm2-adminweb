@@ -19,6 +19,7 @@ import { err, ok } from '@digimaestro/shared';
 import type {
   ChannelButton,
   ChannelPort,
+  InboundRateLimiterPort,
   ConversationRepository,
   InboundChannelMessage,
   MessageRepository,
@@ -52,7 +53,10 @@ export interface InboundLogger {
 // T-033: penerimaan foto. Opsional — tanpa ini bot tetap jalan, foto saja yang ditolak
 // sopan (mis. lingkungan tanpa kredensial hosting).
 export interface MediaDeps {
-  readonly ingest: (tenantId: TenantId, mediaRef: string) => Promise<Result<{ url: string }, { message: string }>>;
+  readonly ingest: (
+    tenantId: TenantId,
+    mediaRef: string,
+  ) => Promise<Result<{ url: string }, { code?: string; message: string }>>;
   readonly count: (tenantId: TenantId) => Promise<number>;
 }
 
@@ -63,6 +67,10 @@ export interface InboundDeps {
   readonly reply?: ConversationReplier;
   readonly approval?: ApprovalDeps;
   readonly media?: MediaDeps;
+  // P0 (audit): gerbang biaya pesan MASUK. Ditegakkan SEBELUM LLM dipanggil — rate limit
+  // pesan KELUAR (RateLimitedChannel) tak melindungi anggaran token, karena LLM sudah
+  // terlanjur dipanggil saat balasan ditahan.
+  readonly rateLimiter?: InboundRateLimiterPort;
   readonly logger?: InboundLogger;
 }
 
@@ -81,6 +89,8 @@ export interface InboundResult {
   // Revisi yang tombolnya ditawarkan / ditindak pada giliran ini.
   readonly revisionNumber?: number;
   readonly action?: ChannelAction['kind'];
+  // true → ditolak gerbang biaya; LLM/media TIDAK disentuh.
+  readonly rateLimited?: boolean;
 }
 
 // Balasan saat agent tak tersedia/gagal. Chat tidak boleh mati bisu (PRD: persona
@@ -104,6 +114,21 @@ export function mediaReceivedReply(total: number): string {
 
 export function mediaFailedReply(): string {
   return 'Waduh, fotonya gagal kuproses 😔 Coba kirim ulang ya, atau pakai foto lain.';
+}
+
+// Kuota penuh (P1 audit) — sebutkan sebabnya, jangan cuma bilang "gagal".
+export function mediaQuotaReply(): string {
+  return (
+    'Foto kamu udah penuh nih 📦 Aku nggak bisa nyimpen lagi.\n\n' +
+    'Kalau mau ganti foto di galeri, bilang aja foto mana yang mau dipakai.'
+  );
+}
+
+export function rateLimitedReply(retryAfterSec: number): string {
+  return (
+    `Waduh, pesanmu kecepetan nih 😅 Aku butuh waktu buat mikir tiap pesan.\n\n` +
+    `Tunggu ~${retryAfterSec} detik ya, terus lanjut lagi.`
+  );
 }
 
 export function approvalButtons(revisionNumber: number): ChannelButton[] {
@@ -141,23 +166,49 @@ export async function handleInboundMessage(
     return err(incoming.error);
   }
 
-  // 3) Penekanan tombol → jalur aksi (bukan LLM).
+  // 3) Penekanan tombol → jalur aksi (bukan LLM). SENGAJA tak dibatasi laju: aksi diskrit
+  //    & sudah idempoten (dobel-tap ditahan providerMsgId @unique), dan menahan tombol
+  //    justru membuat UI menggantung.
   if (message.type === 'INTERACTIVE') {
     return handleAction(deps, tenantId, conversationId, message);
   }
 
-  // 4) Foto (T-033): unduh → optimasi → simpan. Tak memanggil LLM (buang biaya token).
+  // 4) GERBANG BIAYA (P0): pesan berikutnya akan memanggil LLM (teks) atau mengunduh +
+  //    memproses gambar (foto). Tolak DI SINI, sebelum biaya terjadi.
+  if (deps.rateLimiter) {
+    const decision = await deps.rateLimiter.check(tenantId);
+    if (!decision.allowed) {
+      deps.logger?.error(`[rate-limit] tenant ${tenantId} melewati batas pesan masuk`);
+      // Peringatkan sekali per jendela; sisanya DIAM — membalas tiap pesan spam =
+      // ikut membanjiri pengguna & membakar kuota kirim.
+      if (decision.shouldWarn) {
+        return replyAndPersist(
+          deps,
+          tenantId,
+          conversationId,
+          message,
+          rateLimitedReply(decision.retryAfterSec),
+          [],
+        );
+      }
+      return ok({ conversationId, duplicate: false, rateLimited: true });
+    }
+  }
+
+  // 5) Foto (T-033): unduh → optimasi → simpan. Tak memanggil LLM (buang biaya token).
   if (message.type === 'IMAGE' && message.mediaRef && deps.media) {
     const ingested = await deps.media.ingest(tenantId, message.mediaRef);
     if (!ingested.ok) {
       deps.logger?.error(`[media] gagal memproses foto: ${ingested.error.message}`);
-      return replyAndPersist(deps, tenantId, conversationId, message, mediaFailedReply(), []);
+      const text =
+        ingested.error.code === 'QUOTA' ? mediaQuotaReply() : mediaFailedReply();
+      return replyAndPersist(deps, tenantId, conversationId, message, text, []);
     }
     const total = await deps.media.count(tenantId);
     return replyAndPersist(deps, tenantId, conversationId, message, mediaReceivedReply(total), []);
   }
 
-  // 5) Tipe lain yang belum didukung → jawab jujur tanpa memanggil LLM.
+  // 6) Tipe lain yang belum didukung → jawab jujur tanpa memanggil LLM.
   if (message.type !== 'TEXT' || !message.text) {
     return replyAndPersist(deps, tenantId, conversationId, message, unsupportedTypeReply(), []);
   }
@@ -198,10 +249,16 @@ async function handleAction(
 ): Promise<Result<InboundResult, RepositoryError>> {
   const action = parseChannelAction(message.callbackData);
 
+  // P1 (audit): JAWAB CALLBACK SEGERA, sebelum kerja apa pun. Telegram membatalkan callback
+  // query yang dijawab > ~10 detik ("query is too old") → tombol BERPUTAR TERUS di UI
+  // meski publish sebenarnya BERHASIL. Publish menyentuh DB + Redis; saat salah satu
+  // tersendat, batas itu sangat mudah terlampaui. ACK dulu, kerja belakangan — hasilnya
+  // tetap disampaikan lewat pesan chat biasa (bukan lewat notice tombol).
+  await answer(deps, message, ackNotice(action));
+
   // callback_data datang dari luar dan bisa dikarang → aksi tak dikenal ditolak, bukan
   // ditebak-tebak.
   if (!action || !deps.approval) {
-    await answer(deps, message, 'Aksi ini tidak tersedia.');
     const text = !deps.approval
       ? 'Maaf, tombol persetujuan lagi tidak aktif. Coba lagi nanti ya 🙏'
       : 'Aku nggak paham tombol itu. Coba ketik permintaanmu ya 🙂';
@@ -209,7 +266,6 @@ async function handleAction(
   }
 
   if (action.kind === 'revise') {
-    await answer(deps, message, 'Oke, ceritakan revisinya.');
     const text = 'Siap! Bagian mana yang mau diubah? Tulis aja detailnya, nanti aku perbaiki ✏️';
     const res = await replyAndPersist(deps, tenantId, conversationId, message, text, []);
     if (!res.ok) return res;
@@ -222,7 +278,6 @@ async function handleAction(
   const website = await deps.approval.websites.findByTenantId(tenantId);
   if (!website.ok) return err(website.error);
   if (!website.value) {
-    await answer(deps, message, 'Website belum ada.');
     const text = 'Hmm, aku belum nemu website kamu. Coba mulai dari bikin situsnya dulu ya 🙏';
     return replyAndPersist(deps, tenantId, conversationId, message, text, []);
   }
@@ -234,7 +289,6 @@ async function handleAction(
   });
 
   if (!outcome.ok) {
-    await answer(deps, message, 'Gagal publish.');
     const text =
       outcome.status === 404
         ? 'Revisi itu nggak ketemu. Coba minta aku bangun ulang situsnya ya 🙏'
@@ -244,13 +298,19 @@ async function handleAction(
     return ok({ ...res.value, action: 'publish', revisionNumber: action.revisionNumber });
   }
 
-  await answer(deps, message, 'Oke, dipublikasikan!');
   const text =
     `Sip! Situsmu lagi dipublikasikan 🚀\n\nSebentar lagi bisa dibuka di:\n${outcome.url}\n\n` +
     'Aku kabari lagi kalau sudah live ya.';
   const res = await replyAndPersist(deps, tenantId, conversationId, message, text, []);
   if (!res.ok) return res;
   return ok({ ...res.value, action: 'publish', revisionNumber: action.revisionNumber });
+}
+
+// Notice singkat di UI tombol. Dijawab SEBELUM kerja, jadi belum tahu hasilnya — cukup
+// menyatakan "diterima". Hasil sebenarnya dikirim sebagai pesan chat.
+function ackNotice(action: ChannelAction | null): string {
+  if (!action) return 'Aksi ini tidak dikenali.';
+  return action.kind === 'publish' ? 'Oke, sedang diproses…' : 'Oke, ceritakan revisinya.';
 }
 
 // Callback WAJIB dijawab atau tombol berputar terus di UI Telegram. Kegagalan di sini

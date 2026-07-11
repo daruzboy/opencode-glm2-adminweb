@@ -8,6 +8,8 @@
 
 import {
   ConversationRepositoryPrisma,
+  DEFAULT_INBOUND_LIMIT,
+  DEFAULT_INBOUND_WINDOW_MS,
   DEFAULT_RATE_LIMIT,
   LlmUsageLoggerPrisma,
   MessageRepositoryPrisma,
@@ -28,6 +30,7 @@ import {
   createBasicFtpDeployClient,
   createBullMqChatInboundQueue,
   createPreviewToken,
+  createRedisInboundRateLimiter,
   createPrismaClient,
   mediaFilename,
   startTelegramPoller,
@@ -68,6 +71,7 @@ import {
   parsePublishUrlMode,
   tenantId,
 } from '@digimaestro/shared';
+import type { InboundRateLimiterPort } from '@digimaestro/shared';
 import type { ChannelPort, ConversationRepository, LlmJsonPort } from '@digimaestro/shared';
 import type { PublishNotifier } from './publish-worker.js';
 import type { PollerHandle } from '@digimaestro/adapters';
@@ -81,6 +85,9 @@ export interface ChatWorkerEnv {
   readonly PUBLISH_URL_MODE?: string;
   readonly CHANNEL_RATE_LIMIT?: string;
   readonly CHANNEL_RATE_WINDOW_MS?: string;
+  // P0: batas pesan MASUK per tenant (gerbang biaya LLM). Default 15/60 dtk.
+  readonly INBOUND_RATE_LIMIT?: string;
+  readonly INBOUND_RATE_WINDOW_MS?: string;
   readonly CPANEL_FTP_HOST?: string;
   readonly CPANEL_FTP_PORT?: string;
   readonly CPANEL_FTP_USER?: string;
@@ -272,12 +279,38 @@ export function createPublishNotifier(env: ChatWorkerEnv = process.env): Publish
   };
 }
 
-// Rate limit di tepi keluar (T-031tg) — dipakai baik oleh balasan chat maupun notifikasi.
+// Rate limit di tepi keluar (T-031tg) — dipakai balasan chat maupun notifikasi publish.
+// P1 (audit): bila REDIS_URL ada, state limiter dipindah ke Redis → batas tetap benar saat
+// worker diskalakan >1 replika (memori proses akan jadi N×limit → 429 dari Telegram).
 function rateLimited(inner: ChannelPort, env: ChatWorkerEnv): ChannelPort {
+  const limit = Number(env.CHANNEL_RATE_LIMIT ?? DEFAULT_RATE_LIMIT.limit);
+  const windowMs = Number(env.CHANNEL_RATE_WINDOW_MS ?? DEFAULT_RATE_LIMIT.windowMs);
+  const shared = createOutboundRateLimiter(env, limit, windowMs);
+
   return new RateLimitedChannel(inner, {
-    limit: Number(env.CHANNEL_RATE_LIMIT ?? DEFAULT_RATE_LIMIT.limit),
-    windowMs: Number(env.CHANNEL_RATE_WINDOW_MS ?? DEFAULT_RATE_LIMIT.windowMs),
+    limit,
+    windowMs,
+    ...(shared ? { shared } : {}),
   });
+}
+
+function createOutboundRateLimiter(
+  env: ChatWorkerEnv,
+  limit: number,
+  windowMs: number,
+): InboundRateLimiterPort | undefined {
+  if (!env.REDIS_URL) return undefined;
+  const url = new URL(env.REDIS_URL);
+  return createRedisInboundRateLimiter(
+    {
+      host: url.hostname,
+      port: url.port ? Number(url.port) : 6379,
+      username: url.username || undefined,
+      password: url.password || undefined,
+      maxRetriesPerRequest: null,
+    },
+    { limit, windowMs, keyPrefix: 'out', logger: console },
+  );
 }
 
 export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps {
@@ -288,6 +321,7 @@ export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps
   const messages = new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate);
   const approval = createApprovalDeps(env);
   const media = createMediaDeps(env);
+  const rateLimiter = createInboundRateLimiter(env);
 
   return {
     conversations,
@@ -299,7 +333,33 @@ export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps
     logger: console,
     ...(approval ? { approval } : {}),
     ...(media ? { media } : {}),
+    ...(rateLimiter ? { rateLimiter } : {}),
   };
+}
+
+// P0 (audit): gerbang biaya pesan MASUK. State di Redis (bukan memori proses) → tetap benar
+// saat worker diskalakan >1 replika. Tanpa REDIS_URL → undefined (bot tetap jalan, tanpa
+// gerbang) — sama seperti kemampuan opsional lain.
+export function createInboundRateLimiter(
+  env: ChatWorkerEnv = process.env,
+): InboundRateLimiterPort | undefined {
+  if (!env.REDIS_URL) return undefined;
+
+  const url = new URL(env.REDIS_URL);
+  return createRedisInboundRateLimiter(
+    {
+      host: url.hostname,
+      port: url.port ? Number(url.port) : 6379,
+      username: url.username || undefined,
+      password: url.password || undefined,
+      maxRetriesPerRequest: null,
+    },
+    {
+      limit: Number(env.INBOUND_RATE_LIMIT ?? DEFAULT_INBOUND_LIMIT),
+      windowMs: Number(env.INBOUND_RATE_WINDOW_MS ?? DEFAULT_INBOUND_WINDOW_MS),
+      logger: console,
+    },
+  );
 }
 
 // T-030tg-poll: poller long-polling. Dipakai saat TELEGRAM_MODE=polling (VPS tanpa domain

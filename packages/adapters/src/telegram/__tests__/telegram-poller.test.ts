@@ -115,3 +115,28 @@ describe('pollOnce — ambil update & teruskan ke antrean', () => {
     await expect(pollOnce(opts({ fetch }), 0)).rejects.toThrow('token salah');
   });
 });
+
+// P0 (audit): TANPA timeout eksplisit, fetch menggantung sampai default undici (±5 MENIT)
+// bila koneksi stall → bot BERHENTI menerima pesan tanpa error/log (container tetap "sehat").
+describe('pollOnce — timeout wajib (anti bot mati diam-diam)', () => {
+  it('mengirim AbortSignal dengan margin di atas long-poll', async () => {
+    const fetch = fakeFetch([]);
+    await pollOnce(opts({ fetch, pollTimeoutSec: 30 }), 0);
+
+    const [, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      { signal?: AbortSignal },
+    ];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  // Saat timeout memicu, fetch menolak dgn TimeoutError → pollOnce MELEMPAR → loop menangkap,
+  // mencatat, dan mencoba lagi (bukan menggantung diam-diam).
+  it('timeout memicu → pollOnce melempar (loop akan retry)', async () => {
+    const fetch = vi.fn(async () => {
+      throw Object.assign(new Error('The operation was aborted'), { name: 'TimeoutError' });
+    }) as never;
+
+    await expect(pollOnce(opts({ fetch }), 0)).rejects.toThrow(/abort/i);
+  });
+});

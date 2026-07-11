@@ -9,7 +9,15 @@
 import type { RepositoryError } from './repository.js';
 import type { Result, TenantId } from '../index.js';
 
-export type MediaErrorCode = 'DOWNLOAD' | 'PROCESS' | 'STORE' | 'TOO_LARGE' | 'UNSUPPORTED';
+export type MediaErrorCode =
+  | 'DOWNLOAD'
+  | 'PROCESS'
+  | 'STORE'
+  | 'TOO_LARGE'
+  | 'UNSUPPORTED'
+  // P1 (audit): tenant melewati kuota foto. Tanpa batas, SATU tenant bisa memenuhi kuota
+  // hosting shared (dipakai bersama semua situs klien) — dan tak ada jalur penghapusan.
+  | 'QUOTA';
 
 export interface MediaError {
   readonly code: MediaErrorCode;
@@ -19,6 +27,10 @@ export interface MediaError {
 // Batas unduhan. Foto Telegram jauh di bawah ini; batas ada supaya file raksasa tak
 // menghabiskan memori worker (kita menahan seluruh isi di memori saat memproses).
 export const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
+
+// Maksimum foto tersimpan per tenant. Galeri situs UMKM realistis memakai belasan foto;
+// 50 memberi ruang lega tanpa membiarkan satu tenant menguras kuota hosting bersama.
+export const MEDIA_MAX_PER_TENANT = 50;
 
 export interface DownloadedMedia {
   readonly bytes: Uint8Array;
