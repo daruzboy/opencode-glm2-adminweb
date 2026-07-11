@@ -11,8 +11,12 @@ import type { DownloadedMedia, MediaDownloadPort, MediaError, Result } from '@di
 const TELEGRAM_API = 'https://api.telegram.org';
 
 // fetch runtime (Node 20+). Disuntik → adapter teruji tanpa jaringan.
+// `init.signal` WAJIB didukung: tanpa timeout, unduhan yang stall menggantung sampai default
+// undici (±5 menit) → job `chat-inbound` tersita selama itu, dan BullMQ (lockDuration 30 dtk)
+// menganggapnya stalled lalu memprosesnya ulang di worker lain (P0 audit).
 export type MediaFetch = (
   url: string,
+  init?: { readonly signal?: AbortSignal },
 ) => Promise<{
   readonly status: number;
   json(): Promise<unknown>;
@@ -24,7 +28,13 @@ export interface TelegramMediaDownloadOptions {
   readonly fetch: MediaFetch;
   readonly baseUrl?: string;
   readonly maxBytes?: number;
+  // Timeout metadata (getFile) & unduhan isi. Unduhan diberi jendela lebih lebar.
+  readonly metaTimeoutMs?: number;
+  readonly downloadTimeoutMs?: number;
 }
+
+export const DEFAULT_META_TIMEOUT_MS = 15_000;
+export const DEFAULT_DOWNLOAD_TIMEOUT_MS = 60_000;
 
 export class TelegramMediaDownload implements MediaDownloadPort {
   constructor(private readonly options: TelegramMediaDownloadOptions) {}
@@ -39,6 +49,7 @@ export class TelegramMediaDownload implements MediaDownloadPort {
     try {
       const res = await this.options.fetch(
         `${base}/bot${this.options.botToken}/getFile?file_id=${encodeURIComponent(mediaRef)}`,
+        { signal: AbortSignal.timeout(this.options.metaTimeoutMs ?? DEFAULT_META_TIMEOUT_MS) },
       );
       if (res.status < 200 || res.status >= 300) {
         return err({ code: 'DOWNLOAD', message: `getFile HTTP ${res.status}` });
@@ -74,6 +85,11 @@ export class TelegramMediaDownload implements MediaDownloadPort {
     try {
       const res = await this.options.fetch(
         `${base}/file/bot${this.options.botToken}/${filePath}`,
+        {
+          signal: AbortSignal.timeout(
+            this.options.downloadTimeoutMs ?? DEFAULT_DOWNLOAD_TIMEOUT_MS,
+          ),
+        },
       );
       if (res.status < 200 || res.status >= 300) {
         return err({ code: 'DOWNLOAD', message: `unduh media HTTP ${res.status}` });
