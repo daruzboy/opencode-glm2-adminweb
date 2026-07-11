@@ -43,6 +43,7 @@ import {
   siteDocumentSchema,
   siteDraftSchema,
 } from '@digimaestro/sites-kit';
+import { BUILD_LLM_TIMEOUT_MS, DEFAULT_DEEPSEEK_MODEL } from '@digimaestro/shared';
 import type {
   AgentToolDefinition,
   AuthPort,
@@ -246,7 +247,7 @@ function createProductionAgentReplier(
 ): ConversationReplier {
   const isGlm = env.DIGIMAESTRO_LLM_PROVIDER === 'glm';
   const apiKey = isGlm ? (env.GLM_API_KEY ?? '') : (env.DEEPSEEK_API_KEY ?? '');
-  const model = isGlm ? (env.GLM_MODEL ?? 'glm-4.5') : (env.DEEPSEEK_MODEL ?? 'deepseek-chat');
+  const model = isGlm ? (env.GLM_MODEL ?? 'glm-4.5') : (env.DEEPSEEK_MODEL ?? DEFAULT_DEEPSEEK_MODEL);
   const baseUrl = isGlm
     ? (env.GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/paas/v4')
     : (env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1');
@@ -309,15 +310,17 @@ export function createLlmJsonPort(options: CreateLlmJsonPortOptions = {}): LlmJs
       baseUrl: env.GLM_BASE_URL,
       fetch: options.fetch,
       usageLogger,
+      timeoutMs: BUILD_LLM_TIMEOUT_MS,
     });
   }
 
   return createDeepSeekJsonAdapter({
-    model: env.DEEPSEEK_MODEL ?? 'deepseek-chat',
+    model: env.DEEPSEEK_MODEL ?? DEFAULT_DEEPSEEK_MODEL,
     apiKey: env.DEEPSEEK_API_KEY ?? '',
     baseUrl: env.DEEPSEEK_BASE_URL,
     fetch: options.fetch,
     usageLogger,
+    timeoutMs: BUILD_LLM_TIMEOUT_MS,
   });
 }
 

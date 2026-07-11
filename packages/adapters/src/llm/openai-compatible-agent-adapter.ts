@@ -15,6 +15,7 @@ import {
   type Result,
 } from '@digimaestro/shared';
 import type { RuntimeFetch, RuntimeResponse } from '../llm/openai-compatible-json-adapter.js';
+import { containsToolMarkup, stripToolMarkup } from './sanitize-tool-markup.js';
 
 export interface OpenAiCompatibleAgentAdapterConfig {
   readonly provider: string;
@@ -177,7 +178,24 @@ export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
         return ok({ kind: 'tool_calls', toolCalls });
       }
 
-      return ok({ kind: 'text', content: choice.message?.content ?? '' });
+      // T-053h: model kadang MENULIS pemanggilan tool sebagai teks (markup DSML DeepSeek,
+      // blok <tool_call>, atau kalimat "Memanggil nama_tool(...)") alih-alih memakai
+      // protokol tool_calls — terjadi saat tools dimatikan tapi prompt masih menyuruhnya.
+      // Markup vendor BERHENTI di adapter; jangan pernah bocor ke pengguna.
+      const raw = choice.message?.content ?? '';
+      if (!containsToolMarkup(raw)) return ok({ kind: 'text', content: raw });
+
+      const cleaned = stripToolMarkup(raw);
+      if (cleaned.length > 0) return ok({ kind: 'text', content: cleaned });
+
+      // Seluruh balasan hanya markup → tak ada yang layak dikirim. Kembalikan error agar
+      // pemanggil memakai fallback yang sopan, bukan mengirim pesan kosong.
+      return err({
+        code: 'PROVIDER',
+        message: 'model membalas markup tool-call sebagai teks (tak ada isi untuk pengguna)',
+        retryable: false,
+        attempt,
+      });
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') {
         return err({ code: 'TIMEOUT', message: `timeout ${this.timeoutMs}ms`, retryable: true, attempt });

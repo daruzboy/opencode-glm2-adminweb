@@ -75,6 +75,20 @@ export interface LlmJsonPort extends Port {
 // Default temperature per task (T-050). Task kreatif (article/copy) butuh divergensi
 // tinggi; task presisi (intent/revision_patch) butuh determinisme rendah. Caller tetap
 // dapat override via LlmJsonRequest.temperature.
+// Model default DeepSeek (ADR-4). `deepseek-v4-pro` dipilih ketimbang `-flash`: tugas
+// berat kita (menyusun Site Document JSON yang harus lolos schema ketat) menuntut penalaran
+// lebih kuat, dan alias lama `deepseek-chat` tak lagi menyebut varian secara eksplisit.
+// Override per lingkungan lewat env DEEPSEEK_MODEL.
+export const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v4-pro';
+
+// Timeout panggilan LLM. 30 dtk cukup untuk balasan chat, TAPI TIDAK untuk membangun situs:
+// model harus menyusun Site Document JSON penuh (banyak halaman & section) yang wajib lolos
+// schema — di uji nyata v4-pro konsisten kena timeout dan build selalu gagal. Tugas berat
+// diberi jendela jauh lebih lebar; kanal chat tak terpengaruh karena pekerjaan ini berjalan
+// di worker (bukan di webhook yang harus balas cepat).
+export const DEFAULT_LLM_TIMEOUT_MS = 30_000;
+export const BUILD_LLM_TIMEOUT_MS = 180_000;
+
 export const DEFAULT_TEMPERATURE_BY_TASK: Readonly<Record<LlmTask, number>> = Object.freeze({
   intent: 0,
   revision_patch: 0.1,

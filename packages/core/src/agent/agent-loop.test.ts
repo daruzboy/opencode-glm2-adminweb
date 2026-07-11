@@ -9,7 +9,7 @@ import {
   type LlmAgentResponse,
   type Result,
 } from '@digimaestro/shared';
-import {
+import { NO_TOOLS_INSTRUCTION,
   AGENT_MAX_STEPS_REPLY,
   DEFAULT_AGENT_MAX_STEPS,
   runAgentLoop,
@@ -200,3 +200,46 @@ function emptyRegistry() {
 function registryFrom(tools: readonly AgentToolDefinition<unknown, unknown>[]) {
   return createAgentToolRegistry(tools);
 }
+
+// T-053h — AKAR bocoran markup: mematikan tools saja tak cukup. System prompt masih
+// menyuruh memanggil tool, jadi model menuliskannya sebagai teks. Saat tools dimatikan,
+// model HARUS diberi tahu.
+describe('runAgentLoop — langkah terakhir (tools dimatikan)', () => {
+  it('tools dikosongkan DAN system diberi instruksi "tool tidak tersedia"', async () => {
+    const seen: { tools: unknown[]; system: string }[] = [];
+    const llm = {
+      completeWithTools: vi.fn(async (req: { tools: unknown[]; system: string }) => {
+        seen.push({ tools: req.tools, system: req.system });
+        // Selalu minta tool → memaksa loop sampai langkah terakhir (forceText).
+        return seen.length < 2
+          ? ok({
+              kind: 'tool_calls' as const,
+              toolCalls: [
+                { id: 'c1', type: 'function' as const, function: { name: 'noop', arguments: '{}' } },
+              ],
+            })
+          : ok({ kind: 'text' as const, content: 'ringkasan' });
+      }),
+    };
+
+    await runAgentLoop(
+      { llm, tools: createAgentToolRegistry([]) } as never,
+      {
+        tenantId: tenantId('t1'),
+        actor: 'chatbot',
+        scopes: [],
+        task: 'chat_reply',
+        system: 'Kamu asisten. Panggil tool bila perlu.',
+        userMessage: 'bangun situs',
+        maxSteps: 2,
+      },
+    );
+
+    const last = seen[seen.length - 1];
+    expect(last?.tools).toHaveLength(0);
+    // Tanpa ini, model "memanggil tool" lewat teks dan markup-nya bocor ke pengguna.
+    expect(last?.system).toContain(NO_TOOLS_INSTRUCTION);
+    // Langkah sebelumnya TIDAK diberi instruksi itu (tools masih hidup).
+    expect(seen[0]?.system).not.toContain(NO_TOOLS_INSTRUCTION);
+  });
+});
