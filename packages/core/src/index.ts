@@ -136,6 +136,15 @@ export {
   type IngestMediaResult,
 } from './media/ingest-media.js';
 
+// Laporan biaya AI (T-082).
+export {
+  buildUsageReport,
+  type DailyCost,
+  type TenantCost,
+  type UsageReport,
+  type UsageReportDeps,
+} from './llm/usage-report.js';
+
 // Notifikasi hasil publish ke chat (T-032tg) — dipakai worker publish.
 export {
   failedPublishMessage,

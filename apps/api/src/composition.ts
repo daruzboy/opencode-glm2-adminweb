@@ -2,6 +2,7 @@ import {
   ConversationRepositoryPrisma,
   JwtAuthPort,
   LlmUsageLoggerPrisma,
+  LlmUsageQueryPrisma,
   MediaRepositoryPrisma,
   MessageRepositoryPrisma,
   OpenAiCompatibleAgentAdapter,
@@ -18,6 +19,7 @@ import {
   PublishSourcePrisma,
   type ConversationDelegate,
   type LlmUsageDelegate,
+  type RawQueryClient,
   type MediaDelegate,
   type MessageDelegate,
   type PublishSourceDelegate,
@@ -45,7 +47,13 @@ import {
   siteDocumentSchema,
   siteDraftSchema,
 } from '@digimaestro/sites-kit';
-import { BUILD_LLM_TIMEOUT_MS, DEFAULT_DEEPSEEK_MODEL, parsePublishUrlMode } from '@digimaestro/shared';
+import {
+  BUILD_LLM_TIMEOUT_MS,
+  DEFAULT_DEEPSEEK_MODEL,
+  parsePublishUrlMode,
+  parseTokenPrice,
+} from '@digimaestro/shared';
+import type { LlmTokenPrice } from '@digimaestro/shared';
 import type {
   AgentToolDefinition,
   AuthPort,
@@ -54,6 +62,7 @@ import type {
   LlmJsonPort,
   LlmUsageLoggerPort,
 } from '@digimaestro/shared';
+import type { UsageRoutesDeps } from './admin/usage-routes.js';
 import type { TelegramWebhookDeps } from './channel/telegram-webhook.js';
 import type { ChatDeps } from './chat/handle-incoming.js';
 import type { PreviewDeps } from './preview/handle-preview.js';
@@ -70,6 +79,8 @@ export interface LlmEnv {
   readonly GLM_API_KEY?: string;
   readonly GLM_MODEL?: string;
   readonly GLM_BASE_URL?: string;
+  readonly LLM_PRICE_INPUT_PER_1M?: string;
+  readonly LLM_PRICE_OUTPUT_PER_1M?: string;
 }
 
 export interface CreateLlmJsonPortOptions {
@@ -159,6 +170,17 @@ export function createPublishRequestDeps(options: CreatePublishRequestDepsOption
   // URL yang DIJANJIKAN ke pengguna harus sama dengan yang nanti diverifikasi worker.
   const urlMode = parsePublishUrlMode(process.env.PUBLISH_URL_MODE);
   return { source, queue, rootDomain, urlMode };
+}
+
+// T-082: laporan biaya AI. Query LINTAS-tenant (laporan admin) → sengaja memakai klien
+// TANPA tenantGuard; pagar aksesnya di rute (role OWNER + ADMIN_TENANT_ID).
+export function createUsageRoutesDeps(env: NodeJS.ProcessEnv = process.env): UsageRoutesDeps {
+  const prisma = createPrismaClient();
+  return {
+    usage: new LlmUsageQueryPrisma(prisma as unknown as RawQueryClient),
+    price: parseTokenPrice(env.LLM_PRICE_INPUT_PER_1M, env.LLM_PRICE_OUTPUT_PER_1M),
+    ...(env.ADMIN_TENANT_ID ? { adminTenantId: env.ADMIN_TENANT_ID } : {}),
+  };
 }
 
 export interface CreateTelegramWebhookDepsOptions {
@@ -256,7 +278,12 @@ function createProductionAgentReplier(
     ? (env.GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/paas/v4')
     : (env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1');
 
+  // T-082 (BUG): agent adapter TIDAK PERNAH disuntik usageLogger → seluruh percakapan chat
+  // (mayoritas pemakaian!) tak tercatat di LlmUsage. Terbukti di produksi: hanya task
+  // `site_plan` yang punya baris; chat/interview NOL.
   const agentLlm = new OpenAiCompatibleAgentAdapter({
+    usageLogger: new LlmUsageLoggerPrisma(prisma.llmUsage as unknown as LlmUsageDelegate),
+    price: tokenPrice(env),
     provider: isGlm ? 'glm' : 'deepseek',
     model,
     apiKey,
@@ -368,4 +395,10 @@ function sectionCatalog(): Record<string, readonly string[]> {
   return Object.fromEntries(
     Object.entries(SECTION_REGISTRY).map(([type, def]) => [type, def.variants]),
   );
+}
+
+// T-082: harga token dari env (satu sumber kebenaran). 0 = belum dikonfigurasi → laporan
+// biaya menampilkannya sebagai "belum diisi", bukan diam-diam melaporkan $0 sebagai fakta.
+function tokenPrice(env: { LLM_PRICE_INPUT_PER_1M?: string; LLM_PRICE_OUTPUT_PER_1M?: string }): LlmTokenPrice {
+  return parseTokenPrice(env.LLM_PRICE_INPUT_PER_1M, env.LLM_PRICE_OUTPUT_PER_1M);
 }

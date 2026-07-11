@@ -3,12 +3,15 @@
 // Reuse pola retry/backoff dari openai-compatible-json-adapter. fetch di-inject → offline-testable.
 
 import {
+  DEFAULT_TOKEN_PRICE,
   err,
+  estimateCostUsd,
   ok,
   type LlmAgentPort,
   type LlmAgentRequest,
   type LlmAgentResponse,
   type LlmError,
+  type LlmTokenPrice,
   type LlmUsageLoggerPort,
   type OpenAiFunctionToolCall,
   type OpenAiToolDefinition,
@@ -24,6 +27,7 @@ export interface OpenAiCompatibleAgentAdapterConfig {
   readonly baseUrl: string;
   readonly fetch?: RuntimeFetch;
   readonly usageLogger?: LlmUsageLoggerPort;
+  readonly price?: LlmTokenPrice;
   readonly maxAttempts?: number;
   readonly timeoutMs?: number;
   readonly retryInitialDelayMs?: number;
@@ -40,9 +44,8 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// DeepSeek/GLM pricing (estimasi; sama dgn JSON adapter).
-const DEFAULT_INPUT_COST = 0.14;
-const DEFAULT_OUTPUT_COST = 0.28;
+// T-082: harga token TIDAK boleh ditebak kode (berubah & beda per model; salah menebak =
+// laporan biaya yang menyesatkan). Datang dari config/env; 0 = belum dikonfigurasi.
 
 export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
   readonly name: string;
@@ -52,6 +55,7 @@ export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
   private readonly baseUrl: string;
   private readonly fetchFn: RuntimeFetch;
   private readonly usageLogger?: LlmUsageLoggerPort;
+  private readonly price: LlmTokenPrice;
   private readonly maxAttempts: number;
   private readonly timeoutMs: number;
   private readonly retryInitialDelayMs: number;
@@ -65,6 +69,7 @@ export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
     this.baseUrl = config.baseUrl;
     this.fetchFn = config.fetch ?? (globalThis.fetch as unknown as RuntimeFetch);
     this.usageLogger = config.usageLogger;
+    this.price = config.price ?? DEFAULT_TOKEN_PRICE;
     this.maxAttempts = config.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retryInitialDelayMs = config.retryInitialDelayMs ?? DEFAULT_RETRY_INITIAL_DELAY_MS;
@@ -161,9 +166,11 @@ export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
           completionTokens: data.usage.completion_tokens ?? 0,
           totalTokens: data.usage.total_tokens ?? 0,
           latencyMs: 0,
-          estimatedCostUsd:
-            ((data.usage.prompt_tokens ?? 0) / 1_000_000) * DEFAULT_INPUT_COST +
-            ((data.usage.completion_tokens ?? 0) / 1_000_000) * DEFAULT_OUTPUT_COST,
+          estimatedCostUsd: estimateCostUsd(
+            data.usage.prompt_tokens ?? 0,
+            data.usage.completion_tokens ?? 0,
+            this.price,
+          ),
           createdAt: new Date().toISOString(),
         });
       }
