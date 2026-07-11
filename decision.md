@@ -12,7 +12,7 @@
 - Lokal: `C:\Users\daruzboy\Documents\A_PROJECT\02_digimaestro\glm2-adminweb`
 - Produk: **digimaestro.id** (platform website builder chatbot & agentic AI untuk UMKM)
 - Pemilik/PO: Darusman · Model coding agent: GLM 5.2 · QA: TestSprite
-- Terakhir diperbarui: 2026-07-10
+- Terakhir diperbarui: 2026-07-11 (sinkron dgn `main` @ `82a0776`, PR #51–#62)
 
 ---
 
@@ -23,6 +23,8 @@ Node 22 LTS · TypeScript 5 (strict) · Fastify v5 · Prisma 6 + PostgreSQL 16 �
 BullMQ + Redis 7 · Zod · Astro 5 + Tailwind 4 (sites-kit) · React 19 + Vite 6
 (portal/admin) · pnpm + Turborepo · Vitest + Playwright · MCP TypeScript SDK ·
 n8n (self-host) · Umami · Caddy.
+**Kanal Fase 0 = Telegram Bot API** (HTTPS+JSON, tanpa SDK — ADR-11). **Media**:
+`sharp` (resize+WebP; satu-satunya dep native, disetujui PO — T-033).
 
 ### 1.2 Arsitektur (SRS §4 — Clean Architecture + SOLID)
 - **Modular monolith**, TS end-to-end (ADR-1). Proses web (api) & worker terpisah,
@@ -35,15 +37,40 @@ n8n (self-host) · Umami · Caddy.
 - Setiap query DB lewat **repository ber-`tenantId`** (NFR-09).
 - Komponen `sites-kit`: **wajib skema Zod** + styling **hanya via design token**.
 
-### 1.3 Topologi runtime (SRS §3, ADR-6/8)
+### 1.3 Topologi runtime (SRS §3, ADR-6/8/13)
 - **VPS** (DC Indonesia): platform inti (api, worker, portal, n8n, Umami, Postgres,
   Redis, Caddy). Juga hosting URL preview draft (ber-token, noindex).
-- **Shared hosting cPanel** (terpisah, sudah dimiliki): hanya file statis situs
-  klien yang sudah publish. Subdomain `<slug>.digimaestro.id` + addon custom domain
-  via cPanel API; TLS AutoSSL; deploy rsync/SSH (fallback FTP).
-- **Object storage S3-compatible**: media tenant + build artifact (10 revisi/situs).
+  **VPS TIDAK punya domain publik** (tak ada DNS yang mengarah ke sana; port 80/443
+  belum dibuka) → konsekuensi nyata: webhook Telegram mustahil dipanggil → dipakai
+  **long-polling** (ADR-11); media/objek tak bisa disajikan dari VPS ke pengunjung situs.
+- **Shared hosting cPanel** (Rumahweb, sudah dimiliki): file statis situs klien.
+  **URL situs = path** `https://digimaestro.id/<slug>/` (**ADR-13**, bukan subdomain);
+  TLS memakai sertifikat domain utama yang sudah aktif. Deploy **FTPS** (SSH tertutup).
+  Kode subdomain (`<slug>.digimaestro.id` via cPanel UAPI + AutoSSL, FR-PUB-004b) tetap
+  ada & teruji — tinggal `PUBLISH_URL_MODE=subdomain` bila arah berubah.
+- **Media tenant**: diunggah ke hosting di `media/<tenantId>/` — **di luar docroot situs**,
+  karena deploy publish = mirror penuh (upload + hapus file usang); media di dalam docroot
+  situs akan LENYAP tiap publish ulang (T-033).
+- **Object storage S3-compatible (MinIO)**: build artifact (rollback). Ada di compose
+  (profil `storage`), **belum dipasang di deploy live**.
 - **Situs klien = statis penuh** (Astro, zero-JS default) → diekspor/deploy ke
   shared hosting. Fitur dinamis (form, analytics) memanggil API pusat di VPS.
+
+### 1.3b Keputusan kanal & URL (ADR-11/12/13 — detail di SRS §1)
+- **ADR-11 — Kanal Fase 0 = Telegram**, bukan WABA. WABA **ditunda, tidak dibatalkan**
+  (verifikasi Meta = lead time di luar kendali tim, memblokir SELURUH vertical slice).
+  Kedua kanal dinormalisasi ke `InboundChannelMessage` di balik **`ChannelPort`**
+  (`packages/shared/src/ports/channel.ts`) → menambah WABA nanti = menambah adapter,
+  bukan membongkar core.
+- **ADR-12 — Bot dijaga allowlist** `chat_id → tenant` (env `TELEGRAM_ALLOWLIST`).
+  Bot Telegram TERBUKA: siapa pun yang menemukannya bisa mengirim pesan dan tiap pesan
+  yang lolos membakar token LLM berbayar. Chat asing ditolak **sebelum** LLM dipanggil.
+  Auto-provision tenant + kuota = follow-up sadar, bukan kelalaian.
+- **ADR-13 — URL situs klien berbasis path** (`PUBLISH_URL_MODE=path`). Akun FTP deploy
+  di-chroot ke document root domain utama → folder `<slug>` langsung tayang ber-HTTPS
+  tanpa provisioning apa pun. Subdomain menambah lapisan yang bisa gagal (DNS lambat /
+  AutoSSL belum terbit → **publish SUKSES dilaporkan gagal**) demi keuntungan kosmetik.
+  Konsekuensi: kredensial cPanel UAPI **tidak disimpan** di server; tak ada perubahan DNS.
 
 ### 1.4 Prinsip produk
 - **Approval-first** (BRU-02): tidak ada publikasi tanpa persetujuan eksplisit klien.
@@ -78,9 +105,12 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
 
 ### EPIC-00 — Jalur Kritis Eksternal (paralel, lead time panjang)
 - ⏳ **T-001** Verifikasi Meta Business + nomor WABA digimaestro (sandbox kirim-terima)
-- ⏳ **T-002** Xendit (recurring), VPS 4vCPU/8GB DC ID, kredensial cPanel/SSH shared
-  hosting, DNS digimaestro.id, API key DeepSeek & GLM (teruji curl)
-- 🚫 _Catatan:_ development tetap jalan pakai web chat + sandbox tanpa WABA.
+  — **tidak lagi memblokir** Fase 0: kanal Telegram dipakai sbg rencana A (ADR-11).
+- ✅ **T-002** (sebagian besar TUNTAS 2026-07-11): kredensial **cPanel/FTPS** diberikan PO
+  → deploy situs nyata SUKSES; **API key DeepSeek** diberikan → agent hidup; DNS
+  `digimaestro.id` resolve (Rumahweb). ⏳ _Sisa:_ Xendit (recurring) + `GLM_API_KEY`.
+- 🚫 _Catatan lama ("dev jalan pakai web chat tanpa WABA") sudah usang_ — kanal Telegram
+  kini kanal utama Fase 0 dan sudah dipakai PO sungguhan.
 
 ### EPIC-01 — Monorepo, CI, AI Dev Tooling
 - ✅ **T-010** Monorepo pnpm+Turborepo (ter-merge ke `main` via PR #1, commit `50ebd50`)
@@ -521,20 +551,166 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `RemoteDeployClient` + orkestrasi hapus **direktori usang** (mirror penuh, terdalam dulu);
   impl `sftp.rmdir(_,true)` & `ftp.removeDir`. Gate 21/21 (adapters +2 FTP incl. assert removeDir,
   worker +2). **Belum**: subdomain cPanel UAPI (FR-PUB-004b) + produsen job api.
-- ⏳ Sisanya (**terblokir kredensial/PO**): CHN WABA (T-030..033, terblokir T-001), subdomain
-  cPanel UAPI (FR-PUB-004b); ops sisa (T-071..073), QA (T-080..083, butuh app hidup + TestSprite
-  restart). _(Adapter S3 + deploy cPanel SFTP + Prisma preview/token HMAC sudah dibuat — lihat
-  slice S3, cPanel deploy, & T-064.)_
+### EPIC-03 — KANAL (CHN): Telegram AKTIF (rencana A Fase 0); WABA menyusul
+
+> **Koreksi status:** EPIC-03 **tidak lagi terblokir**. Yang terblokir T-001 hanya
+> **WABA/WhatsApp**; kanal Telegram (ADR-11) sudah jalan penuh & dipakai PO sungguhan.
+
+- ✅ **T-020extA** Onboarding otomatis — buat Website saat `build_site` (**PR #51**,
+  `4e5855d`, 2026-07-11). Tenant baru belum punya Website → `build_site` gagal `NOT_FOUND`
+  → loop chat→bangun mentok. Kini Website (DRAFTING) dibuat on-demand dari nama usaha
+  (`deriveSlug` kebab-case + sufiks acak; `slug` @unique global). `WebsiteRepository.create`
+  (port+Prisma); P2002 → `CONFLICT` (BRU-01 satu website/tenant).
+- ✅ **T-030tg** **Kanal Telegram inbound+outbound** (**PR #52**, `ea2dc3e`, 2026-07-11;
+  ADR-11/12). Port `ChannelPort` + `ChatInboundQueuePort` (shared). Adapter: `TelegramChannel`
+  (Bot API via `fetch`, **tanpa SDK**), `normalize` (payload → `InboundChannelMessage`),
+  `allowlist` (`chat_id→tenant`), `BullMqChatInboundQueue`. Rute webhook
+  `/api/webhooks/telegram` (secret token, **timing-safe**). Use case `handleInboundMessage`
+  (core). Worker: konsumen antrean `chat-inbound`. **Idempotensi** = `Message.providerMsgId`
+  @unique (P2002 → CONFLICT → duplikat diabaikan); `providerMsgId` diprefiks `chat_id` karena
+  `message_id` Telegram hanya unik per-chat. Schema: `Channel += TELEGRAM`,
+  `Conversation.externalId` + `@@unique(tenantId, channel, externalId)`. Migrasi diuji di
+  Postgres 16 nyata (bukan hanya CI). _Refactor:_ `build-site-tool` dipindah `apps/api` → `core`
+  (dipakai DUA composition root).
+- ✅ **T-031tg** **Tombol interaktif approval** "✅ Setuju & publish" dari chat (**PR #53**,
+  `d0607d8`, 2026-07-11; BRU-02). `ChannelButton` + `sendButtons` + `answerCallback` (wajib —
+  tanpa itu tombol berputar terus di UI). `channel-actions.ts`: aksi tertutup `<verb>:<arg>`
+  (`pub`/`rev`) — **`callback_data` = input TAK tepercaya** (bisa dikarang) → diparse ketat,
+  argumennya TETAP divalidasi ke DB tenant via `PublishSourcePort`. `websiteId` sengaja tak ikut
+  (BRU-01 → tombol tak bisa menunjuk website tenant lain). **Dobel-tap tidak publish 2×**
+  (`providerMsgId` = id callback query, @unique). Tombol muncul saat giliran itu MENGHASILKAN
+  revisi baru (deteksi via NOMOR REVISI, bukan menebak teks LLM). `RateLimitedChannel`
+  (dekorator, jendela geser per chat = per tenant; `answerCallback` sengaja TIDAK dibatasi).
+  _Refactor:_ `handle-publish` dipindah `apps/api` → `core`.
+- ✅ **T-032tg** **Notifikasi "situs sudah live"** ke chat (**PR #54**, `1d899c8`, 2026-07-11) —
+  menutup lingkaran approval. `PublishJobRequest.tenantId` (worker perlu tahu mengabari siapa;
+  OPSIONAL di worker → job lama tanpa tenantId dilewati, bukan crash). `ConversationFilter.channel`.
+  Use case `notifyPublishOutcome`. **Kegagalan hanya dikabari saat DEAD-LETTER** (retry habis) —
+  kegagalan transien tak boleh bikin pengguna panik. **Kegagalan MENGABARI tidak pernah
+  menggagalkan job yang sudah sukses** (throw = BullMQ retry → deploy ulang percuma).
+- ✅ **T-030tg-poll** **Long-polling `getUpdates`** (**PR #55**, `03c70b2`, 2026-07-11) —
+  `TELEGRAM_MODE=polling`. **Alasan keras:** webhook menuntut HTTPS publik; VPS tak punya domain
+  (§1.3) → Telegram TIDAK BISA memanggil kita. Polling membalik arah. Jalur sesudah update diambil
+  SAMA PERSIS dgn webhook (normalisasi→allowlist→antrean) → tak ada cabang logika kedua. Offset
+  tetap maju untuk update yang diabaikan (kalau tidak → dikirim ulang selamanya); gagal enqueue →
+  offset DITAHAN (pesan pengguna tak boleh hilang). Webhook tetap ada utk produksi.
+- ✅ **T-033** **Media ingest** — foto pelanggan → WebP → hosting → galeri situs (**PR #60**,
+  `5462f1e`, 2026-07-11; FR-MED-001/002). Port `MediaDownloadPort`/`MediaProcessorPort`/
+  `MediaStorePort`/`MediaRepository`. Adapter: `TelegramMediaDownload` (getFile; tolak file
+  kelewat besar SEBELUM mengunduh), `SharpMediaProcessor` (resize ≤1600 + EXIF-rotate +
+  WebP q80; file rusak → err, bukan crash), `FtpsMediaStore` (nama file content-addressed
+  sha256 → foto identik = nama sama, URL stabil), `MediaRepositoryPrisma`. Model `MediaAsset`
+  + migrasi (`@@unique(tenantId, providerFileId)` → dedup). Foto di chat **tidak memanggil LLM**.
+  URL foto disisipkan ke prompt build ("gunakan HANYA url ini") → galeri memakai foto NYATA.
+  **Terverifikasi nyata:** 4000×3000 JPEG → 1600×1200 WebP (**hemat 95%**), tampil di situs live.
+  _Dep baru:_ `sharp` (disetujui PO; diverifikasi jalan di dalam container Docker).
+  _Bug renderer ikut ditutup:_ `imageRefSchema` kini menerima `url` absolut — sebelumnya hanya
+  `assetId` → URL foto ter-encode ganda (`%2F`) → `<img>` 404 (TODO lama "resolusi objek-storage
+  menyusul" akhirnya tuntas).
+- ⏳ **WABA (T-030..033 versi WhatsApp)** — tetap menunggu **T-001**. Bukan blocker Fase 0:
+  masuk belakangan sebagai adapter `ChannelPort` (ADR-11), core tak berubah.
+
+### Publish & URL (lanjutan T-063)
+- ✅ **ADR-13 — mode URL `path`** (**PR #59**, `b0d6b0a`, 2026-07-11). `publicSiteUrl(slug,
+  domain, mode)` + `parsePublishUrlMode` di shared = **SATU sumber kebenaran** bentuk URL,
+  dipakai produsen job (core) DAN adapter deploy — sebelumnya URL disusun di dua tempat; kalau
+  menyimpang, publish SUKSES pun dilaporkan gagal (URL dijanjikan ≠ URL diverifikasi).
+  `urlMode` ikut di payload job. Default tetap `subdomain`; env tak dikenal → `subdomain`.
+- ✅ **fix: verifikasi HTTP harus SABAR** (**PR #58**, `cc21dd3`, 2026-07-11). `verify` dulu
+  menembak SEKALI → subdomain baru (DNS + AutoSSL belum siap) dilaporkan GAGAL padahal situs
+  terbit → retry 3× (build+upload ulang, mahal) → dead-letter → **notifikasi "gagal" yang KELIRU**.
+  Kini retry 6× × 15 dtk (±75 dtk); error TLS/DNS = "belum siap", bukan kegagalan final.
+
+### Perbaikan agent (semua ditemukan saat bot DIPAKAI SUNGGUHAN — bukan dari tes)
+> Delapan bug di bawah **tidak satu pun** terdeteksi test suite yang hijau. Ini alasan
+> menjalankan produknya lebih berharga daripada menambah tes.
+
+- ✅ **fix: tiga bug yang bikin bot tak bisa bangun situs** (**PR #56**, `c10313b`, 2026-07-11):
+  (1) **Agent amnesia** — `ConversationReplier` tak pernah memuat riwayat (`agent-loop` mendukung
+  `history`, tak ada yang mengisi) → pengguna sebut nama usaha di pesan #1, di pesan #2 agent
+  tanya lagi → wawancara slot-filling (FR-CNV-003) TAK PERNAH selesai. Tes lama tak menangkapnya
+  karena tiap tes cuma kirim SATU pesan. (2) **Prompt vs schema bertabrakan** — `siteDocumentSchema`
+  UTUH dipakai sbg target output LLM, padahal model tak mungkin tahu `websiteId` (id DB kita) dan
+  `tokens` harus deterministik dari tema (FR-CMP-003) → validasi SELALU gagal. Kini `siteDraftSchema`
+  (title/themeId/pages) + `assembleSiteDocument()` menyuntik websiteId + token. (3) **Prompt
+  menyuruh nilai tak sah** — contoh `variant:"default"` tak sah utk type mana pun → prompt kini
+  menyisipkan katalog `type→variant` dari registry + **JSON Schema draft** (`z.toJSONSchema`).
+- ✅ **fix: markup tool-call bocor + timeout build + default model** (**PR #57**, `6dfaf62`,
+  2026-07-11): pengguna menerima markup mentah `<｜｜DSML｜｜tool_calls>…`. **Akar:** agent-loop
+  mematikan tools di langkah terakhir TAPI system prompt masih menyuruh memanggil tool → model
+  kehilangan saluran protokol → MENULIS pemanggilan tool ke teks. Diperbaiki 2 lapis:
+  `NO_TOOLS_INSTRUCTION` (akar) + `stripToolMarkup` di adapter (jaring pengaman; balasan yang
+  isinya HANYA markup → err → fallback sopan). Terbukti: dgn `tools` DIKIRIM, v4-flash & v4-pro
+  dua-duanya BENAR → ganti model bukan obatnya. **`BUILD_LLM_TIMEOUT_MS`=180 dtk** (composition
+  tak pernah kirim `timeoutMs` → selalu 30 dtk → build situs SELALU timeout). Default model →
+  **`deepseek-v4-pro`**.
+- ✅ **fix: wawancara mati di tengah — state diabaikan + balasan kosong** (**PR #61**, `e993e80`,
+  2026-07-11): pelanggan menjawab singkat ("Betul", "Cara 2 saja") → router keyword tak mengenali
+  → `FALLBACK` → prompt "TOLAK permintaan di luar lingkup" + `scopes:[]` (agent kehilangan SEMUA
+  tool) → model bingung → **teks kosong** → Telegram menolak → pengguna ditinggal BISU. **Router
+  sebenarnya sudah menghitung state dengan benar**; replier membuangnya (mengoper `'ONBOARDING'`
+  HARDCODED) & `composeAgentPlan` mengabaikan parameternya (`_state`) → state tak pernah
+  berpengaruh. Kini `FALLBACK` saat percakapan AKTIF → lanjutkan konteks & pertahankan tool;
+  prompt penolakan hanya saat IDLE (FR-CNV-008). Plus: teks kosong TAK PERNAH dikirim ke kanal.
+- ✅ **fix: anggaran token habis untuk REASONING** (**PR #62**, `82a0776`, 2026-07-11) — **akar
+  sebenarnya** dari "model membalas teks kosong". `deepseek-v4-pro` adalah **model REASONING**:
+  ia memakai token untuk *berpikir* DULU. Diukur langsung ke API: `max_tokens=512` → finish
+  `length`, **content 0 char**, reasoning 1912 char; `2048` → content 610 char. Anggaran kita
+  (peninggalan model non-reasoning) habis sebelum model sempat menulis. Gejalanya **acak**
+  (tergantung panjang perenungan) → tampak seperti bug hantu. `DEFAULT_AGENT_MAX_TOKENS` 512→2048;
+  interview 2048, revision 2560, status/fallback 1536. Adapter kini menyebut sebabnya
+  ("anggaran token habis untuk reasoning") — "teks kosong" saja menyesatkan.
+
+### Audit kanal Telegram (2026-07-11) — temuan & perbaikan
+- ✅ **P0** (**PR #65**): (1) **Tidak ada timeout** di poller & unduhan media → `fetch` menggantung
+  sampai default undici (**±5 menit**) bila koneksi stall → bot **BERHENTI menerima pesan tanpa
+  error/log**, container tetap "sehat" (pola bug yang SAMA dgn worker-stub). → `AbortSignal.timeout`
+  eksplisit. (2) **Rate limit TIDAK melindungi anggaran LLM** — `RateLimitedChannel` hanya membungkus
+  pesan KELUAR, sedangkan LLM dipanggil LEBIH DULU → tenant terdaftar yang membanjiri 100 pesan =
+  100 panggilan `deepseek-v4-pro`. Allowlist (ADR-12) hanya menahan ORANG ASING. → `InboundRateLimiterPort`
+  + `RedisInboundRateLimiter`, ditegakkan **sebelum** LLM/media disentuh (15 pesan/60 dtk per tenant).
+  State di **Redis** (bukan memori proses) → benar juga saat worker >1 replika. Tanpa dep baru
+  (klien Redis dari `Queue.client` BullMQ). Peringatan dikirim **sekali per jendela** (kalau tiap
+  pesan spam dibalas, kita ikut membanjiri pengguna). Tombol sengaja tak dibatasi (idempoten).
+- ✅ **P1** (**PR #66**): (1) **`answerCallback` dijawab terlambat** — dipanggil SETELAH DB+Redis;
+  Telegram membatalkan callback >10 dtk → **tombol berputar meski publish BERHASIL**. → ACK segera.
+  (2) **Tidak ada kuota media** → satu tenant bisa memenuhi kuota hosting SHARED (dipakai semua situs
+  klien). → `MEDIA_MAX_PER_TENANT`=50, dicek SEBELUM unduh; error `QUOTA` + balasan yang menyebut sebab.
+  (3) **Rate limit keluar** dipindah ke Redis (memori proses → N×limit saat >1 replika → 429 Telegram).
+- ⏳ **P2 (butuh PO, non-kode):** `can_join_groups` masih aktif → matikan di BotFather
+  (`/setjoingroups` → Disable). Chat grup sudah ditolak allowlist, tapi permukaan tak perlu.
+- ✅ **Terverifikasi aman** (audit jujur dua arah): token bot **tak pernah bocor ke log** (0 kemunculan);
+  webhook **fail-closed** (tanpa secret → rute tak dipasang, terbukti 404 di live); allowlist fail-closed;
+  idempotensi bertumpu constraint DB; `callback_data` divalidasi ketat; TLS diverifikasi penuh.
+
+### Gerbang keluar Fase 0
+- ✅ **T-083 — DEMO E2E TERCAPAI** (2026-07-11, produksi nyata, tanpa intervensi manual):
+  **chat Telegram → wawancara (agent ingat konteks) → agent bangun situs → tombol approval →
+  tap "Setuju & publish" → job antrean → deploy FTPS → verify HTTP 200 → notifikasi "sudah LIVE"
+  ke chat.** Situs live: **https://digimaestro.id/sate-pak-dar-pap917/** (+ foto pelanggan di
+  galeri, WebP). Bot: **@Opencode1993_bot**.
+
+- ⏳ Sisanya: **WABA** (T-030..033 WA, menunggu T-001); ops (T-070 alert n8n, T-071 Umami,
+  T-072 Xendit sandbox, T-073 backup); QA (T-081 regresi visual, T-082 dashboard biaya AI);
+  T-080 integration test (**UTANG:** selalu skip + cleanup kena tenant-guard, lihat entri T-080slice).
+  _Subdomain cPanel UAPI: kode ADA & teruji, sengaja TIDAK dipakai (ADR-13)._
 
 ---
 
 ## 3. Keputusan Tertunda / Pertanyaan Terbuka
-- **Default LLM produksi** — **DeepSeek dipilih (sementara-final)** per evaluasi T-050
-  2026-07-09 (pass 90%, quality 0.85, ~$0.003/20 prompt, ~1.5s). GLM 5.2 **belum**
-  dibandingkan (butuh `GLM_API_KEY`); revisit bila GLM diuji atau biaya/kualitas berubah.
-  _Env `DIGIMAESTRO_LLM_PROVIDER=deepseek`._ Key DeepSeek diberikan PO 2026-07-09 via chat
-  (**ter-ekspos → WAJIB dirotasi**); simpan sebagai secret repo/CI + env VPS, **jangan commit**
-  (repo public). Belum diset ke deploy live.
+- **Default LLM produksi** — **DeepSeek**, model **`deepseek-v4-pro`** (PO 2026-07-11;
+  konstanta `DEFAULT_DEEPSEEK_MODEL` di shared = satu sumber kebenaran). Alias lama
+  `deepseek-chat` kini me-resolve ke `deepseek-v4-flash`; varian tersedia: `v4-flash`, `v4-pro`.
+  **PENTING — v4-pro adalah model REASONING**: ia memakai token untuk berpikir DULU, jadi
+  `maxTokens` kecil → `content` KOSONG (terukur: 512 → 0 char jawaban, 1912 char reasoning).
+  **Jangan pernah set `maxTokens` < ~1536** untuk balasan chat (lihat PR #62). Build situs
+  butuh `BUILD_LLM_TIMEOUT_MS`=180 dtk (30 dtk default selalu timeout).
+  GLM 5.2 **belum** dibandingkan (butuh `GLM_API_KEY`). _Env `DIGIMAESTRO_LLM_PROVIDER=deepseek`._
+- **Bentuk URL situs klien** — **SELESAI: path** (ADR-13, PO 2026-07-11). Bukan lagi pertanyaan
+  terbuka. Mode subdomain tetap ada di kode bila arah berubah.
+- **Auto-provision tenant dari chat** — **TERTUNDA (sadar)**. Fase 0 memakai allowlist (ADR-12).
+  Bila self-serve dibuka: wajib disertai kuota/rate-limit per tenant baru, kalau tidak siapa pun
+  di internet bisa membakar anggaran LLM.
 - **Harga paket & kuota job AI** — finalisasi sebelum Fase 1 (input: COGS dari Fase 0).
 - **Kebijakan trial** — preview-gratis-lalu-bayar vs bayar-depan (rekomendasi: preview gratis).
 - **Provider image generation & stock photo** — dievaluasi Fase 0 (DeepSeek tak punya image-gen).
@@ -566,11 +742,36 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   berjalan melaporkan "No API Key" (mis. env dirotasi setelah startup), **wajib
   restart opencode** agar 8 tool MCP ter-load dgn env baru (load hanya saat
   startup; tidak hot-reload).
-- `DEEPSEEK_API_KEY`: ⚠️ **diberikan PO 2026-07-09 via chat (plaintext → ter-ekspos, WAJIB
-  dirotasi)**. Dipakai sekali untuk evaluasi T-050 (inline, TIDAK ditulis ke file/commit).
-  Belum diset ke secret repo/env VPS/deploy live — lakukan dgn key hasil rotasi.
+- `DEEPSEEK_API_KEY`: ✅ **terpasang di deploy live** (`/opt/containers/glm2/.env`, di luar repo).
+  ⚠️ Key diberikan PO **via chat (plaintext → TER-EKSPOS, WAJIB DIROTASI)** — 2026-07-09 & lagi
+  2026-07-11. **Belum** diset sebagai secret repo/CI. Rotasi lalu perbarui `.env` deploy.
 - `GLM_API_KEY`: ⏳ belum diisi (perbandingan GLM T-050 menunggu).
-- WABA / Xendit / cPanel / S3 / Umami / n8n: ⏳ belum (EPIC-00).
+- **Telegram (kanal Fase 0, ADR-11/12):**
+  - `TELEGRAM_BOT_TOKEN`: ✅ terpasang di deploy live. Bot **@Opencode1993_bot** (produk;
+    BERBEDA dari bot ops @vps_boy_1993_bot). ⚠️ token diberikan PO via chat → **ter-ekspos,
+    rotasi disarankan**. Pemegang token bisa menyamar jadi bot.
+  - `TELEGRAM_MODE=polling`: ✅ (webhook mustahil — VPS tanpa domain publik, §1.3).
+  - `TELEGRAM_ALLOWLIST`: ✅ `chat_id:tenantId`. Kosong → SEMUA chat ditolak (aman by default).
+  - `TELEGRAM_WEBHOOK_SECRET`: ⏳ tak dipakai selama mode polling. Bila webhook diaktifkan:
+    tanpa secret, rute webhook **tidak dipasang sama sekali**.
+- **cPanel / hosting situs:** ✅ **FTPS terpasang di deploy live** (Rumahweb). Dua jebakan yang
+  memakan waktu (didokumentasikan di `.env.example`): (1) `CPANEL_FTP_HOST` wajib **NAMA SERVER**
+  (`cikapundung.iixcp.rumahweb.net`), BUKAN `digimaestro.id` — sertifikat TLS atas nama server;
+  **jangan** disiasati `REJECT_UNAUTHORIZED=false` (itu mengirim password lewat koneksi tak
+  terverifikasi). (2) `CPANEL_DOCROOT_TEMPLATE={slug}` — akun di-chroot ke docroot; template
+  `public_html/{slug}` akan mendarat di `public_html/public_html/…`. Casing user `Deploy@…` penting.
+  ⚠️ password FTP & cPanel diberikan PO via chat → **ter-ekspos, rotasi disarankan**.
+  `CPANEL_UAPI_*`: **sengaja TIDAK disimpan** (ADR-13 → tak dipakai; tak ada rahasia menganggur).
+- `PUBLISH_URL_MODE=path` (ADR-13) · `PUBLIC_API_URL` (tautan preview) · `PREVIEW_TOKEN_SECRET` ✅
+  · `CHANNEL_RATE_LIMIT`/`CHANNEL_RATE_WINDOW_MS` (default 20/60dtk; **state per-proses** → dengan
+  >1 replika worker batas efektif = N×limit. Cukup Fase 0 (1 worker); skala horizontal → ganti
+  token bucket Redis, kontrak tak berubah).
+- **Deploy live** (`/opt/containers/glm2/`, BUKAN di repo): `glm2-api`, `glm2-worker`, `glm2-redis`,
+  `glm2-postgres`. Dua bug infra ditemukan & diperbaiki 2026-07-11: (1) **tak ada Redis** (antrean
+  BullMQ mustahil) → service ditambah; (2) **worker cuma stub** — compose memanggil `startWorker()`
+  yang hanya mengembalikan `{running:true}` lalu diam → **konsumen antrean TIDAK PERNAH menyala**
+  meski container tampak "sehat" → diganti `runWorker()`.
+- Xendit / S3 (MinIO live) / Umami / n8n: ⏳ belum.
 - `.env.example` ada (template, tanpa nilai). Produksi via secret manager, bukan `.env`.
 - **Relokasi `.git` (2026-07-04):** worktree tetap di
   `...\Documents\A_PROJECT\02_digimaestro\glm2-adminweb` (ter-sync Google Drive,
