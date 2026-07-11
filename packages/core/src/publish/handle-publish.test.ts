@@ -45,6 +45,9 @@ describe('handlePublishRequest (BRU-02 approval-first)', () => {
 
     expect(res).toEqual({ ok: true, status: 202, jobId: 'job-123', url: 'https://warung-demo.digimaestro.id' });
     expect(enqueued).toEqual({
+      // T-032tg: tenantId ikut di payload → worker tahu ke chat siapa kabar "sudah live"
+      // dikirim setelah job selesai.
+      tenantId: 't1',
       websiteId: 'w1',
       revisionNumber: 3,
       slug: 'warung-demo',

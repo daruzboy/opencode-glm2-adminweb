@@ -50,6 +50,9 @@ export interface ConversationEntity {
 
 export interface ConversationFilter {
   state?: ConversationState;
+  // Saring per kanal (T-032tg): worker publish memakai ini untuk menemukan percakapan
+  // Telegram milik tenant → tahu ke chat mana notifikasi "situs sudah live" dikirim.
+  channel?: ConversationChannel;
 }
 
 export interface ConversationCreateInput {

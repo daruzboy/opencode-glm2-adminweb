@@ -39,6 +39,7 @@ export async function handlePublishRequest(deps: PublishRequestDeps, req: Publis
   const url = `https://${slug}.${deps.rootDomain}`;
 
   const enq = await deps.queue.enqueuePublish({
+    tenantId: req.tenantId,
     websiteId,
     revisionNumber,
     slug,

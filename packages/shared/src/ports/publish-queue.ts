@@ -10,6 +10,10 @@ export const PUBLISH_QUEUE_NAME = 'publish';
 // Payload job publish (selaras PublishJobData di worker). siteDocument sudah divalidasi
 // worker via parseSiteDocument (Port `unknown` agar shared tak bergantung sites-kit).
 export interface PublishJobRequest {
+  // Pemilik job. Dibawa di payload (T-032tg) karena worker perlu tahu HARUS MENGABARI
+  // SIAPA saat situs selesai/gagal terbit — Website/Revision bisa di-query, tapi tanpa
+  // tenantId worker tak punya titik awal yang tenant-scoped (NFR-09).
+  readonly tenantId: string;
   readonly websiteId: string;
   readonly revisionNumber: number;
   readonly slug: string;

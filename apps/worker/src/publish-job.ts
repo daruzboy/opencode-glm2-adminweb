@@ -9,6 +9,10 @@ export const PUBLISH_QUEUE = 'publish';
 
 export interface PublishJobData {
   readonly kind: 'publish';
+  // T-032tg: pemilik job → worker tahu ke chat siapa notifikasi "sudah live" dikirim.
+  // Opsional: job yang sudah antre SEBELUM deploy versi ini tak punya field ini; tanpa
+  // tenantId notifikasi dilewati (job tetap terbit) — bukan crash.
+  readonly tenantId?: string;
   readonly websiteId: string;
   readonly revisionNumber: number;
   readonly slug: string;
@@ -21,6 +25,7 @@ export interface PublishJobData {
 
 export interface RollbackJobData {
   readonly kind: 'rollback';
+  readonly tenantId?: string;
   readonly websiteId: string;
   readonly revisionNumber: number;
   readonly slug: string;
