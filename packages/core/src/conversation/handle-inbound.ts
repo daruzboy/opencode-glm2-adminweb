@@ -53,7 +53,10 @@ export interface InboundLogger {
 // T-033: penerimaan foto. Opsional — tanpa ini bot tetap jalan, foto saja yang ditolak
 // sopan (mis. lingkungan tanpa kredensial hosting).
 export interface MediaDeps {
-  readonly ingest: (tenantId: TenantId, mediaRef: string) => Promise<Result<{ url: string }, { message: string }>>;
+  readonly ingest: (
+    tenantId: TenantId,
+    mediaRef: string,
+  ) => Promise<Result<{ url: string }, { code?: string; message: string }>>;
   readonly count: (tenantId: TenantId) => Promise<number>;
 }
 
@@ -111,6 +114,14 @@ export function mediaReceivedReply(total: number): string {
 
 export function mediaFailedReply(): string {
   return 'Waduh, fotonya gagal kuproses 😔 Coba kirim ulang ya, atau pakai foto lain.';
+}
+
+// Kuota penuh (P1 audit) — sebutkan sebabnya, jangan cuma bilang "gagal".
+export function mediaQuotaReply(): string {
+  return (
+    'Foto kamu udah penuh nih 📦 Aku nggak bisa nyimpen lagi.\n\n' +
+    'Kalau mau ganti foto di galeri, bilang aja foto mana yang mau dipakai.'
+  );
 }
 
 export function rateLimitedReply(retryAfterSec: number): string {
@@ -189,7 +200,9 @@ export async function handleInboundMessage(
     const ingested = await deps.media.ingest(tenantId, message.mediaRef);
     if (!ingested.ok) {
       deps.logger?.error(`[media] gagal memproses foto: ${ingested.error.message}`);
-      return replyAndPersist(deps, tenantId, conversationId, message, mediaFailedReply(), []);
+      const text =
+        ingested.error.code === 'QUOTA' ? mediaQuotaReply() : mediaFailedReply();
+      return replyAndPersist(deps, tenantId, conversationId, message, text, []);
     }
     const total = await deps.media.count(tenantId);
     return replyAndPersist(deps, tenantId, conversationId, message, mediaReceivedReply(total), []);
@@ -236,10 +249,16 @@ async function handleAction(
 ): Promise<Result<InboundResult, RepositoryError>> {
   const action = parseChannelAction(message.callbackData);
 
+  // P1 (audit): JAWAB CALLBACK SEGERA, sebelum kerja apa pun. Telegram membatalkan callback
+  // query yang dijawab > ~10 detik ("query is too old") → tombol BERPUTAR TERUS di UI
+  // meski publish sebenarnya BERHASIL. Publish menyentuh DB + Redis; saat salah satu
+  // tersendat, batas itu sangat mudah terlampaui. ACK dulu, kerja belakangan — hasilnya
+  // tetap disampaikan lewat pesan chat biasa (bukan lewat notice tombol).
+  await answer(deps, message, ackNotice(action));
+
   // callback_data datang dari luar dan bisa dikarang → aksi tak dikenal ditolak, bukan
   // ditebak-tebak.
   if (!action || !deps.approval) {
-    await answer(deps, message, 'Aksi ini tidak tersedia.');
     const text = !deps.approval
       ? 'Maaf, tombol persetujuan lagi tidak aktif. Coba lagi nanti ya 🙏'
       : 'Aku nggak paham tombol itu. Coba ketik permintaanmu ya 🙂';
@@ -247,7 +266,6 @@ async function handleAction(
   }
 
   if (action.kind === 'revise') {
-    await answer(deps, message, 'Oke, ceritakan revisinya.');
     const text = 'Siap! Bagian mana yang mau diubah? Tulis aja detailnya, nanti aku perbaiki ✏️';
     const res = await replyAndPersist(deps, tenantId, conversationId, message, text, []);
     if (!res.ok) return res;
@@ -260,7 +278,6 @@ async function handleAction(
   const website = await deps.approval.websites.findByTenantId(tenantId);
   if (!website.ok) return err(website.error);
   if (!website.value) {
-    await answer(deps, message, 'Website belum ada.');
     const text = 'Hmm, aku belum nemu website kamu. Coba mulai dari bikin situsnya dulu ya 🙏';
     return replyAndPersist(deps, tenantId, conversationId, message, text, []);
   }
@@ -272,7 +289,6 @@ async function handleAction(
   });
 
   if (!outcome.ok) {
-    await answer(deps, message, 'Gagal publish.');
     const text =
       outcome.status === 404
         ? 'Revisi itu nggak ketemu. Coba minta aku bangun ulang situsnya ya 🙏'
@@ -282,13 +298,19 @@ async function handleAction(
     return ok({ ...res.value, action: 'publish', revisionNumber: action.revisionNumber });
   }
 
-  await answer(deps, message, 'Oke, dipublikasikan!');
   const text =
     `Sip! Situsmu lagi dipublikasikan 🚀\n\nSebentar lagi bisa dibuka di:\n${outcome.url}\n\n` +
     'Aku kabari lagi kalau sudah live ya.';
   const res = await replyAndPersist(deps, tenantId, conversationId, message, text, []);
   if (!res.ok) return res;
   return ok({ ...res.value, action: 'publish', revisionNumber: action.revisionNumber });
+}
+
+// Notice singkat di UI tombol. Dijawab SEBELUM kerja, jadi belum tahu hasilnya — cukup
+// menyatakan "diterima". Hasil sebenarnya dikirim sebagai pesan chat.
+function ackNotice(action: ChannelAction | null): string {
+  if (!action) return 'Aksi ini tidak dikenali.';
+  return action.kind === 'publish' ? 'Oke, sedang diproses…' : 'Oke, ceritakan revisinya.';
 }
 
 // Callback WAJIB dijawab atau tombol berputar terus di UI Telegram. Kegagalan di sini

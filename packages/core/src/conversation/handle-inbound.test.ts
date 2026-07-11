@@ -375,3 +375,51 @@ describe('gerbang biaya pesan masuk (P0)', () => {
     expect(check).not.toHaveBeenCalled();
   });
 });
+
+// P1 (audit): callback HARUS dijawab SEGERA. Telegram membatalkan callback yang dijawab
+// >10 dtk ("query is too old") → tombol BERPUTAR TERUS di UI meski publish BERHASIL.
+describe('tombol: callback dijawab sebelum kerja berat (P1)', () => {
+  it('answerCallback dipanggil SEBELUM publish menyentuh DB/Redis', async () => {
+    const urutan: string[] = [];
+    const deps = fakeDeps();
+    (deps.channel as { answerCallback?: unknown }).answerCallback = vi.fn(async () => {
+      urutan.push('ack');
+      return { ok: true };
+    });
+    (deps as { approval?: unknown }).approval = {
+      websites: {
+        findByTenantId: vi.fn(async () => {
+          urutan.push('db');
+          return { ok: true, value: { id: 'w1' } };
+        }),
+      },
+      revisions: { findLatest: vi.fn(async () => ({ ok: true, value: null })) },
+      publish: {
+        source: { getPublishSource: vi.fn(async () => { urutan.push('db'); return { ok: true, value: null }; }) },
+        queue: { enqueuePublish: vi.fn(async () => { urutan.push('redis'); return { ok: true, value: { jobId: 'j' } }; }) },
+        rootDomain: 'digimaestro.id',
+      },
+    };
+
+    await handleInboundMessage(deps, {
+      tenantId: TENANT,
+      message: { channel: 'TELEGRAM', externalId: '555', providerMsgId: 'cb1', type: 'INTERACTIVE', callbackId: 'c1', callbackData: 'pub:1' },
+    });
+
+    // ACK harus yang PERTAMA — bukan setelah DB/Redis.
+    expect(urutan[0]).toBe('ack');
+  });
+
+  it('aksi tak dikenal → callback tetap dijawab (tombol tak menggantung)', async () => {
+    const deps = fakeDeps();
+    const ack = vi.fn(async () => ({ ok: true }));
+    (deps.channel as { answerCallback?: unknown }).answerCallback = ack;
+
+    await handleInboundMessage(deps, {
+      tenantId: TENANT,
+      message: { channel: 'TELEGRAM', externalId: '555', providerMsgId: 'cb2', type: 'INTERACTIVE', callbackId: 'c2', callbackData: 'ngawur' },
+    });
+
+    expect(ack).toHaveBeenCalled();
+  });
+});

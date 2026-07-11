@@ -153,6 +153,7 @@ export {
   handleInboundMessage,
   inboundFallbackReply,
   mediaFailedReply,
+  mediaQuotaReply,
   mediaReceivedReply,
   rateLimitedReply,
   unsupportedTypeReply,

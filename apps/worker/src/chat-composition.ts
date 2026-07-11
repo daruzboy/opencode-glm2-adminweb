@@ -279,12 +279,38 @@ export function createPublishNotifier(env: ChatWorkerEnv = process.env): Publish
   };
 }
 
-// Rate limit di tepi keluar (T-031tg) — dipakai baik oleh balasan chat maupun notifikasi.
+// Rate limit di tepi keluar (T-031tg) — dipakai balasan chat maupun notifikasi publish.
+// P1 (audit): bila REDIS_URL ada, state limiter dipindah ke Redis → batas tetap benar saat
+// worker diskalakan >1 replika (memori proses akan jadi N×limit → 429 dari Telegram).
 function rateLimited(inner: ChannelPort, env: ChatWorkerEnv): ChannelPort {
+  const limit = Number(env.CHANNEL_RATE_LIMIT ?? DEFAULT_RATE_LIMIT.limit);
+  const windowMs = Number(env.CHANNEL_RATE_WINDOW_MS ?? DEFAULT_RATE_LIMIT.windowMs);
+  const shared = createOutboundRateLimiter(env, limit, windowMs);
+
   return new RateLimitedChannel(inner, {
-    limit: Number(env.CHANNEL_RATE_LIMIT ?? DEFAULT_RATE_LIMIT.limit),
-    windowMs: Number(env.CHANNEL_RATE_WINDOW_MS ?? DEFAULT_RATE_LIMIT.windowMs),
+    limit,
+    windowMs,
+    ...(shared ? { shared } : {}),
   });
+}
+
+function createOutboundRateLimiter(
+  env: ChatWorkerEnv,
+  limit: number,
+  windowMs: number,
+): InboundRateLimiterPort | undefined {
+  if (!env.REDIS_URL) return undefined;
+  const url = new URL(env.REDIS_URL);
+  return createRedisInboundRateLimiter(
+    {
+      host: url.hostname,
+      port: url.port ? Number(url.port) : 6379,
+      username: url.username || undefined,
+      password: url.password || undefined,
+      maxRetriesPerRequest: null,
+    },
+    { limit, windowMs, keyPrefix: 'out', logger: console },
+  );
 }
 
 export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps {
