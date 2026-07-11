@@ -31,6 +31,7 @@
     "basic-ftp": "^6.0.1",
     "bullmq": "^5.79.3",
     "jsonwebtoken": "^9.0.3",
+    "sharp": "^0.35.3",
     "ssh2-sftp-client": "^12.1.1",
     "zod": "^4.4.3"
   },

@@ -49,12 +49,20 @@ export interface InboundLogger {
   error(message: string): void;
 }
 
+// T-033: penerimaan foto. Opsional — tanpa ini bot tetap jalan, foto saja yang ditolak
+// sopan (mis. lingkungan tanpa kredensial hosting).
+export interface MediaDeps {
+  readonly ingest: (tenantId: TenantId, mediaRef: string) => Promise<Result<{ url: string }, { message: string }>>;
+  readonly count: (tenantId: TenantId) => Promise<number>;
+}
+
 export interface InboundDeps {
   readonly conversations: ConversationRepository;
   readonly messages: MessageRepository;
   readonly channel: ChannelPort;
   readonly reply?: ConversationReplier;
   readonly approval?: ApprovalDeps;
+  readonly media?: MediaDeps;
   readonly logger?: InboundLogger;
 }
 
@@ -81,9 +89,21 @@ export function inboundFallbackReply(): string {
   return 'Maaf ya, aku lagi tersendat sebentar. Coba kirim ulang pesannya sebentar lagi 🙏';
 }
 
-// Media belum diproses (unduh media = T-033).
+// Tipe yang memang belum kita dukung (video, audio, dokumen, lokasi).
 export function unsupportedTypeReply(): string {
-  return 'Untuk sekarang aku baru bisa baca pesan teks ya. Boleh tulis pesannya? 🙂';
+  return 'Untuk sekarang aku baru bisa baca pesan teks dan foto ya 🙂';
+}
+
+// T-033: foto diterima & tersimpan → dipakai agent untuk galeri situs.
+export function mediaReceivedReply(total: number): string {
+  return (
+    `Foto kesimpan ✅ (total ${total} foto)\n\n` +
+    'Kirim foto lain kalau masih ada, atau bilang "udah cukup" biar aku pasang di galeri situsmu.'
+  );
+}
+
+export function mediaFailedReply(): string {
+  return 'Waduh, fotonya gagal kuproses 😔 Coba kirim ulang ya, atau pakai foto lain.';
 }
 
 export function approvalButtons(revisionNumber: number): ChannelButton[] {
@@ -126,7 +146,18 @@ export async function handleInboundMessage(
     return handleAction(deps, tenantId, conversationId, message);
   }
 
-  // 4) Pesan biasa. Non-teks dijawab jujur tanpa memanggil LLM.
+  // 4) Foto (T-033): unduh → optimasi → simpan. Tak memanggil LLM (buang biaya token).
+  if (message.type === 'IMAGE' && message.mediaRef && deps.media) {
+    const ingested = await deps.media.ingest(tenantId, message.mediaRef);
+    if (!ingested.ok) {
+      deps.logger?.error(`[media] gagal memproses foto: ${ingested.error.message}`);
+      return replyAndPersist(deps, tenantId, conversationId, message, mediaFailedReply(), []);
+    }
+    const total = await deps.media.count(tenantId);
+    return replyAndPersist(deps, tenantId, conversationId, message, mediaReceivedReply(total), []);
+  }
+
+  // 5) Tipe lain yang belum didukung → jawab jujur tanpa memanggil LLM.
   if (message.type !== 'TEXT' || !message.text) {
     return replyAndPersist(deps, tenantId, conversationId, message, unsupportedTypeReply(), []);
   }

@@ -71,8 +71,11 @@ export function createBasicFtpDeployClient(config: BasicFtpConfig): RemoteDeploy
       await client.ensureDir(abs(dir));
       await client.cd(home);
     },
-    async writeFile(path: string, contents: string) {
-      await client.uploadFrom(Readable.from(Buffer.from(contents, 'utf8')), abs(path));
+    async writeFile(path: string, contents: string | Uint8Array) {
+      // Biner (media) diunggah apa adanya; string di-encode UTF-8. Buffer.from(string,'utf8')
+      // pada data biner akan MERUSAK byte-nya — karena itu cabangnya eksplisit.
+      const buf = typeof contents === 'string' ? Buffer.from(contents, 'utf8') : Buffer.from(contents);
+      await client.uploadFrom(Readable.from(buf), abs(path));
     },
     async listAllFiles(dir: string) {
       return listRecursive(client, abs(dir));

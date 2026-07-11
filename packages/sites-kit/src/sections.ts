@@ -13,10 +13,19 @@ const ctaSchema = z.object({
 });
 
 // Referensi aset tenant (bukan URL lepas) — media dikelola per tenant (FR-MED-*).
-const imageRefSchema = z.object({
-  assetId: z.string().min(1),
-  alt: z.string().min(1).max(160),
-});
+// T-033: gambar boleh berupa URL ABSOLUT (foto pelanggan yang sudah diunggah ke hosting)
+// atau assetId (aset internal/tema). Sebelumnya HANYA assetId, dan renderer memetakannya ke
+// `/_assets/<encodeURIComponent(assetId)>` — sehingga URL penuh yang dititipkan ke assetId
+// ter-encode ganda (`https%3A%2F%2F...`) dan <img> menunjuk alamat yang 404.
+const imageRefSchema = z
+  .object({
+    assetId: z.string().min(1).optional(),
+    url: z.string().min(1).optional(),
+    alt: z.string().min(1).max(160),
+  })
+  .refine((i) => Boolean(i.assetId ?? i.url), {
+    message: 'image wajib punya "url" (foto terunggah) atau "assetId"',
+  });
 
 const linkSchema = z.object({
   label: z.string().min(1).max(60),

@@ -12,7 +12,8 @@ export interface RemoteDeployClient {
   // Buat direktori (rekursif); no-op bila sudah ada.
   mkdirp(dir: string): Promise<void>;
   // Tulis isi file ke path remote (parent dir dijamin ada oleh pemanggil).
-  writeFile(path: string, contents: string): Promise<void>;
+  // Uint8Array untuk BINER (media: T-033) — teks di-encode UTF-8 oleh implementasi.
+  writeFile(path: string, contents: string | Uint8Array): Promise<void>;
   // Daftar path file (rekursif) relatif terhadap `dir`; [] bila dir belum ada.
   listAllFiles(dir: string): Promise<string[]>;
   deleteFile(path: string): Promise<void>;

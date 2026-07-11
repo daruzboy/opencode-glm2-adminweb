@@ -115,6 +115,7 @@ model Tenant {
 
   users         User[]
   conversations Conversation[]
+  mediaAssets   MediaAsset[]
   messages      Message[]
   websites      Website[]
   agentJobs     AgentJob[]
@@ -189,6 +190,26 @@ model Website {
   tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   revisions Revision[]
 
+  @@index([tenantId])
+}
+
+// T-033: media dari pelanggan (foto di chat) → dioptimasi & disimpan; dipakai galeri situs.
+model MediaAsset {
+  id             String   @id @default(cuid())
+  tenantId       String
+  // file_id penyedia kanal → dedup: foto sama tak diunduh & diproses ulang.
+  providerFileId String
+  storageKey     String
+  url            String
+  contentType    String
+  width          Int
+  height         Int
+  sizeBytes      Int
+  createdAt      DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, providerFileId])
   @@index([tenantId])
 }
 

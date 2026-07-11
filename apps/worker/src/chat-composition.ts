@@ -21,12 +21,19 @@ import {
   createBullMqPublishQueue,
   createDeepSeekJsonAdapter,
   createGlmJsonAdapter,
+  FtpsMediaStore,
+  MediaRepositoryPrisma,
+  SharpMediaProcessor,
+  TelegramMediaDownload,
+  createBasicFtpDeployClient,
   createBullMqChatInboundQueue,
   createPreviewToken,
   createPrismaClient,
+  mediaFilename,
   startTelegramPoller,
   type ConversationDelegate,
   type LlmUsageDelegate,
+  type MediaDelegate,
   type MessageDelegate,
   type PublishSourceDelegate,
   type RevisionDelegate,
@@ -38,11 +45,13 @@ import {
   createSitebuilderApplyPatchTool,
   createSitebuilderBuildSiteTool,
   createSitebuilderGetSiteOutlineTool,
+  ingestMedia,
   notifyPublishOutcome,
   type ApprovalDeps,
   type BuildDeps,
   type ConversationReplier,
   type InboundDeps,
+  type MediaDeps,
   type NotifyDeps,
 } from '@digimaestro/core';
 import {
@@ -72,6 +81,12 @@ export interface ChatWorkerEnv {
   readonly PUBLISH_URL_MODE?: string;
   readonly CHANNEL_RATE_LIMIT?: string;
   readonly CHANNEL_RATE_WINDOW_MS?: string;
+  readonly CPANEL_FTP_HOST?: string;
+  readonly CPANEL_FTP_PORT?: string;
+  readonly CPANEL_FTP_USER?: string;
+  readonly CPANEL_FTP_PASSWORD?: string;
+  readonly CPANEL_FTP_SECURE?: string;
+  readonly CPANEL_FTP_REJECT_UNAUTHORIZED?: string;
   readonly TELEGRAM_MODE?: string;
   readonly TELEGRAM_ALLOWLIST?: string;
   readonly DIGIMAESTRO_LLM_PROVIDER?: string;
@@ -149,6 +164,9 @@ export function createChatReplier(
   // T-053g: LLM hanya mengarang DRAFT (title/themeId/pages); websiteId & design token
   // dirakit kode. Katalog tema/section disisipkan ke prompt agar model tak menebak nilai
   // yang akan ditolak schema.
+  // T-033: foto pelanggan yang sudah masuk → disisipkan ke prompt build supaya galeri
+  // memakai URL NYATA (tanpa ini LLM mengarang URL dan galeri jadi gambar rusak).
+  const mediaRepo = new MediaRepositoryPrisma(prisma.mediaAsset as unknown as MediaDelegate);
   const buildDeps: BuildDeps = {
     llm: jsonLlm,
     revisions,
@@ -159,6 +177,10 @@ export function createChatReplier(
       themeIds: THEME_IDS,
       sections: sectionCatalog(),
       draftJsonSchema: siteDraftJsonSchema(),
+    },
+    mediaUrls: async (tid) => {
+      const all = await mediaRepo.findMany(tid);
+      return all.ok ? all.value.map((m) => m.url) : [];
     },
   };
 
@@ -265,6 +287,7 @@ export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps
   );
   const messages = new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate);
   const approval = createApprovalDeps(env);
+  const media = createMediaDeps(env);
 
   return {
     conversations,
@@ -275,6 +298,7 @@ export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps
     reply: createChatReplier(conversations, prisma, env),
     logger: console,
     ...(approval ? { approval } : {}),
+    ...(media ? { media } : {}),
   };
 }
 
@@ -306,4 +330,53 @@ function sectionCatalog(): Record<string, readonly string[]> {
   return Object.fromEntries(
     Object.entries(SECTION_REGISTRY).map(([type, def]) => [type, def.variants]),
   );
+}
+
+// T-033: terima foto pelanggan → unduh (Telegram) → optimasi (sharp: resize+WebP) →
+// simpan ke hosting (FTPS) → catat MediaAsset. Aktif hanya bila kredensial hosting +
+// token bot ada; tanpa itu foto ditolak sopan dan bot tetap jalan.
+export function createMediaDeps(env: ChatWorkerEnv = process.env): MediaDeps | undefined {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.CPANEL_FTP_HOST || !env.CPANEL_FTP_USER) return undefined;
+
+  const prisma = createPrismaClient();
+  const media = new MediaRepositoryPrisma(prisma.mediaAsset as unknown as MediaDelegate);
+
+  // Koneksi FTP baru tiap simpan: unggahan media jarang & singkat, sedangkan koneksi
+  // menganggur akan diputus server (Pure-FTPd: idle 15 menit).
+  const store = new FtpsMediaStore(
+    () =>
+      createBasicFtpDeployClient({
+        host: env.CPANEL_FTP_HOST as string,
+        port: env.CPANEL_FTP_PORT ? Number(env.CPANEL_FTP_PORT) : undefined,
+        user: env.CPANEL_FTP_USER as string,
+        password: env.CPANEL_FTP_PASSWORD ?? '',
+        secure: env.CPANEL_FTP_SECURE ? env.CPANEL_FTP_SECURE !== 'false' : undefined,
+        rejectUnauthorized: env.CPANEL_FTP_REJECT_UNAUTHORIZED
+          ? env.CPANEL_FTP_REJECT_UNAUTHORIZED !== 'false'
+          : undefined,
+      }),
+    { baseDomain: env.PUBLISH_BASE_DOMAIN ?? 'digimaestro.id' },
+  );
+
+  const deps = {
+    download: new TelegramMediaDownload({
+      botToken: env.TELEGRAM_BOT_TOKEN,
+      fetch: globalThis.fetch as never,
+    }),
+    processor: new SharpMediaProcessor(),
+    store,
+    media,
+    filename: mediaFilename,
+  };
+
+  return {
+    async ingest(tenantId, mediaRef) {
+      const res = await ingestMedia(deps, { tenantId, mediaRef });
+      return res.ok ? { ok: true as const, value: { url: res.value.asset.url } } : res;
+    },
+    async count(tenantId) {
+      const all = await media.findMany(tenantId);
+      return all.ok ? all.value.length : 0;
+    },
+  };
 }

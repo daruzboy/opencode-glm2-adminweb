@@ -2,6 +2,7 @@ import {
   ConversationRepositoryPrisma,
   JwtAuthPort,
   LlmUsageLoggerPrisma,
+  MediaRepositoryPrisma,
   MessageRepositoryPrisma,
   OpenAiCompatibleAgentAdapter,
   RevisionRepositoryPrisma,
@@ -17,6 +18,7 @@ import {
   PublishSourcePrisma,
   type ConversationDelegate,
   type LlmUsageDelegate,
+  type MediaDelegate,
   type MessageDelegate,
   type PublishSourceDelegate,
   type RevisionDelegate,
@@ -275,6 +277,7 @@ function createProductionAgentReplier(
   });
 
   // T-053e: tool build situs baru dari brief (buildSiteFromBrief) → menutup jalur situs baru.
+  const mediaRepo = new MediaRepositoryPrisma(prisma.mediaAsset as unknown as MediaDelegate);
   const buildDeps: BuildDeps = {
     llm: jsonLlm,
     revisions,
@@ -285,6 +288,11 @@ function createProductionAgentReplier(
       themeIds: THEME_IDS,
       sections: sectionCatalog(),
       draftJsonSchema: siteDraftJsonSchema(),
+    },
+    // T-033: galeri memakai foto NYATA pelanggan (bukan URL karangan LLM).
+    mediaUrls: async (tid) => {
+      const all = await mediaRepo.findMany(tid);
+      return all.ok ? all.value.map((m) => m.url) : [];
     },
   };
   const buildTool = createSitebuilderBuildSiteTool(buildDeps);
