@@ -267,3 +267,30 @@ describe('foto masuk (T-033)', () => {
     expect(text).toContain('teks dan foto');
   });
 });
+
+// DITEMUKAN SAAT BOT DIPAKAI SUNGGUHAN: agent membalas teks KOSONG → kita tetap mengirimnya
+// → Telegram menolak ("message text is empty") → pesan OUT tercatat FAILED dan pengguna
+// ditinggal BISU di tengah percakapan.
+describe('balasan kosong tak pernah dikirim', () => {
+  it('agent balas string kosong → fallback dipakai (bukan pesan kosong)', async () => {
+    const reply = { reply: vi.fn(async () => ({ ok: true as const, value: { text: '' } })) };
+    const deps = fakeDeps({ reply });
+
+    const res = await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(res.ok).toBe(true);
+    const [, text] = (deps.channel.sendText as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(text).toBe(inboundFallbackReply());
+    expect(text.length).toBeGreaterThan(0);
+  });
+
+  it('balasan hanya spasi/baris baru → juga dianggap kosong', async () => {
+    const reply = { reply: vi.fn(async () => ({ ok: true as const, value: { text: '  \n\n ' } })) };
+    const deps = fakeDeps({ reply });
+
+    await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    const [, text] = (deps.channel.sendText as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(text.trim().length).toBeGreaterThan(0);
+  });
+});

@@ -214,3 +214,36 @@ describe('OpenAiCompatibleAgentAdapter — tool markup tak boleh bocor ke penggu
     }
   });
 });
+
+// Model kadang membalas content kosong/null. Meneruskannya = pesan gagal terkirim.
+describe('OpenAiCompatibleAgentAdapter — balasan kosong', () => {
+  it('content kosong → err PROVIDER (bukan text kosong)', async () => {
+    const fetch = mockFetch({
+      ok: true,
+      status: 200,
+      json: { choices: [{ message: { role: 'assistant', content: '' } }] },
+    });
+    const adapter = new OpenAiCompatibleAgentAdapter({
+      provider: 'deepseek', model: 'm', apiKey: 'k', baseUrl: 'https://api.test/v1', fetch,
+    });
+
+    const res = await adapter.completeWithTools(baseRequest);
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.code).toBe('PROVIDER');
+  });
+
+  it('content null → err PROVIDER', async () => {
+    const fetch = mockFetch({
+      ok: true,
+      status: 200,
+      json: { choices: [{ message: { role: 'assistant', content: null } }] },
+    });
+    const adapter = new OpenAiCompatibleAgentAdapter({
+      provider: 'deepseek', model: 'm', apiKey: 'k', baseUrl: 'https://api.test/v1', fetch,
+    });
+
+    const res = await adapter.completeWithTools(baseRequest);
+    expect(res.ok).toBe(false);
+  });
+});
