@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { tenantId } from '@digimaestro/shared';
+import type { TenantId } from '@digimaestro/shared';
 import { handleIncoming, type ChatDeps } from './handle-incoming.js';
 import { inboundMessageSchema, type InboundMessage } from './schema.js';
 
@@ -14,6 +14,15 @@ interface HistoryParams {
 interface ChatQuery {
   tenantId?: string;
   conversationId?: string;
+  // NFR-07: token JWT (browser tak bisa set header Authorization di WebSocket).
+  token?: string;
+}
+
+// Bentuk socket yang dipakai — cukup ini, tak perlu tipe ws penuh.
+interface WebSocketLike {
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+  on(event: 'message', cb: (data: unknown) => void): void;
 }
 
 export function registerChatRoutes(app: FastifyInstance, deps: ChatDeps): void {
@@ -34,15 +43,33 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatDeps): void {
     },
   );
 
+  // NFR-07: WS kini WAJIB token (menutup lubang T-002auth). Sebelumnya `?tenantId=` dipakai
+  // MENTAH → siapa pun yang menjangkau API bisa membuka chat tenant lain. Browser tak bisa
+  // mengirim header Authorization di WS, jadi token lewat query — diverifikasi sama ketatnya.
+  // Mode dev (allowHeaderFallback) tetap menerima `?tenantId=`, sama seperti REST.
   app.get('/api/chat', { websocket: true }, (socket, req) => {
     const query = (req.query as ChatQuery | undefined) ?? {};
-    if (!query.tenantId || query.tenantId.length === 0) {
-      socket.close(1008, 'missing tenantId');
-      return;
-    }
-    const t = tenantId(query.tenantId);
 
-    if (query.conversationId) {
+    void app.resolveTenantWs(req).then((resolved) => {
+      if (!resolved.tenantId) {
+        // 1008 = policy violation.
+        socket.close(1008, 'unauthorized: token tidak valid');
+        return;
+      }
+      attachChat(app, socket, deps, resolved.tenantId, query);
+    });
+  });
+}
+
+// Dipisah agar rute WS hanya mengurus AUTH, dan sisanya (history + loop pesan) di sini.
+function attachChat(
+  app: FastifyInstance,
+  socket: WebSocketLike,
+  deps: ChatDeps,
+  t: TenantId,
+  query: ChatQuery,
+): void {
+  if (query.conversationId) {
       void deps.messages.findManyByConversation(t, query.conversationId).then((r) => {
         if (r.ok) {
           socket.send(
@@ -83,5 +110,4 @@ export function registerChatRoutes(app: FastifyInstance, deps: ChatDeps): void {
         );
       });
     });
-  });
 }

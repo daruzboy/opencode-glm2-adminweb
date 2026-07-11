@@ -46,6 +46,38 @@ export async function resolveTenant(
   return { tenantId: null, payload: null };
 }
 
+// Resolve tenant untuk WEBSOCKET (NFR-07 — menutup lubang T-002auth).
+//
+// Kenapa terpisah dari `resolveTenant`: browser TIDAK BISA mengirim header `Authorization`
+// saat membuka WebSocket. Karena itu WS dulu menerima `?tenantId=` MENTAH — artinya siapa
+// pun yang menjangkau API bisa membuka `?tenantId=<tenant lain>` dan MEMBACA/MENULIS chat
+// tenant lain. Token kini dikirim lewat query dan diverifikasi SAMA KETATNYA dengan REST;
+// `tenantId` query hanya diterima pada mode dev (fallback yang sama dengan header REST).
+export async function resolveTenantWs(
+  req: FastifyRequest,
+  auth: AuthPort | undefined,
+  allowFallback: boolean,
+): Promise<{ tenantId: TenantId | null; payload: AuthPayload | null }> {
+  const query = (req.query ?? {}) as { token?: string; tenantId?: string };
+
+  // Token boleh datang dari query (browser) ATAU header (klien non-browser).
+  const token = query.token ?? extractBearerToken(req.headers.authorization);
+  if (token && auth) {
+    const result = await auth.verifyToken(token);
+    // Token ADA tapi invalid → null. JANGAN jatuh ke `tenantId` query, agar token palsu
+    // tak bisa di-bypass hanya dengan menambahkan ?tenantId=.
+    if (!result.ok) return { tenantId: null, payload: null };
+    return { tenantId: result.value.tenantId, payload: result.value };
+  }
+
+  if (allowFallback || !auth) {
+    if (query.tenantId && query.tenantId.length > 0) {
+      return { tenantId: tenantId(query.tenantId), payload: null };
+    }
+  }
+  return { tenantId: null, payload: null };
+}
+
 export function registerAuthPlugin(app: FastifyInstance, options: AuthPluginOptions = {}): void {
   const { auth, allowHeaderFallback = false } = options;
 
@@ -54,10 +86,16 @@ export function registerAuthPlugin(app: FastifyInstance, options: AuthPluginOpti
   app.decorate('resolveTenant', (req: FastifyRequest) =>
     resolveTenant(req, auth, allowHeaderFallback),
   );
+  app.decorate('resolveTenantWs', (req: FastifyRequest) =>
+    resolveTenantWs(req, auth, allowHeaderFallback),
+  );
 }
 
 declare module 'fastify' {
   interface FastifyInstance {
+    resolveTenantWs(
+      req: FastifyRequest,
+    ): Promise<{ tenantId: TenantId | null; payload: AuthPayload | null }>;
     resolveTenant(req: FastifyRequest): Promise<{ tenantId: TenantId | null; payload: AuthPayload | null }>;
   }
 }

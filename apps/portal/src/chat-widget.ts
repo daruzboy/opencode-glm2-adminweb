@@ -68,6 +68,10 @@ export interface ChatTransport {
 
 export interface ChatWidgetConfig {
   readonly tenantId: string;
+  // NFR-07: JWT untuk WS & REST. Browser tak bisa mengirim header Authorization saat
+  // membuka WebSocket → token dikirim sebagai query. Tanpa token, server produksi menolak
+  // (1008); mode dev masih menerima tenantId mentah.
+  readonly token?: string;
   readonly conversationId?: string;
   readonly apiBaseUrl?: string;
   readonly wsBaseUrl?: string;
@@ -299,7 +303,10 @@ export function createBrowserChatTransport(
       if (!runtime.fetch) throw new Error('fetch tidak tersedia');
       const url = `${apiBaseUrl}/api/chat/${encodeURIComponent(args.conversationId)}/messages`;
       const response = await runtime.fetch(url, {
-        headers: { 'x-tenant-id': args.tenantId },
+        // Bearer bila token ada (produksi); x-tenant-id hanya berguna di mode dev.
+        headers: config.token
+          ? { authorization: `Bearer ${config.token}` }
+          : { 'x-tenant-id': args.tenantId },
       });
       if (!response.ok) throw new Error(`gagal memuat riwayat chat (${response.status})`);
       return parseMessageArray(await response.json());
@@ -307,6 +314,7 @@ export function createBrowserChatTransport(
     connect(args) {
       if (!runtime.WebSocket) throw new Error('WebSocket tidak tersedia');
       const params = new URLSearchParams({ tenantId: args.tenantId });
+      if (config.token) params.set('token', config.token);
       if (args.conversationId) params.set('conversationId', args.conversationId);
       const socket = new runtime.WebSocket(`${wsBaseUrl}/api/chat?${params.toString()}`);
       socket.onopen = args.onOpen;
