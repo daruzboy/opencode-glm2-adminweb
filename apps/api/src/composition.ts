@@ -12,6 +12,7 @@ import {
   createGlmJsonAdapter,
   createPrismaClient,
   createBullMqPublishQueue,
+  createBullMqChatInboundQueue,
   PreviewPortPrisma,
   PublishSourcePrisma,
   type ConversationDelegate,
@@ -27,6 +28,7 @@ import {
   createAgentReplier,
   createAgentToolRegistry,
   createSitebuilderApplyPatchTool,
+  createSitebuilderBuildSiteTool,
   createSitebuilderGetSiteOutlineTool,
   type BuildDeps,
   type ConversationReplier,
@@ -41,7 +43,7 @@ import type {
   LlmJsonPort,
   LlmUsageLoggerPort,
 } from '@digimaestro/shared';
-import { createSitebuilderBuildSiteTool } from './agent/build-site-tool.js';
+import type { TelegramWebhookDeps } from './channel/telegram-webhook.js';
 import type { ChatDeps } from './chat/handle-incoming.js';
 import type { PreviewDeps } from './preview/handle-preview.js';
 import type { PublishRequestDeps } from './publish/handle-publish.js';
@@ -144,6 +146,38 @@ export function createPublishRequestDeps(options: CreatePublishRequestDepsOption
   });
   const rootDomain = options.rootDomain ?? process.env.PUBLISH_BASE_DOMAIN ?? 'digimaestro.id';
   return { source, queue, rootDomain };
+}
+
+export interface CreateTelegramWebhookDepsOptions {
+  readonly redisUrl?: string;
+  readonly secretToken?: string;
+  readonly allowlistRaw?: string;
+}
+
+// Composition webhook Telegram (T-030tg): produsen antrean BullMQ `chat-inbound`.
+// TELEGRAM_WEBHOOK_SECRET wajib — endpoint webhook publik, dan header secret token adalah
+// satu-satunya bukti bahwa pemanggilnya benar Telegram. Menolak start lebih baik daripada
+// diam-diam menjalankan webhook yang bisa disuntik siapa saja.
+export function createTelegramWebhookDeps(
+  options: CreateTelegramWebhookDepsOptions = {},
+): TelegramWebhookDeps {
+  const secretToken = options.secretToken ?? process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!secretToken) {
+    throw new Error('TELEGRAM_WEBHOOK_SECRET wajib diisi untuk mengaktifkan webhook Telegram');
+  }
+  const url = new URL(options.redisUrl ?? process.env.REDIS_URL ?? 'redis://localhost:6379');
+  const queue = createBullMqChatInboundQueue({
+    host: url.hostname,
+    port: url.port ? Number(url.port) : 6379,
+    username: url.username || undefined,
+    password: url.password || undefined,
+    maxRetriesPerRequest: null,
+  });
+  return {
+    queue,
+    secretToken,
+    allowlistRaw: options.allowlistRaw ?? process.env.TELEGRAM_ALLOWLIST,
+  };
 }
 
 export interface CreateChatDepsOptions {

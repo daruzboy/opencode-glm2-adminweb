@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { tenantId, type AgentToolContext } from '@digimaestro/shared';
-import type { BuildDeps } from '@digimaestro/core';
+import type { BuildDeps } from '../builder/build-site.js';
 import { createSitebuilderBuildSiteTool, deriveSlug, parseBriefInput } from './build-site-tool.js';
 
 const TENANT = tenantId('t1');

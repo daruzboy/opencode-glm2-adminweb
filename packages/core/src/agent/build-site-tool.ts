@@ -1,11 +1,16 @@
 // T-053e: Tool agent `sitebuilder_build_site` — bungkus use case core buildSiteFromBrief
-// (T-053b) sebagai AgentToolDefinition. Diletakkan di composition root (apps/api) karena
-// menyatukan use case core + adapter repo/LLM; core builtin-tools tetap generik (port).
+// (T-053b) sebagai AgentToolDefinition.
 //
-// execute: parse brief dari argumen tool → resolve website tenant → buildSiteFromBrief →
-// Revision DRAFT pertama. Menutup jalur "situs baru" pada loop agent (interview→build).
+// T-030tg: dipindah dari apps/api ke core. Isinya murni (hanya Port + use case core), dan
+// sejak kanal Telegram hadir, agent loop dirakit di DUA composition root (api utk web chat,
+// worker utk pesan kanal) — tool yang tinggal di dalam salah satu app tak bisa dipakai app
+// lain. Tempatnya memang di core (apps/* = composition root saja, AGENTS.md §2).
+//
+// execute: parse brief dari argumen tool → resolve website tenant (auto-onboarding bila
+// belum ada) → buildSiteFromBrief → Revision DRAFT pertama.
 
-import { buildSiteFromBrief, type BuildDeps, type BuildResult, type InterviewBrief } from '@digimaestro/core';
+import { buildSiteFromBrief } from '../builder/build-site.js';
+import type { BuildDeps, BuildResult, InterviewBrief } from '../builder/build-site.js';
 import { err, ok } from '@digimaestro/shared';
 import type { AgentToolDefinition, AgentToolError, Result } from '@digimaestro/shared';
 

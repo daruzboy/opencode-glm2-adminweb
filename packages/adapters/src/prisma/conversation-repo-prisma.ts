@@ -6,6 +6,7 @@
 import type { Conversation as PrismaConversation } from '@prisma/client';
 import { err, ok } from '@digimaestro/shared';
 import type {
+  ConversationChannel,
   ConversationCreateInput,
   ConversationEntity,
   ConversationFilter,
@@ -21,13 +22,15 @@ import type {
 // struktural dgn prisma.conversation (method bivariance).
 export interface ConversationDelegate {
   findFirst(args: {
-    where: { tenantId: string; id: string };
+    where:
+      | { tenantId: string; id: string }
+      | { tenantId: string; channel: string; externalId: string };
   }): Promise<PrismaConversation | null>;
   findMany(args: {
     where: { tenantId: string; state?: string };
   }): Promise<PrismaConversation[]>;
   create(args: {
-    data: { tenantId: string; channel: string; state?: string };
+    data: { tenantId: string; channel: string; externalId?: string | null; state?: string };
   }): Promise<PrismaConversation>;
   // update tenant-scoped dipakai via updateMany (Prisma `update` menolak field
   // non-unik di `where`, padahal tenantId wajib di where untuk guard NFR-09).
@@ -44,6 +47,7 @@ function toEntity(row: PrismaConversation): ConversationEntity {
     id: row.id,
     tenantId: row.tenantId,
     channel: row.channel,
+    externalId: row.externalId,
     state: row.state,
     escalatedAt: row.escalatedAt ? row.escalatedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
@@ -72,6 +76,22 @@ export class ConversationRepositoryPrisma implements ConversationRepository {
     }
   }
 
+  // Resolusi percakapan kanal eksternal (T-030tg): (tenant, kanal, chat_id) → Conversation.
+  // tenantId disuntik ke `where` seperti method lain (NFR-09) — chat_id milik tenant lain
+  // tidak akan pernah terlihat di sini.
+  async findByExternalId(
+    tenantId: TenantId,
+    channel: ConversationChannel,
+    externalId: string,
+  ): Promise<Result<ConversationEntity | null, RepositoryError>> {
+    try {
+      const row = await this.delegate.findFirst({ where: { tenantId, channel, externalId } });
+      return ok(row ? toEntity(row) : null);
+    } catch (e) {
+      return err(toError(e));
+    }
+  }
+
   async findMany(
     tenantId: TenantId,
     filter?: ConversationFilter,
@@ -92,7 +112,12 @@ export class ConversationRepositoryPrisma implements ConversationRepository {
   ): Promise<Result<ConversationEntity, RepositoryError>> {
     try {
       const row = await this.delegate.create({
-        data: { tenantId, channel: input.channel, state: input.state },
+        data: {
+          tenantId,
+          channel: input.channel,
+          externalId: input.externalId ?? null,
+          state: input.state,
+        },
       });
       return ok(toEntity(row));
     } catch (e) {

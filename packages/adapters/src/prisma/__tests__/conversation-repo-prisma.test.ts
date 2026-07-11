@@ -151,3 +151,51 @@ describe('ConversationRepositoryPrisma.update — tenant-scoped (T-052)', () => 
     expect(updateMany).not.toHaveBeenCalled();
   });
 });
+
+// T-030tg: resolusi percakapan kanal eksternal (Telegram chat_id → Conversation).
+describe('ConversationRepositoryPrisma.findByExternalId — kanal eksternal', () => {
+  it('menyuntik tenantId + channel + externalId ke where (NFR-09)', async () => {
+    const findFirst = vi.fn().mockResolvedValue(row({ channel: 'TELEGRAM', externalId: '555' }));
+    const repo = new ConversationRepositoryPrisma(makeDelegate({ findFirst }));
+
+    const r = await repo.findByExternalId(tenantId('tA'), 'TELEGRAM', '555');
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { tenantId: 'tA', channel: 'TELEGRAM', externalId: '555' },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value?.externalId).toBe('555');
+  });
+
+  it('chat belum pernah menyapa → null (bukan error)', async () => {
+    const findFirst = vi.fn().mockResolvedValue(null);
+    const repo = new ConversationRepositoryPrisma(makeDelegate({ findFirst }));
+
+    const r = await repo.findByExternalId(tenantId('tA'), 'TELEGRAM', '999');
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toBeNull();
+  });
+
+  it('create menyimpan externalId (percakapan Telegram)', async () => {
+    const create = vi.fn().mockResolvedValue(row({ channel: 'TELEGRAM', externalId: '555' }));
+    const repo = new ConversationRepositoryPrisma(makeDelegate({ create }));
+
+    await repo.create(tenantId('tA'), { channel: 'TELEGRAM', externalId: '555' });
+
+    expect(create).toHaveBeenCalledWith({
+      data: { tenantId: 'tA', channel: 'TELEGRAM', externalId: '555', state: undefined },
+    });
+  });
+
+  it('create WEB tanpa externalId → null (tak bertabrakan di unique index)', async () => {
+    const create = vi.fn().mockResolvedValue(row({ channel: 'WEB' }));
+    const repo = new ConversationRepositoryPrisma(makeDelegate({ create }));
+
+    await repo.create(tenantId('tA'), { channel: 'WEB' });
+
+    expect(create).toHaveBeenCalledWith({
+      data: { tenantId: 'tA', channel: 'WEB', externalId: null, state: undefined },
+    });
+  });
+});

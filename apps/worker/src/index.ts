@@ -6,6 +6,8 @@
 import { pathToFileURL } from 'node:url';
 import type { Worker } from 'bullmq';
 import { createPublishDeps, createRedisConnection } from './composition.js';
+import { createInboundDeps } from './chat-composition.js';
+import { startChatInboundWorker } from './chat-inbound-worker.js';
 import { startPublishWorker } from './publish-worker.js';
 
 // Kontrak antrean publish untuk produsen job (mis. apps/api saat approve→publish).
@@ -13,6 +15,8 @@ export { PUBLISH_QUEUE } from './publish-job.js';
 export type { PublishQueueJob, PublishJobData, RollbackJobData } from './publish-job.js';
 export { startPublishWorker } from './publish-worker.js';
 export { createPublishDeps, createRedisConnection } from './composition.js';
+export { startChatInboundWorker } from './chat-inbound-worker.js';
+export { createInboundDeps, createTelegramChannel, createChatReplier } from './chat-composition.js';
 
 export const WORKER_NAME = 'digimaestro-worker';
 
@@ -27,17 +31,26 @@ export function startWorker(name: string = WORKER_NAME): WorkerHandle {
 
 // Proses long-running untuk kontainer: mulai konsumen BullMQ publish, lalu tunggu sinyal
 // shutdown & tutup worker dgn rapi (drain koneksi Redis). Konsumen AgentJob menyusul EPIC-05/06.
+//
+// T-030tg: konsumen `chat-inbound` (pesan Telegram → agent → balasan) menyala hanya bila
+// TELEGRAM_BOT_TOKEN diisi — worker publish tetap hidup di lingkungan tanpa kredensial bot.
 export async function runWorker(): Promise<void> {
   const handle = startWorker();
-  const publishWorker: Worker = startPublishWorker(createPublishDeps(), {
-    connection: createRedisConnection(),
-  });
+  const connection = createRedisConnection();
+  const workers: Worker[] = [startPublishWorker(createPublishDeps(), { connection })];
   console.log(`[${handle.name}] started — konsumen antrean 'publish' aktif (BullMQ).`);
+
+  if (process.env.TELEGRAM_BOT_TOKEN) {
+    workers.push(startChatInboundWorker(createInboundDeps(), { connection }));
+    console.log(`[${handle.name}] konsumen antrean 'chat-inbound' aktif (Telegram).`);
+  } else {
+    console.log(`[${handle.name}] TELEGRAM_BOT_TOKEN kosong — konsumen 'chat-inbound' dilewati.`);
+  }
 
   await new Promise<void>((resolve) => {
     const shutdown = (signal: NodeJS.Signals): void => {
       console.log(`[${handle.name}] ${signal} diterima — menutup worker...`);
-      void publishWorker.close().then(() => resolve());
+      void Promise.all(workers.map((w) => w.close())).then(() => resolve());
     };
     process.once('SIGTERM', () => shutdown('SIGTERM'));
     process.once('SIGINT', () => shutdown('SIGINT'));
