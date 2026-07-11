@@ -4,7 +4,7 @@
 
 import { z } from 'zod';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { handlePublishRequest, type PublishRequestDeps } from './handle-publish.js';
+import { handlePublishRequest, type PublishRequestDeps } from '@digimaestro/core';
 
 interface PublishParams {
   websiteId: string;

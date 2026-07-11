@@ -36,6 +36,29 @@ export interface InboundChannelMessage {
   // Referensi media di sisi penyedia (Telegram file_id). Unduhan → object storage = T-033.
   readonly mediaRef?: string;
   readonly senderName?: string;
+  // T-031tg — pengguna MENEKAN TOMBOL (type INTERACTIVE). Isi `action` (lihat
+  // ChannelAction) yang kita sendiri kirim di tombol; jangan pernah dipercaya mentah
+  // (bisa dipalsukan) → selalu divalidasi ulang terhadap DB tenant.
+  readonly callbackData?: string;
+  // Id callback query; WAJIB dijawab (answerCallback) atau tombol berputar terus di UI.
+  readonly callbackId?: string;
+}
+
+// ── Tombol interaktif (T-031tg, FR-CHN-002; alur approval-first BRU-02) ────────
+//
+// `action` masuk ke callback_data Telegram yang DIBATASI 64 byte → pakai bentuk pendek
+// `<verb>:<arg>`. websiteId tidak perlu ikut: satu website per tenant (BRU-01), jadi
+// tenant sudah menentukan website-nya.
+export interface ChannelButton {
+  readonly label: string;
+  readonly action: string;
+}
+
+// Batas keras Telegram untuk callback_data.
+export const CHANNEL_ACTION_MAX_BYTES = 64;
+
+export interface SendResult {
+  readonly providerMsgId: string;
 }
 
 export interface ChatInboundJob {
@@ -53,13 +76,18 @@ export interface ChatInboundQueuePort {
   enqueueInbound(job: ChatInboundJob): Promise<Result<EnqueueInboundResult, ChannelError>>;
 }
 
-export interface SendResult {
-  readonly providerMsgId: string;
-}
-
 // Pengirim pesan keluar. Disuntik ke use case percakapan (core) → balasan agent terkirim
 // tanpa core mengenal Telegram. `to` = externalId (chat_id) kanal terkait.
 export interface ChannelPort {
   readonly channel: ConversationChannel;
   sendText(to: string, text: string): Promise<Result<SendResult, ChannelError>>;
+  // Pesan + tombol (T-031tg). Kanal tanpa dukungan tombol boleh mem-fallback ke teks.
+  sendButtons(
+    to: string,
+    text: string,
+    buttons: readonly ChannelButton[],
+  ): Promise<Result<SendResult, ChannelError>>;
+  // Wajib dipanggil setelah menangani penekanan tombol: Telegram menampilkan spinner di
+  // tombol sampai callback query dijawab. `notice` = toast singkat di UI (opsional).
+  answerCallback(callbackId: string, notice?: string): Promise<Result<void, ChannelError>>;
 }

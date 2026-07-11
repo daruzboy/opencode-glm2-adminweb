@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ok, type PublishSourcePort, type PublishQueuePort } from '@digimaestro/shared';
 import { buildServer } from '../../index.js';
-import type { PublishRequestDeps } from '../handle-publish.js';
+import type { PublishRequestDeps } from '@digimaestro/core';
 
 const source: PublishSourcePort = {
   async getPublishSource(_t, input) {

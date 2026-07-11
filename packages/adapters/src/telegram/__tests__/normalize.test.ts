@@ -110,3 +110,47 @@ describe('telegram normalize — media & non-pesan', () => {
     expect(telegramUpdateSchema.safeParse({ message: {} }).success).toBe(false);
   });
 });
+
+// T-031tg: penekanan tombol.
+describe('telegram normalize — callback_query (tombol)', () => {
+  it('tap tombol → INTERACTIVE + callbackData + callbackId', () => {
+    const msg = toInboundMessage(
+      parse({
+        update_id: 10,
+        callback_query: {
+          id: 'cb-abc',
+          from: { first_name: 'Darusman' },
+          data: 'pub:2',
+          message: { message_id: 5, chat: { id: 8037867441 } },
+        },
+      }),
+    );
+
+    expect(msg).toEqual({
+      channel: 'TELEGRAM',
+      externalId: '8037867441',
+      providerMsgId: 'tg-cb-cb-abc',
+      type: 'INTERACTIVE',
+      callbackId: 'cb-abc',
+      callbackData: 'pub:2',
+      senderName: 'Darusman',
+    });
+  });
+
+  // providerMsgId dari id callback → tap dua kali di-dedup lewat unique constraint.
+  it('dua tap berbeda → providerMsgId berbeda', () => {
+    const a = toInboundMessage(
+      parse({ update_id: 1, callback_query: { id: 'x1', data: 'pub:1', message: { message_id: 1, chat: { id: 1 } } } }),
+    );
+    const b = toInboundMessage(
+      parse({ update_id: 2, callback_query: { id: 'x2', data: 'pub:1', message: { message_id: 1, chat: { id: 1 } } } }),
+    );
+    expect(a?.providerMsgId).not.toBe(b?.providerMsgId);
+  });
+
+  it('callback tanpa message (tak ada chat tujuan) → null', () => {
+    expect(
+      toInboundMessage(parse({ update_id: 3, callback_query: { id: 'y', data: 'pub:1' } })),
+    ).toBeNull();
+  });
+});

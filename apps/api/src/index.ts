@@ -18,7 +18,7 @@ import { registerPublishRoutes } from './publish/routes.js';
 import type { TelegramWebhookDeps } from './channel/telegram-webhook.js';
 import type { ChatDeps } from './chat/handle-incoming.js';
 import type { PreviewDeps } from './preview/handle-preview.js';
-import type { PublishRequestDeps } from './publish/handle-publish.js';
+import type { PublishRequestDeps } from '@digimaestro/core';
 import type { AuthDeps } from './composition.js';
 import Fastify, { type FastifyInstance } from 'fastify';
 import websocket from '@fastify/websocket';

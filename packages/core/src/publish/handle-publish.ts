@@ -1,5 +1,10 @@
-// Use case publish request (T-063, BRU-02 approval-first; FR-PUB-004). Memanggil endpoint ini
-// = persetujuan eksplisit klien untuk mempublikasikan sebuah revisi. Konten diambil dari DB
+// Use case publish request (T-063, BRU-02 approval-first; FR-PUB-004). Memanggil use case ini
+// = persetujuan eksplisit klien untuk mempublikasikan sebuah revisi — lewat rute HTTP (portal)
+// MAUPUN lewat tombol "Setuju & publish" di chat (T-031tg).
+//
+// T-031tg: dipindah dari apps/api ke core. Isinya murni (Port saja) dan kini dipakai DUA
+// composition root (api utk rute HTTP, worker utk tombol kanal) — AGENTS.md §2: apps/* =
+// composition root saja. Konten diambil dari DB
 // tepercaya (PublishSourcePort, tenant-scoped) — BUKAN dari body — lalu di-enqueue ke worker
 // (PublishQueuePort). Bergantung hanya pada Port → diuji dengan fake tanpa DB/Redis.
 

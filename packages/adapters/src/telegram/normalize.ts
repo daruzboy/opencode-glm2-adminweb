@@ -32,19 +32,46 @@ const messageSchema = z.object({
   location: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
 });
 
+// T-031tg: penekanan tombol inline. `data` = callback_data yang KITA kirim di tombol —
+// tetap diperlakukan sebagai input tak tepercaya (pengguna bisa mengarangnya via Bot API).
+const callbackQuerySchema = z.object({
+  id: z.string(),
+  from: fromSchema,
+  data: z.string().optional(),
+  message: z.object({ message_id: z.number(), chat: chatSchema }).optional(),
+});
+
 export const telegramUpdateSchema = z.object({
   update_id: z.number(),
   message: messageSchema.optional(),
   edited_message: messageSchema.optional(),
+  callback_query: callbackQuerySchema.optional(),
 });
 
 export type TelegramUpdate = z.infer<typeof telegramUpdateSchema>;
 type TelegramMessage = z.infer<typeof messageSchema>;
 
-// Update yang bukan pesan (callback_query, my_chat_member, channel_post, …) → null.
-// Bot tetap balas 200 ke Telegram; mengabaikan diam-diam lebih baik daripada error
-// karena Telegram akan me-retry update yang gagal berulang kali.
+// Update yang bukan pesan/tombol (my_chat_member, channel_post, …) → null. Bot tetap
+// balas 200 ke Telegram; mengabaikan diam-diam lebih baik daripada error karena Telegram
+// akan me-retry update yang gagal berulang kali.
 export function toInboundMessage(update: TelegramUpdate): InboundChannelMessage | null {
+  const cb = update.callback_query;
+  if (cb) {
+    // Tanpa chat, balasan tak punya tujuan → tak bisa diproses.
+    if (!cb.message) return null;
+    return {
+      channel: 'TELEGRAM',
+      externalId: String(cb.message.chat.id),
+      // Id callback query unik global di Telegram → dedup penekanan tombol ganda
+      // (pengguna menekan dua kali / Telegram mengirim ulang) lewat providerMsgId @unique.
+      providerMsgId: `tg-cb-${cb.id}`,
+      type: 'INTERACTIVE',
+      callbackId: cb.id,
+      ...(cb.data !== undefined ? { callbackData: cb.data } : {}),
+      ...(cbSenderName(cb) !== undefined ? { senderName: cbSenderName(cb) } : {}),
+    };
+  }
+
   const msg = update.message ?? update.edited_message;
   if (!msg) return null;
 
@@ -79,4 +106,8 @@ function classify(msg: TelegramMessage): { type: MessageType; mediaRef?: string 
 
 function senderName(msg: TelegramMessage): string | undefined {
   return msg.from?.first_name ?? msg.from?.username;
+}
+
+function cbSenderName(cb: z.infer<typeof callbackQuerySchema>): string | undefined {
+  return cb.from?.first_name ?? cb.from?.username;
 }
