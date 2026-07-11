@@ -109,18 +109,18 @@ export function composeAgentPlan(
       // T-053e: interview kini boleh memakai tool sitebuilder — setelah brief cukup, agent
       // memanggil `sitebuilder_build_site` untuk membuat DRAFT (approval-first tetap terjaga:
       // draft ≠ publish). Situs baru jadi bisa dibangun langsung dari alur wawancara.
-      return { system: AGENT_SYSTEM_PROMPTS.interview, task: 'interview', scopes: ['sitebuilder'], maxTokens: 512 };
+      return { system: AGENT_SYSTEM_PROMPTS.interview, task: 'interview', scopes: ['sitebuilder'], maxTokens: 2048 };
     case 'HANDLE_REVISION':
       return {
         system: AGENT_SYSTEM_PROMPTS.revision,
         task: 'revision_patch',
         scopes: ['sitebuilder'],
-        maxTokens: 768,
+        maxTokens: 2560,
       };
     case 'REPORT_STATUS':
-      return { system: AGENT_SYSTEM_PROMPTS.status, task: 'intent', scopes: ['ops'], maxTokens: 384 };
+      return { system: AGENT_SYSTEM_PROMPTS.status, task: 'intent', scopes: ['ops'], maxTokens: 1536 };
     case 'FALLBACK':
-      return { system: AGENT_SYSTEM_PROMPTS.fallback, task: 'interview', scopes: [], maxTokens: 384 };
+      return { system: AGENT_SYSTEM_PROMPTS.fallback, task: 'interview', scopes: [], maxTokens: 1536 };
   }
 }
 
