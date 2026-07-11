@@ -64,3 +64,30 @@ export interface SubdomainResult {
 export interface SubdomainPort {
   ensureSubdomain(input: SubdomainProvision): Promise<Result<SubdomainResult, PublishError>>;
 }
+
+// ── Bentuk URL situs klien (T-063p) ───────────────────────────────────────────
+// Dua mode, sengaja eksplisit karena menentukan wujud produk di mata pelanggan:
+//
+//   'subdomain' → https://<slug>.digimaestro.id  (FR-PUB-004b; butuh cPanel UAPI +
+//                 AutoSSL per subdomain)
+//   'path'      → https://digimaestro.id/<slug>/ (tak butuh UAPI sama sekali; memakai
+//                 sertifikat domain utama yang sudah aktif)
+//
+// Mode 'path' ada karena kenyataan hosting: akun FTP deploy di-chroot ke document root
+// domain utama, jadi folder <slug> di sana LANGSUNG tayang ber-HTTPS tanpa provisioning
+// apa pun. Itu membuat pipeline publish bisa dibuktikan utuh sebelum akses UAPI tersedia.
+export type PublishUrlMode = 'subdomain' | 'path';
+
+export const DEFAULT_PUBLISH_URL_MODE: PublishUrlMode = 'subdomain';
+
+export function parsePublishUrlMode(value: string | undefined): PublishUrlMode {
+  return value === 'path' ? 'path' : DEFAULT_PUBLISH_URL_MODE;
+}
+
+// Satu sumber kebenaran bentuk URL — dipakai produsen job (core) MAUPUN adapter deploy,
+// supaya URL yang dijanjikan ke pengguna dan URL yang diverifikasi tak pernah berbeda.
+export function publicSiteUrl(slug: string, rootDomain: string, mode: PublishUrlMode): string {
+  return mode === 'path'
+    ? `https://${rootDomain}/${slug}/`
+    : `https://${slug}.${rootDomain}`;
+}

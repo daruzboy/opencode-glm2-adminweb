@@ -15,6 +15,7 @@ import {
   createCpanelUapiSubdomain,
   createSsh2SftpDeployClient,
 } from '@digimaestro/adapters';
+import { parsePublishUrlMode } from '@digimaestro/shared';
 import type { ArtifactStorePort, DeployPort, SubdomainPort } from '@digimaestro/shared';
 import type { ConnectionOptions } from 'bullmq';
 import type { PublishDeps } from './publish.js';
@@ -44,6 +45,8 @@ export interface PublishEnv {
   readonly CPANEL_FTP_SECURE?: string;
   readonly CPANEL_FTP_REJECT_UNAUTHORIZED?: string;
   readonly CPANEL_DOCROOT_TEMPLATE?: string;
+  // 'path' → situs tayang di https://<domain>/<slug>/ (tanpa subdomain & UAPI).
+  readonly PUBLISH_URL_MODE?: string;
   // Subdomain cPanel UAPI (FR-PUB-004b). Bila HOST+USER+(TOKEN|PASSWORD) → SubdomainPort.
   readonly CPANEL_UAPI_HOST?: string;
   readonly CPANEL_UAPI_PORT?: string;
@@ -79,6 +82,7 @@ export function createArtifactStore(env: PublishEnv): ArtifactStorePort {
 export function createDeploy(env: PublishEnv): DeployPort {
   const baseDomain = env.PUBLISH_BASE_DOMAIN ?? DEFAULTS.baseDomain;
   const docrootTemplate = env.CPANEL_DOCROOT_TEMPLATE;
+  const urlMode = parsePublishUrlMode(env.PUBLISH_URL_MODE);
 
   if (env.CPANEL_SFTP_HOST && env.CPANEL_SFTP_USER) {
     const client = createSsh2SftpDeployClient({
@@ -89,7 +93,7 @@ export function createDeploy(env: PublishEnv): DeployPort {
       privateKey: env.CPANEL_SFTP_KEY_PATH ? readFileSync(env.CPANEL_SFTP_KEY_PATH) : undefined,
       passphrase: env.CPANEL_SFTP_PASSPHRASE,
     });
-    return new CpanelSftpDeploy(client, { baseDomain, docrootTemplate });
+    return new CpanelSftpDeploy(client, { baseDomain, docrootTemplate, urlMode });
   }
 
   if (env.CPANEL_FTP_HOST && env.CPANEL_FTP_USER) {
@@ -101,7 +105,7 @@ export function createDeploy(env: PublishEnv): DeployPort {
       secure: env.CPANEL_FTP_SECURE ? env.CPANEL_FTP_SECURE !== 'false' : undefined,
       rejectUnauthorized: env.CPANEL_FTP_REJECT_UNAUTHORIZED ? env.CPANEL_FTP_REJECT_UNAUTHORIZED !== 'false' : undefined,
     });
-    return new CpanelFtpDeploy(client, { baseDomain, docrootTemplate });
+    return new CpanelFtpDeploy(client, { baseDomain, docrootTemplate, urlMode });
   }
 
   return new LocalFilesystemDeploy({

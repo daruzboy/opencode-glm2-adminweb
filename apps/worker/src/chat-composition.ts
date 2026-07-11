@@ -53,7 +53,12 @@ import {
   siteDocumentSchema,
   siteDraftSchema,
 } from '@digimaestro/sites-kit';
-import { BUILD_LLM_TIMEOUT_MS, DEFAULT_DEEPSEEK_MODEL, tenantId } from '@digimaestro/shared';
+import {
+  BUILD_LLM_TIMEOUT_MS,
+  DEFAULT_DEEPSEEK_MODEL,
+  parsePublishUrlMode,
+  tenantId,
+} from '@digimaestro/shared';
 import type { ChannelPort, ConversationRepository, LlmJsonPort } from '@digimaestro/shared';
 import type { PublishNotifier } from './publish-worker.js';
 import type { PollerHandle } from '@digimaestro/adapters';
@@ -64,6 +69,7 @@ export interface ChatWorkerEnv {
   readonly PREVIEW_TOKEN_SECRET?: string;
   readonly PUBLIC_API_URL?: string;
   readonly PUBLISH_BASE_DOMAIN?: string;
+  readonly PUBLISH_URL_MODE?: string;
   readonly CHANNEL_RATE_LIMIT?: string;
   readonly CHANNEL_RATE_WINDOW_MS?: string;
   readonly TELEGRAM_MODE?: string;
@@ -209,6 +215,7 @@ export function createApprovalDeps(env: ChatWorkerEnv = process.env): ApprovalDe
       source,
       queue,
       rootDomain: env.PUBLISH_BASE_DOMAIN ?? 'digimaestro.id',
+      urlMode: parsePublishUrlMode(env.PUBLISH_URL_MODE),
     },
     ...(previewUrl ? { previewUrl } : {}),
   };

@@ -21,6 +21,8 @@ export interface PublishJobRequest {
   readonly siteDocument: unknown;
   readonly docroot?: string;
   readonly rootDomain?: string;
+  // Bentuk URL yang dijanjikan ke pengguna → worker memverifikasi URL yang SAMA.
+  readonly urlMode?: 'subdomain' | 'path';
 }
 
 export interface EnqueueResult {

@@ -2,8 +2,8 @@
 // MURNI atas interface sempit `RemoteDeployClient` (bukan vendor) → offline-testable.
 // Deploy bersih ala rsync --delete: upload rilis baru + hapus file usang (incl. nested).
 
-import { err, ok } from '@digimaestro/shared';
-import type { DeployResult, DeployTarget, DeployableFile, PublishError, Result } from '@digimaestro/shared';
+import { err, ok, publicSiteUrl } from '@digimaestro/shared';
+import type { DeployResult, DeployTarget, DeployableFile, PublishError, PublishUrlMode, Result } from '@digimaestro/shared';
 
 // Interface sempit ke transport remote (SFTP/FTP). Path remote pakai '/' (POSIX).
 export interface RemoteDeployClient {
@@ -23,6 +23,8 @@ export interface RemoteDeployClient {
 export interface RemoteDeployOptions {
   // Domain dasar utk URL hasil (mis. 'digimaestro.id' → https://<slug>.digimaestro.id).
   readonly baseDomain: string;
+  // 'path' → https://<domain>/<slug>/ (tanpa subdomain/UAPI). Default 'subdomain'.
+  readonly urlMode?: PublishUrlMode;
   // Template docroot remote per slug; '{slug}' diganti slug. Default 'public_html/{slug}'.
   readonly docrootTemplate?: string;
 }
@@ -98,7 +100,8 @@ export async function deployToRemote(
 
     await client.end();
     connected = false;
-    return ok({ url: `https://${input.target.slug}.${options.baseDomain}`, fileCount: input.files.length });
+    const url = publicSiteUrl(input.target.slug, options.baseDomain, options.urlMode ?? 'subdomain');
+    return ok({ url, fileCount: input.files.length });
   } catch (e) {
     if (connected) {
       try {
