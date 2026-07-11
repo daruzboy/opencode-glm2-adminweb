@@ -60,15 +60,26 @@ export function createSitebuilderBuildSiteTool(deps: BuildDeps): AgentToolDefini
       const brief = parseBriefInput(input);
       if (!brief.ok) return brief;
 
-      const website = await deps.websites.findByTenantId(context.tenantId);
-      if (!website.ok) return err({ code: 'UNKNOWN', message: website.error.message });
-      if (!website.value) {
-        return err({ code: 'NOT_FOUND', message: 'Website untuk tenant ini belum ada (perlu onboarding).' });
+      // Onboarding otomatis (opsi A): tenant baru belum punya Website → buat (DRAFTING)
+      // dgn slug dari nama usaha, agar loop chat→bangun jalan tanpa langkah onboarding manual.
+      const existing = await deps.websites.findByTenantId(context.tenantId);
+      if (!existing.ok) return err({ code: 'UNKNOWN', message: existing.error.message });
+      let websiteId: string;
+      if (existing.value) {
+        websiteId = existing.value.id;
+      } else {
+        const created = await deps.websites.create(context.tenantId, {
+          slug: deriveSlug(brief.value.businessName),
+        });
+        if (!created.ok) {
+          return err({ code: 'UNKNOWN', message: `gagal membuat website: ${created.error.message}` });
+        }
+        websiteId = created.value.id;
       }
 
       const built = await buildSiteFromBrief(deps, {
         tenantId: context.tenantId,
-        websiteId: website.value.id,
+        websiteId,
         brief: brief.value,
       });
       if (!built.ok) {
@@ -78,4 +89,17 @@ export function createSitebuilderBuildSiteTool(deps: BuildDeps): AgentToolDefini
       return ok(built.value);
     },
   };
+}
+
+// Slug situs dari nama usaha: kebab-case + sufiks acak pendek (slug @unique global).
+export function deriveSlug(businessName: string): string {
+  const base =
+    businessName
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'situs';
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `${base}-${suffix}`;
 }
