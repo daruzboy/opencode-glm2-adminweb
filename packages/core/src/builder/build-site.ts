@@ -52,9 +52,17 @@ export interface BuildDeps {
   readonly llm: LlmJsonPort;
   readonly revisions: RevisionRepository;
   readonly websites: WebsiteRepository;
-  // Schema validasi Site Document (dari sites-kit, di-inject di composition root).
-  // LLM adapter memakai safeParse untuk self-repair bila output tak valid.
+  // T-053g: schema DRAFT (title/themeId/pages) — bagian yang boleh dikarang LLM.
+  // BUKAN Site Document utuh: websiteId & design token diisi kode (lihat assembleDoc).
+  // Sebelumnya schema utuh dipakai sebagai target LLM → validasi selalu gagal (LLM tak
+  // mungkin tahu websiteId, dan token harus deterministik dari tema) → situs tak pernah
+  // terbangun. Ditemukan saat uji bot NYATA.
   readonly siteDocSchema: LlmJsonSchema<unknown>;
+  // Rakit dokumen final dari draft LLM: suntik websiteId + token tema (sites-kit).
+  // Di-inject agar core tak bergantung sites-kit (dependency rule AGENTS.md §3).
+  readonly assembleDoc: (draft: unknown, websiteId: string) => unknown;
+  // Nilai sah (tema & tipe section) untuk disisipkan ke prompt.
+  readonly catalog?: SiteCatalog;
 }
 
 export interface BuildRequest {
@@ -75,14 +83,59 @@ export interface BuildResult {
 
 export const DEFAULT_BUILD_SYSTEM_PROMPT = [
   'Kamu adalah desainer website profesional untuk UMKM Indonesia.',
-  'Tugasmu: ubah brief wawancara klien menjadi Site Document JSON lengkap.',
+  'Tugasmu: ubah brief wawancara klien menjadi DRAFT situs dalam JSON.',
   'Aturan:',
   '- Bahasa seluruh konten: Indonesia santai-profesional.',
-  '- Pilih section yang relevan untuk jenis usaha ini (minimum: Hero, Tentang, Layanan, Kontak).',
   '- Tulis copywriting konkret (bukan placeholder) berdasarkan info brief.',
-  '- Format: { "name": string, "theme": string, "pages": [{ "slug": string, "title": string, "sections": [{ "type": string, "variant": string, "props": object }] }] }',
-  '- Jika info kurang, isi dengan teks wajar yang bisa direvisi nanti.',
+  '- Pilih section yang relevan untuk jenis usaha ini (minimum: hero, about, services, contact).',
+  '- Halaman pertama WAJIB ber-slug "index" (beranda).',
+  '',
+  'Format JSON yang WAJIB diikuti:',
+  '{ "title": string, "themeId": string, "pages": [ { "slug": string (kebab-case), "title": string, "sections": [ { "type": string, "variant": string, "props": object } ] } ] }',
+  '',
+  'JANGAN menyertakan "websiteId" maupun "tokens" — keduanya diisi sistem, bukan kamu.',
+  // themeId & tipe/varian section di-inject dari registry sites-kit (bukan dihafal di sini)
+  // supaya prompt tak pernah lagi menyimpang dari schema yang memvalidasinya.
 ].join('\n');
+
+// Prompt sistem + daftar tema & section yang SAH menurut registry. Nilai di luar daftar
+// akan ditolak schema → self-repair boros token; lebih baik model diberi tahu di awal.
+export function buildSystemPrompt(catalog: SiteCatalog): string {
+  const sections = Object.entries(catalog.sections)
+    .map(([type, variants]) => `- ${type}: variant ${variants.join(' | ')}`)
+    .join('\n');
+
+  const lines = [
+    DEFAULT_BUILD_SYSTEM_PROMPT,
+    '',
+    `themeId yang tersedia (pilih SATU): ${catalog.themeIds.join(', ')}`,
+    '',
+    'type section & variant yang SAH (pakai PERSIS salah satunya):',
+    sections,
+  ];
+
+  if (catalog.draftJsonSchema) {
+    lines.push(
+      '',
+      'Output HARUS lolos JSON Schema berikut (perhatikan field wajib tiap props —',
+      'mis. image WAJIB punya "alt"). Jangan menambah field di luar schema:',
+      JSON.stringify(catalog.draftJsonSchema),
+    );
+  }
+
+  return lines.join('\n');
+}
+
+// Katalog nilai sah dari sites-kit, di-inject (core tak boleh import sites-kit).
+// `sections` memetakan type → varian yang SAH. Varian wajib disebut eksplisit: model tak
+// bisa menebaknya ("default" bukan varian sah untuk type mana pun) dan schema akan menolak.
+export interface SiteCatalog {
+  readonly themeIds: readonly string[];
+  readonly sections: Readonly<Record<string, readonly string[]>>;
+  // JSON Schema draft (dari sites-kit). Diberikan ke model supaya ia tak menebak bentuk
+  // props tiap section — tebakan itulah yang bikin build gagal berulang di uji nyata.
+  readonly draftJsonSchema?: unknown;
+}
 
 const BUILD_TASK: LlmTask = 'site_plan';
 
@@ -98,7 +151,9 @@ export async function buildSiteFromBrief(
   }
 
   // 2. Generate Site Document via LLM.
-  const system = req.systemPrompt ?? DEFAULT_BUILD_SYSTEM_PROMPT;
+  const system =
+    req.systemPrompt ??
+    (deps.catalog ? buildSystemPrompt(deps.catalog) : DEFAULT_BUILD_SYSTEM_PROMPT);
   const userMessage = formatBriefForLlm(req.brief);
   const messages: readonly LlmChatMessage[] = [{ role: 'user', content: userMessage }];
 
@@ -116,11 +171,14 @@ export async function buildSiteFromBrief(
     return err({ code: 'LLM_FAILED', message: llmResult.error.message });
   }
 
-  // 3. Persist sebagai Revision (status DRAFT).
+  // 3. Rakit Site Document final: draft LLM + websiteId (dari kita) + token tema.
+  const siteDoc = deps.assembleDoc(llmResult.value, req.websiteId);
+
+  // 4. Persist sebagai Revision (status DRAFT).
   const summary = generateSummary(req.brief);
   const created = await deps.revisions.create(req.tenantId, {
     websiteId: req.websiteId,
-    siteDoc: llmResult.value,
+    siteDoc,
     summary,
     status: 'DRAFT',
     createdBy: 'agent',

@@ -163,3 +163,84 @@ describe('createAgentReplier', () => {
     expect(String(seenTenant)).toBe('tA');
   });
 });
+
+// T-053f — DITEMUKAN SAAT UJI BOT NYATA: agent amnesia. Pengguna menyebut "Sate Pak Dar"
+// di pesan #1; di pesan #2 agent menjawab "Nama usaha: Belum disebut". Wawancara
+// slot-filling (FR-CNV-003) tak akan pernah selesai → situs tak pernah terbangun.
+// Unit test lama tak menangkapnya karena tiap tes cuma mengirim SATU pesan.
+describe('createAgentReplier — riwayat percakapan (anti-amnesia)', () => {
+  function historyDeps(rows: unknown[]) {
+    const captured: { history?: readonly { role: string; content: string }[] } = {};
+    const llm = {
+      completeWithTools: vi.fn(
+        async (req: { messages: readonly { role: string; content: string }[] }) => {
+          // messages = system + history + userMessage
+          captured.history = req.messages.filter((m) => m.role !== 'system');
+          return ok({ kind: 'text' as const, content: 'oke' });
+        },
+      ),
+    };
+    const deps = {
+      router: { conversations: { findById: vi.fn(async () => ok(null)), update: vi.fn() } },
+      messages: { findManyByConversation: vi.fn(async () => ok(rows)) },
+      loop: { llm, tools: createAgentToolRegistry([]) },
+    } as never;
+    return { deps, captured };
+  }
+
+  function row(direction: 'IN' | 'OUT', text: string) {
+    return { id: text, tenantId: 't1', conversationId: 'c1', direction, type: 'TEXT', text, mediaId: null, providerMsgId: text, status: 'SENT', createdAt: '' };
+  }
+
+  it('pesan sebelumnya diteruskan ke LLM sebagai history user/assistant', async () => {
+    const { deps, captured } = historyDeps([
+      row('IN', 'warungku namanya Sate Pak Dar'),
+      row('OUT', 'Halo! Mau website seperti apa?'),
+      row('IN', 'warna merah kuning'),
+    ]);
+
+    await createAgentReplier(deps).reply({
+      tenantId: tenantId('t1'),
+      conversationId: 'c1',
+      text: 'warna merah kuning',
+    });
+
+    const roles = captured.history?.map((m) => m.role);
+    const contents = captured.history?.map((m) => m.content) ?? [];
+    // Nama usaha dari pesan #1 HARUS sampai ke LLM.
+    expect(contents.some((c) => c.includes('Sate Pak Dar'))).toBe(true);
+    expect(roles).toContain('assistant'); // balasan bot sebelumnya ikut → konteks utuh
+  });
+
+  // Kalau tidak dibuang, teks yang sama muncul dua kali (di history & sebagai userMessage).
+  it('pesan yang sedang diproses tidak diduplikasi ke history', async () => {
+    const { deps, captured } = historyDeps([row('IN', 'halo'), row('IN', 'pesan sekarang')]);
+
+    await createAgentReplier(deps).reply({
+      tenantId: tenantId('t1'),
+      conversationId: 'c1',
+      text: 'pesan sekarang',
+    });
+
+    const sekarang = (captured.history ?? []).filter((m) => m.content === 'pesan sekarang');
+    expect(sekarang).toHaveLength(1);
+  });
+
+  it('tanpa repo messages → tetap membalas (history opsional)', async () => {
+    const llm = {
+      completeWithTools: vi.fn(async () => ok({ kind: 'text' as const, content: 'oke' })),
+    };
+    const deps = {
+      router: { conversations: { findById: vi.fn(async () => ok(null)), update: vi.fn() } },
+      loop: { llm, tools: createAgentToolRegistry([]) },
+    } as never;
+
+    const res = await createAgentReplier(deps).reply({
+      tenantId: tenantId('t1'),
+      conversationId: 'c1',
+      text: 'halo',
+    });
+
+    expect(res.ok).toBe(true);
+  });
+});

@@ -39,6 +39,7 @@ function makeDeps(impl: {
       name: 'WebsiteRepository',
     } as unknown as WebsiteRepository,
     siteDocSchema: PERMISSIVE_SCHEMA,
+    assembleDoc: (draft: unknown, websiteId: string) => ({ ...(draft as object), websiteId }),
   };
 }
 
