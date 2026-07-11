@@ -8,6 +8,7 @@
 // ulang foto yang sama, dan Telegram memberi file_id yang stabil untuk itu.
 
 import { err, ok } from '@digimaestro/shared';
+import { MEDIA_MAX_PER_TENANT } from '@digimaestro/shared';
 import type {
   MediaAssetEntity,
   MediaDownloadPort,
@@ -22,6 +23,8 @@ import type {
 
 export interface IngestMediaDeps {
   readonly download: MediaDownloadPort;
+  // P1 (audit): kuota foto per tenant. Default MEDIA_MAX_PER_TENANT.
+  readonly maxPerTenant?: number;
   readonly processor: MediaProcessorPort;
   readonly store: MediaStorePort;
   readonly media: MediaRepository;
@@ -52,15 +55,28 @@ export async function ingestMedia(
   if (!existing.ok) return err(existing.error);
   if (existing.value) return ok({ asset: existing.value, deduped: true });
 
-  // 2) Unduh dari kanal.
+  // 2) Kuota (P1 audit) — diperiksa SEBELUM mengunduh: percuma menarik & memproses foto
+  //    yang memang tak akan disimpan. Tanpa batas, satu tenant bisa memenuhi kuota hosting
+  //    shared yang dipakai bersama SEMUA situs klien.
+  const quota = deps.maxPerTenant ?? MEDIA_MAX_PER_TENANT;
+  const all = await deps.media.findMany(req.tenantId);
+  if (!all.ok) return err(all.error);
+  if (all.value.length >= quota) {
+    return err({
+      code: 'QUOTA',
+      message: `kuota foto tercapai (${all.value.length}/${quota}) untuk tenant ini`,
+    });
+  }
+
+  // 3) Unduh dari kanal.
   const downloaded = await deps.download.download(req.mediaRef);
   if (!downloaded.ok) return err(downloaded.error);
 
-  // 3) Optimasi (FR-MED-002): foto ponsel 4000px/5MB → WebP ≤1600px.
+  // 4) Optimasi (FR-MED-002): foto ponsel 4000px/5MB → WebP ≤1600px.
   const optimized = await deps.processor.optimize(downloaded.value);
   if (!optimized.ok) return err(optimized.error);
 
-  // 4) Simpan → URL publik (dipakai <img src> galeri).
+  // 5) Simpan → URL publik (dipakai <img src> galeri).
   const filename = deps.filename(optimized.value.bytes, optimized.value.contentType);
   const stored = await deps.store.store({
     tenantId: req.tenantId,
@@ -70,7 +86,7 @@ export async function ingestMedia(
   });
   if (!stored.ok) return err(stored.error);
 
-  // 5) Catat (tenant-scoped).
+  // 6) Catat (tenant-scoped).
   const created = await deps.media.create(req.tenantId, {
     providerFileId: req.mediaRef,
     storageKey: stored.value.key,

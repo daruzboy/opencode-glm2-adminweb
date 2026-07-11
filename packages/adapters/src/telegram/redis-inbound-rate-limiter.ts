@@ -31,6 +31,9 @@ export interface InboundRateLimitOptions {
   // Pesan per jendela, per tenant.
   readonly limit: number;
   readonly windowMs: number;
+  // Prefix kunci Redis. `in` = pesan masuk (gerbang biaya LLM); `out` = pesan keluar
+  // (menahan banjir & 429 Telegram). Dipisah agar kuota keduanya tak saling makan.
+  readonly keyPrefix?: string;
   readonly logger?: { error(msg: string): void };
 }
 
@@ -49,7 +52,8 @@ export class RedisInboundRateLimiter implements InboundRateLimiterPort {
 
     try {
       const client = await this.getClient();
-      const key = `rl:in:${tenantId}`;
+      const prefix = this.options.keyPrefix ?? 'in';
+      const key = `rl:${prefix}:${tenantId}`;
 
       const count = await client.incr(key);
       // Set TTL hanya pada hit PERTAMA → jendela tetap (fixed window) yang tak pernah
@@ -61,7 +65,7 @@ export class RedisInboundRateLimiter implements InboundRateLimiterPort {
 
       // Melewati batas. Peringatkan HANYA sekali per jendela — kalau tiap pesan spam
       // dibalas peringatan, kita ikut membanjiri pengguna (dan membakar kuota kirim).
-      const first = await client.set(`rl:warn:${tenantId}`, '1', 'PX', windowMs, 'NX');
+      const first = await client.set(`rl:warn:${prefix}:${tenantId}`, '1', 'PX', windowMs, 'NX');
       return { allowed: false, shouldWarn: first === 'OK', retryAfterSec };
     } catch (e) {
       // FAIL-OPEN yang disengaja: Redis tersendat → jangan matikan bot. Aman karena kalau
