@@ -359,7 +359,13 @@ async function resolveReplyText(
     return inboundFallbackReply();
   }
   const result = await deps.reply.reply({ tenantId, conversationId, text });
-  if (result.ok) return result.value.text;
+  // Teks kosong tak pernah boleh dikirim: kanal menolaknya (Telegram: "message text is
+  // empty") → pesan GAGAL & pengguna ditinggal bisu. Ditemukan saat bot dipakai sungguhan.
+  if (result.ok && result.value.text.trim().length > 0) return result.value.text;
+  if (result.ok) {
+    deps.logger?.error('[chat] agent membalas teks kosong — memakai fallback');
+    return inboundFallbackReply();
+  }
 
   // Ditemukan saat uji nyata: API key LLM kosong → agent gagal tiap pesan → pengguna cuma
   // melihat "aku lagi tersendat" tanpa satu pun petunjuk di log. Sebabnya HARUS terlihat.

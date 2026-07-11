@@ -183,6 +183,20 @@ export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
       // protokol tool_calls — terjadi saat tools dimatikan tapi prompt masih menyuruhnya.
       // Markup vendor BERHENTI di adapter; jangan pernah bocor ke pengguna.
       const raw = choice.message?.content ?? '';
+
+      // Model kadang membalas content kosong/null (mis. ia "ingin" memanggil tool tapi
+      // tools sedang dimatikan). Mengirim teks kosong = pesan GAGAL: Telegram menolak
+      // sendMessage tanpa isi, dan pengguna tak menerima apa-apa. Perlakukan sebagai
+      // balasan tak sah agar pemanggil memakai fallback yang sopan.
+      if (raw.trim().length === 0) {
+        return err({
+          code: 'PROVIDER',
+          message: 'model membalas teks kosong',
+          retryable: false,
+          attempt,
+        });
+      }
+
       if (!containsToolMarkup(raw)) return ok({ kind: 'text', content: raw });
 
       const cleaned = stripToolMarkup(raw);

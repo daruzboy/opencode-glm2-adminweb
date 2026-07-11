@@ -244,3 +244,42 @@ describe('createAgentReplier — riwayat percakapan (anti-amnesia)', () => {
     expect(res.ok).toBe(true);
   });
 });
+
+// DITEMUKAN SAAT BOT DIPAKAI SUNGGUHAN (wawancara "Siramaja"): pelanggan menjawab singkat
+// ("Betul", "Cara 2 saja", "1. Belum punya") → router keyword tak mengenali intent →
+// FALLBACK → prompt "TOLAK permintaan di luar lingkup" + scopes:[] (agent kehilangan SEMUA
+// tool) → model bingung → balas TEKS KOSONG → percakapan mati di tengah wawancara.
+//
+// Router sebenarnya sudah menghitung state dengan benar; replier membuangnya (mengoper
+// 'ONBOARDING' hardcoded) dan composeAgentPlan mengabaikannya (_state).
+describe('composeAgentPlan — hormati state percakapan', () => {
+  it('FALLBACK saat INTERVIEW → lanjutkan wawancara, tools TETAP ADA', () => {
+    const plan = composeAgentPlan('FALLBACK', 'INTERVIEW', 'Cara 2 saja');
+
+    expect(plan.scopes).toContain('sitebuilder');
+    // Jangan pakai prompt penolakan di tengah wawancara.
+    expect(plan.system).not.toContain('Tolak dengan sopan');
+  });
+
+  it('FALLBACK saat ONBOARDING → wawancara (bukan penolakan)', () => {
+    const plan = composeAgentPlan('FALLBACK', 'ONBOARDING', 'Betul');
+    expect(plan.scopes).toContain('sitebuilder');
+  });
+
+  it('FALLBACK saat REVIEW → jalur revisi (pelanggan sedang menilai draft)', () => {
+    const plan = composeAgentPlan('FALLBACK', 'REVIEW', 'yang itu aja');
+    expect(plan.scopes).toContain('sitebuilder');
+  });
+
+  // FALLBACK memang benar saat pelanggan TIDAK sedang di tengah alur.
+  it('FALLBACK saat IDLE → tetap prompt penolakan sopan (FR-CNV-008)', () => {
+    const plan = composeAgentPlan('FALLBACK', 'IDLE', 'ramalan cuaca dong');
+
+    expect(plan.scopes).toHaveLength(0);
+    expect(plan.system).toContain('Tolak dengan sopan');
+  });
+
+  it('aksi eksplisit tidak terpengaruh state', () => {
+    expect(composeAgentPlan('REPORT_STATUS', 'INTERVIEW', 'status?').scopes).toContain('ops');
+  });
+});

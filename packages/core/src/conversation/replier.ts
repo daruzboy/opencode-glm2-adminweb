@@ -82,7 +82,28 @@ export const AGENT_SYSTEM_PROMPTS = Object.freeze({
     'butuh manusia, katakan akan diteruskan ke operator.',
 });
 
-export function composeAgentPlan(action: RouterAction, _state: ConversationState, _text: string): AgentPlan {
+// State percakapan yang sedang BERJALAN (pelanggan di tengah alur, bukan menganggur).
+const ACTIVE_STATES: readonly ConversationState[] = ['ONBOARDING', 'INTERVIEW', 'BUILDING', 'REVIEW'];
+
+export function composeAgentPlan(
+  action: RouterAction,
+  state: ConversationState,
+  _text: string,
+): AgentPlan {
+  // FALLBACK dari router = "intent tak dikenali" (router berbasis kata kunci). Di TENGAH
+  // alur yang sedang berjalan itu hampir selalu SALAH: jawaban singkat pelanggan seperti
+  // "Betul", "Cara 2 saja", "1. Belum punya" tak mengandung kata kunci apa pun.
+  //
+  // Ditemukan saat bot dipakai sungguhan: pesan-pesan itu jatuh ke prompt fallback yang
+  // menyuruh model "tolak permintaan di luar lingkup" DAN scopes:[] (agent kehilangan
+  // semua tool) → model bingung → membalas TEKS KOSONG → percakapan mati di tengah
+  // wawancara. Selama percakapan masih aktif, lanjutkan konteksnya alih-alih menolak.
+  if (action === 'FALLBACK' && ACTIVE_STATES.includes(state)) {
+    return state === 'REVIEW' || state === 'BUILDING'
+      ? composeAgentPlan('HANDLE_REVISION', state, _text)
+      : composeAgentPlan('START_INTERVIEW', state, _text);
+  }
+
   switch (action) {
     case 'START_INTERVIEW':
       // T-053e: interview kini boleh memakai tool sitebuilder — setelah brief cukup, agent
@@ -128,16 +149,22 @@ export function createAgentReplier(deps: AgentReplierDeps): ConversationReplier 
     async reply(req) {
       // 1) Routing (best-effort: kegagalan tidak mematikan balasan).
       let action: RouterAction = DEFAULT_ROUTER_ACTION;
+      // State percakapan NYATA. Sebelumnya replier mengoper 'ONBOARDING' hardcoded dan
+      // composeAgentPlan mengabaikannya (_state) — jadi state tak pernah berpengaruh.
+      let state: ConversationState = 'ONBOARDING';
       const routed = await advanceConversation(deps.router, {
         tenantId: req.tenantId,
         conversationId: req.conversationId,
         text: req.text,
         jobId: req.jobId,
       });
-      if (routed.ok) action = routed.value.action;
+      if (routed.ok) {
+        action = routed.value.action;
+        state = routed.value.state;
+      }
 
       // 2) Rencana agent berdasarkan aksi.
-      const plan = composeAgentPlan(action, 'ONBOARDING', req.text);
+      const plan = composeAgentPlan(action, state, req.text);
 
       // 3) Riwayat percakapan → agent ingat apa yang sudah dibahas (best-effort:
       //    kegagalan memuat riwayat tak boleh mematikan balasan).
