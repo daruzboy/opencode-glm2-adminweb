@@ -6,7 +6,12 @@
 import { pathToFileURL } from 'node:url';
 import type { Worker } from 'bullmq';
 import { createPublishDeps, createRedisConnection } from './composition.js';
-import { createInboundDeps, createPublishNotifier, startPoller } from './chat-composition.js';
+import {
+  createAlert,
+  createInboundDeps,
+  createPublishNotifier,
+  startPoller,
+} from './chat-composition.js';
 import { startChatInboundWorker } from './chat-inbound-worker.js';
 import { startPublishWorker } from './publish-worker.js';
 
@@ -17,6 +22,7 @@ export { startPublishWorker } from './publish-worker.js';
 export { createPublishDeps, createRedisConnection } from './composition.js';
 export { startChatInboundWorker } from './chat-inbound-worker.js';
 export {
+  createAlert,
   createInboundDeps,
   createPublishNotifier,
   createTelegramChannel,
@@ -46,19 +52,32 @@ export async function runWorker(): Promise<void> {
   // T-032tg: notifier mengabari pengguna di chat saat situsnya live / gagal terbit.
   // undefined tanpa TELEGRAM_BOT_TOKEN → publish tetap jalan, hanya tanpa kabar.
   const notifier = createPublishNotifier();
+  // T-070: alert operasional ke PO (job dead-letter, bot mati, pesan gagal diproses).
+  const alert = createAlert();
   const workers: Worker[] = [
-    startPublishWorker(createPublishDeps(), { connection, ...(notifier ? { notifier } : {}) }),
+    startPublishWorker(createPublishDeps(), {
+      connection,
+      ...(notifier ? { notifier } : {}),
+      ...(alert ? { alert } : {}),
+    }),
   ];
+  if (alert) console.log(`[${handle.name}] alert operasional AKTIF.`);
+  else console.log(`[${handle.name}] alert operasional tidak aktif (ALERT_TELEGRAM_CHAT_ID kosong).`);
   console.log(`[${handle.name}] started — konsumen antrean 'publish' aktif (BullMQ).`);
 
   let poller: ReturnType<typeof startPoller>;
   if (process.env.TELEGRAM_BOT_TOKEN) {
-    workers.push(startChatInboundWorker(createInboundDeps(), { connection }));
+    workers.push(
+      startChatInboundWorker(createInboundDeps(), {
+        connection,
+        ...(alert ? { alert } : {}),
+      }),
+    );
     console.log(`[${handle.name}] konsumen antrean 'chat-inbound' aktif (Telegram).`);
 
     // TELEGRAM_MODE=polling → kita yang menarik update dari Telegram (VPS tanpa domain
     // publik). Tanpa itu, update masuk lewat webhook di apps/api.
-    poller = startPoller();
+    poller = startPoller(process.env, alert);
     if (poller) console.log(`[${handle.name}] long-polling Telegram aktif (tanpa webhook).`);
   } else {
     console.log(`[${handle.name}] TELEGRAM_BOT_TOKEN kosong — konsumen 'chat-inbound' dilewati.`);

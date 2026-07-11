@@ -11,12 +11,15 @@
 import { Worker, type ConnectionOptions } from 'bullmq';
 import { handleInboundMessage, type InboundDeps } from '@digimaestro/core';
 import { CHAT_INBOUND_QUEUE_NAME, tenantId, type ChatInboundJob } from '@digimaestro/shared';
+import type { AlertPort } from '@digimaestro/shared';
 import type { Logger } from './publish-observability.js';
 
 export interface ChatInboundWorkerOptions {
   readonly connection: ConnectionOptions;
   readonly concurrency?: number;
   readonly logger?: Logger;
+  // T-070: pesan pelanggan yang gagal diproses = pelanggan diabaikan.
+  readonly alert?: AlertPort;
 }
 
 export function startChatInboundWorker(
@@ -61,6 +64,20 @@ export function startChatInboundWorker(
 
   worker.on('failed', (job, err) => {
     logger.error(`[chat-inbound] job ${job?.id ?? '?'} gagal: ${err.message}`);
+
+    // Hanya saat retry HABIS — kegagalan transien tak perlu membangunkan PO.
+    const habis = (job?.attemptsMade ?? 0) >= (job?.opts?.attempts ?? 1);
+    if (habis && options.alert) {
+      void options.alert
+        .notify({
+          key: 'chat-inbound-failed',
+          severity: 'error',
+          title: 'Pesan pelanggan GAGAL diproses',
+          detail: err.message,
+          context: { jobId: String(job?.id ?? '?'), tenant: String(job?.data?.tenantId ?? '?') },
+        })
+        .catch(() => undefined);
+    }
   });
 
   return worker;
