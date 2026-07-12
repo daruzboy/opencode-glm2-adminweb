@@ -1,13 +1,21 @@
-// T-080slice: Integration test dengan PostgreSQL nyata (NFR-11). Dijalankan HANYA bila
-// env RUN_INTEGRATION_TESTS=1 & DATABASE_URL tersedia. CI menjalankan step terpisah
-// setelah migrate deploy. Tujuan: buktikan mapping Prisma + tenant guard $extends
-// terhadap DB asli (bukan mock).
+// T-080: Integration test dengan PostgreSQL NYATA (NFR-11) — membuktikan mapping Prisma +
+// tenant guard $extends terhadap DB asli, bukan mock.
 //
-// Cara jalankan lokal:
-//   docker run -d --name pg-test -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16
+// UTANG YANG DIBAYAR (dua bug yang membuat test ini BOHONG):
+//   1. Di-gate `RUN_INTEGRATION_TESTS=1` yang TAK PERNAH diset di CI → SELALU di-skip.
+//      CI "hijau" selama berbulan-bulan tanpa test ini pernah benar-benar jalan.
+//   2. Setup/teardown memakai `createPrismaClient()` (ber-tenantGuard) → `deleteMany()`
+//      TANPA `where` melanggar guard → `TenantGuardError`. Jadi seandainya flag-nya
+//      dinyalakan pun, test ini TETAP gagal.
+//
+// Perbaikan: klien BERSIH (tanpa guard) untuk setup/teardown — guard memang HARUS menolak
+// query tanpa tenantId, itu fiturnya. Klien BER-GUARD tetap dipakai untuk menguji guardnya.
+// CI kini menjalankannya (Postgres service + DATABASE_URL sudah ada di workflow).
+//
+// Jalankan lokal:
 //   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/digimaestro \
 //   RUN_INTEGRATION_TESTS=1 pnpm --filter @digimaestro/adapters exec vitest run \
-//   src/prisma/__tests__/repo-integration.test.ts
+//     src/prisma/__tests__/repo-integration.test.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
@@ -17,27 +25,50 @@ import { WebsiteRepositoryPrisma } from '../website-repo-prisma.js';
 import { RevisionRepositoryPrisma } from '../revision-repo-prisma.js';
 import { createPrismaClient } from '../client.js';
 
-const RUN = process.env.RUN_INTEGRATION_TESTS === '1';
+// Jalan bila DATABASE_URL ada (CI menyediakannya) ATAU flag eksplisit. Sebelumnya HANYA
+// flag → dan flag itu tak pernah diset di CI, jadi test ini tak pernah jalan sama sekali.
+const RUN = process.env.RUN_INTEGRATION_TESTS === '1' || Boolean(process.env.DATABASE_URL);
 
-describe.skipIf(!RUN)('Integration: Repository + Tenant Guard (real PostgreSQL)', () => {
+// Setup/teardown WAJIB memakai klien TANPA guard: `deleteMany()` tanpa `where` memang
+// dilarang guard — itu FITUR (NFR-09), bukan bug. Memakai klien ber-guard di sini justru
+// membuktikan kita salah paham terhadap guard buatan sendiri.
+async function bersihkan(db: PrismaClient): Promise<void> {
+  // Urutan: anak → induk (FK).
+  await db.llmUsage.deleteMany();
+  await db.mediaAsset.deleteMany();
+  await db.message.deleteMany();
+  await db.conversation.deleteMany();
+  await db.revision.deleteMany();
+  await db.website.deleteMany();
+  await db.tenant.deleteMany();
+}
+
+describe.skipIf(!RUN)('Integration: Repository + Tenant Guard (PostgreSQL NYATA)', () => {
+  // Ber-guard → dipakai MENGUJI guard & repo (jalur produksi).
   let prisma: PrismaClient;
+  // Tanpa guard → hanya untuk setup/teardown.
+  let raw: PrismaClient;
 
   beforeAll(async () => {
+    // PENGAMAN anti "hijau bohong": bila seseorang MENYURUH test ini jalan
+    // (RUN_INTEGRATION_TESTS=1) tapi DATABASE_URL hilang, GAGAL keras — jangan diam-diam
+    // di-skip lagi seperti dulu. Skip yang tak terlihat itulah yang membuat CI berbohong
+    // selama berbulan-bulan.
+    if (process.env.RUN_INTEGRATION_TESTS === '1' && !process.env.DATABASE_URL) {
+      throw new Error(
+        'RUN_INTEGRATION_TESTS=1 tapi DATABASE_URL kosong — integration test TIDAK boleh di-skip diam-diam',
+      );
+    }
+    raw = new PrismaClient();
     prisma = createPrismaClient();
-    // Bersihkan data test.
-    await prisma.message.deleteMany();
-    await prisma.conversation.deleteMany();
-    await prisma.revision.deleteMany();
-    await prisma.website.deleteMany();
-    await prisma.tenant.deleteMany();
+    await bersihkan(raw);
   });
 
   afterAll(async () => {
-    await prisma?.message.deleteMany();
-    await prisma?.conversation.deleteMany();
-    await prisma?.revision.deleteMany();
-    await prisma?.website.deleteMany();
-    await prisma?.tenant.deleteMany();
+    if (raw) {
+      await bersihkan(raw);
+      await raw.$disconnect();
+    }
     await prisma?.$disconnect();
   });
 
@@ -150,6 +181,61 @@ describe.skipIf(!RUN)('Integration: Repository + Tenant Guard (real PostgreSQL)'
       const fromB = await rRepo.findLatest(tenantId(tB.id), wA.id);
       expect(fromB.ok).toBe(true);
       if (fromB.ok) expect(fromB.value).toBeNull();
+    });
+  });
+  // Guard NFR-09 terhadap DB NYATA: yang diuji unit-test cuma "repo menyuntik tenantId".
+  // Di sini kita buktikan guard runtime ($extends) benar-benar MENOLAK query telanjang —
+  // pertahanan terakhir bila suatu saat ada kode yang memakai prisma mentah.
+  describe('Tenant guard runtime ($extends) — DB nyata', () => {
+    it('query tanpa tenantId LEWAT klien ber-guard → DITOLAK', async () => {
+      await expect(
+        // deleteMany tanpa where = persis pola yang dulu membuat test ini gagal.
+        (prisma as unknown as { conversation: { deleteMany: () => Promise<unknown> } }).conversation.deleteMany(),
+      ).rejects.toThrow();
+    });
+
+    it('klien BERSIH (tanpa guard) boleh — dipakai HANYA untuk setup/teardown', async () => {
+      await expect(raw.conversation.deleteMany()).resolves.toBeDefined();
+    });
+  });
+
+  // Dedup idempotensi kanal (FR-CHN-005) bertumpu pada constraint DB, bukan cek-lalu-tulis.
+  // Ini HANYA bisa dibuktikan terhadap Postgres nyata.
+  describe('Constraint DB yang menopang idempotensi — DB nyata', () => {
+    it('providerMsgId @unique → pesan duplikat DITOLAK DB (dasar dedup webhook)', async () => {
+      const t = await raw.tenant.create({ data: { name: 'T-Dedup', slug: 'tenant-dedup' } });
+      const conv = await raw.conversation.create({
+        data: { tenantId: t.id, channel: 'TELEGRAM', externalId: '555' },
+      });
+      const pesan = {
+        tenantId: t.id,
+        conversationId: conv.id,
+        direction: 'IN' as const,
+        type: 'TEXT' as const,
+        providerMsgId: 'tg-555-42',
+        status: 'DELIVERED' as const,
+      };
+
+      await raw.message.create({ data: pesan });
+      // Kiriman ulang webhook dgn providerMsgId sama → constraint menolak.
+      await expect(raw.message.create({ data: pesan })).rejects.toThrow();
+    });
+
+    it('Conversation @@unique(tenantId, channel, externalId) → chat sama tak dobel', async () => {
+      const t = await raw.tenant.create({ data: { name: 'T-Conv', slug: 'tenant-conv' } });
+      const data = { tenantId: t.id, channel: 'TELEGRAM' as const, externalId: '777' };
+
+      await raw.conversation.create({ data });
+      await expect(raw.conversation.create({ data })).rejects.toThrow();
+    });
+
+    it('Website.tenantId @unique → satu website per tenant (BRU-01)', async () => {
+      const t = await raw.tenant.create({ data: { name: 'T-Web', slug: 'tenant-web' } });
+
+      await raw.website.create({ data: { tenantId: t.id, slug: 'situs-satu' } });
+      await expect(
+        raw.website.create({ data: { tenantId: t.id, slug: 'situs-dua' } }),
+      ).rejects.toThrow();
     });
   });
 });
