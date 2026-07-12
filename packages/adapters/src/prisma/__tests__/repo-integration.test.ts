@@ -24,6 +24,11 @@ import { ConversationRepositoryPrisma } from '../conversation-repo-prisma.js';
 import { WebsiteRepositoryPrisma } from '../website-repo-prisma.js';
 import { RevisionRepositoryPrisma } from '../revision-repo-prisma.js';
 import { createPrismaClient } from '../client.js';
+import {
+  ChannelBindingPrisma,
+  InviteCodePrisma,
+  QuotaPrisma,
+} from '../onboarding-prisma.js';
 
 // Jalan bila DATABASE_URL ada (CI menyediakannya) ATAU flag eksplisit. Sebelumnya HANYA
 // flag → dan flag itu tak pernah diset di CI, jadi test ini tak pernah jalan sama sekali.
@@ -34,6 +39,7 @@ const RUN = process.env.RUN_INTEGRATION_TESTS === '1' || Boolean(process.env.DAT
 // membuktikan kita salah paham terhadap guard buatan sendiri.
 async function bersihkan(db: PrismaClient): Promise<void> {
   // Urutan: anak → induk (FK).
+  await db.channelBinding.deleteMany();
   await db.llmUsage.deleteMany();
   await db.mediaAsset.deleteMany();
   await db.message.deleteMany();
@@ -41,6 +47,7 @@ async function bersihkan(db: PrismaClient): Promise<void> {
   await db.revision.deleteMany();
   await db.website.deleteMany();
   await db.tenant.deleteMany();
+  await db.inviteCode.deleteMany();
 }
 
 describe.skipIf(!RUN)('Integration: Repository + Tenant Guard (PostgreSQL NYATA)', () => {
@@ -236,6 +243,86 @@ describe.skipIf(!RUN)('Integration: Repository + Tenant Guard (PostgreSQL NYATA)
       await expect(
         raw.website.create({ data: { tenantId: t.id, slug: 'situs-dua' } }),
       ).rejects.toThrow();
+    });
+  });
+
+  // Self-serve (#6): DUA operasi yang WAJIB atomik. Mock TIDAK BISA membuktikan ini —
+  // hanya DB nyata dengan operasi paralel yang bisa.
+  describe('Self-serve: atomisitas kode undangan & kuota — DB nyata', () => {
+    it('kode maxUses=1 ditukar 5x PARALEL → HANYA 1 yang berhasil', async () => {
+      const invites = new InviteCodePrisma(raw as never);
+      await raw.inviteCode.create({ data: { code: 'RACE1', maxUses: 1 } });
+
+      // Cek-lalu-tulis akan meloloskan beberapa di sini. UPDATE bersyarat tidak.
+      const hasil = await Promise.all([
+        invites.redeem('RACE1'),
+        invites.redeem('RACE1'),
+        invites.redeem('RACE1'),
+        invites.redeem('RACE1'),
+        invites.redeem('RACE1'),
+      ]);
+
+      expect(hasil.filter((r) => r.ok)).toHaveLength(1);
+      expect(hasil.filter((r) => !r.ok)).toHaveLength(4);
+    });
+
+    it('kuota 3 pesan, 10 konsumsi PARALEL → berhenti tepat di 3', async () => {
+      const q = new QuotaPrisma(raw as never);
+      const t = await raw.tenant.create({
+        data: { name: 'T-Kuota', slug: 'tenant-kuota', quotaMessages: 3, usedMessages: 0 },
+      });
+
+      await Promise.all(Array.from({ length: 10 }, () => q.consume(t.id as never)));
+
+      const after = await raw.tenant.findUnique({ where: { id: t.id } });
+      // DB yang jadi wasit (WHERE used < quota), bukan kode kita.
+      expect(after?.usedMessages).toBe(3);
+    });
+
+    it('kuota habis → check() menolak dgn reason MESSAGES', async () => {
+      const q = new QuotaPrisma(raw as never);
+      const t = await raw.tenant.create({
+        data: { name: 'T-Habis', slug: 'tenant-habis', quotaMessages: 1, usedMessages: 1 },
+      });
+
+      const d = await q.check(t.id as never);
+
+      expect(d.ok).toBe(true);
+      if (d.ok) {
+        expect(d.value.allowed).toBe(false);
+        expect(d.value.reason).toBe('MESSAGES');
+      }
+    });
+
+    it('trial kedaluwarsa → ditolak walau kuota pesan masih ada', async () => {
+      const q = new QuotaPrisma(raw as never);
+      const t = await raw.tenant.create({
+        data: {
+          name: 'T-Expired',
+          slug: 'tenant-expired',
+          quotaMessages: 100,
+          usedMessages: 0,
+          trialEndsAt: new Date(Date.now() - 1000),
+        },
+      });
+
+      const d = await q.check(t.id as never);
+
+      expect(d.ok && d.value.reason).toBe('TRIAL_EXPIRED');
+    });
+
+    it('binding chat → tenant: chat sama tak bisa dipetakan 2x (unique)', async () => {
+      const b = new ChannelBindingPrisma(raw as never);
+      const t = await raw.tenant.create({ data: { name: 'T-Bind', slug: 'tenant-bind' } });
+
+      await b.bind(t.id as never, 'TELEGRAM', '999');
+      const lagi = await b.bind(t.id as never, 'TELEGRAM', '999');
+
+      // Race dua pesan pertama → P2002 diperlakukan sebagai "sudah terikat", bukan error.
+      expect(lagi.ok).toBe(true);
+
+      const r = await b.resolve('TELEGRAM', '999');
+      expect(r.ok && r.value).toBe(t.id);
     });
   });
 });

@@ -110,6 +110,18 @@ export {
   type ConversationReplierRequest,
 } from './conversation/replier.js';
 
+// Self-serve onboarding + kuota (langkah #6 roadmap).
+export {
+  registerFromInvite,
+  parseInviteCode,
+  needsCodeReply,
+  invalidCodeReply,
+  registeredReply,
+  type RegisterDeps,
+  type RegisterOutcome,
+  type RegisterRequest,
+} from './onboarding/register-tenant.js';
+
 // Aksi tombol interaktif kanal (T-031tg, FR-CHN-002).
 export {
   encodeChannelAction,
@@ -164,6 +176,7 @@ export {
   mediaFailedReply,
   mediaQuotaReply,
   mediaReceivedReply,
+  quotaExhaustedReply,
   rateLimitedReply,
   unsupportedTypeReply,
   type ApprovalDeps,

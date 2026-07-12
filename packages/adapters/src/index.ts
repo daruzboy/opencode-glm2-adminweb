@@ -80,6 +80,7 @@ export * from './media/telegram-media-download.js';
 export * from './media/sharp-media-processor.js';
 export * from './media/ftps-media-store.js';
 export * from './prisma/media-repo-prisma.js';
+export * from './prisma/onboarding-prisma.js';
 export * from './telegram/normalize.js';
 export * from './telegram/allowlist.js';
 export * from './telegram/telegram-channel.js';

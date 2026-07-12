@@ -11,6 +11,7 @@
 import { Worker, type ConnectionOptions } from 'bullmq';
 import { handleInboundMessage, type InboundDeps } from '@digimaestro/core';
 import { CHAT_INBOUND_QUEUE_NAME, tenantId, type ChatInboundJob } from '@digimaestro/shared';
+import type { InboundChannelMessage } from '@digimaestro/shared';
 import type { AlertPort } from '@digimaestro/shared';
 import type { Logger } from './publish-observability.js';
 
@@ -20,6 +21,14 @@ export interface ChatInboundWorkerOptions {
   readonly logger?: Logger;
   // T-070: pesan pelanggan yang gagal diproses = pelanggan diabaikan.
   readonly alert?: AlertPort;
+  // Self-serve (#6): chat yang BELUM dikenal → jalur pendaftaran (kode undangan).
+  // TANPA memanggil LLM — jalur ini terbuka bagi siapa pun yang menemukan bot.
+  readonly registration?: RegistrationHandler;
+}
+
+// Menangani chat tak dikenal. Dipisah dari InboundDeps karena ia bekerja SEBELUM tenant ada.
+export interface RegistrationHandler {
+  handle(message: InboundChannelMessage): Promise<void>;
 }
 
 export function startChatInboundWorker(
@@ -32,6 +41,17 @@ export function startChatInboundWorker(
     CHAT_INBOUND_QUEUE_NAME,
     async (job) => {
       const { tenantId: tid, message } = job.data;
+
+      // Chat belum terikat ke tenant → PENDAFTARAN, bukan percakapan. LLM tidak disentuh.
+      if (!tid) {
+        if (!options.registration) {
+          logger.error('[chat-inbound] chat tak dikenal & pendaftaran tak aktif — diabaikan');
+          return { conversationId: '', duplicate: false };
+        }
+        await options.registration.handle(message);
+        return { conversationId: '', duplicate: false };
+      }
+
       const result = await handleInboundMessage(deps, {
         tenantId: tenantId(tid),
         message,
