@@ -12,7 +12,8 @@
 - Lokal: `C:\Users\daruzboy\Documents\A_PROJECT\02_digimaestro\glm2-adminweb`
 - Produk: **digimaestro.id** (platform website builder chatbot & agentic AI untuk UMKM)
 - Pemilik/PO: Darusman · Model coding agent: GLM 5.2 · QA: TestSprite
-- Terakhir diperbarui: 2026-07-11 (sinkron dgn `main` @ `82a0776`, PR #51–#62)
+- Terakhir diperbarui: 2026-07-12 (sinkron dgn `main`, PR #51–#70)
+- **Peta jalan ke "100% siap dijual": lihat §7.** Status: Fase 0 ~80% · siap-jual ~40%.
 
 ---
 
@@ -683,6 +684,43 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   webhook **fail-closed** (tanpa secret → rute tak dipasang, terbukti 404 di live); allowlist fail-closed;
   idempotensi bertumpu constraint DB; `callback_data` divalidasi ketat; TLS diverifikasi penuh.
 
+### Jalan menuju "siap dijual" (setelah gerbang Fase 0) — lihat peta jalan §7
+- ✅ **T-002auth-ws** Auth WebSocket (**PR #67**, `b7be2d6`, 2026-07-11; NFR-07). **LUBANG
+  KEAMANAN NYATA yang ditutup:** rute WS `/api/chat` menerima `?tenantId=` MENTAH → siapa pun
+  yang menjangkau API bisa MEMBACA & MENULIS chat tenant lain. REST sudah tegak sejak
+  T-002auth-wiring; WS tertinggal. Tak tereksploitasi hanya karena port di-bind ke Tailscale —
+  bukan karena kodenya aman; begitu API dibuka publik (WAJIB untuk WABA) langsung terbuka.
+  Browser tak bisa kirim header `Authorization` di WS → token lewat query, diverifikasi SAMA
+  KETATNYA. Token invalid TIDAK jatuh ke `?tenantId=` (kalau jatuh, token palsu bisa di-bypass
+  dgn menambah ?tenantId=<korban>). Mode dev tak berubah.
+- ✅ **T-082** Laporan biaya AI per tenant (**PR #68**, `a734ded`, 2026-07-11) + **DUA BUG
+  PENCATATAN**: (1) biaya SELALU $0 — JSON adapter `inputTokenCostPer1M ?? 0`, composition tak
+  pernah mengisinya → 123.790 token tercatat $0.0000; (2) **chat TIDAK TERCATAT SAMA SEKALI** —
+  agent adapter mendukung usageLogger tapi TAK PERNAH disuntik → hanya `site_plan` punya baris;
+  percakapan (MAYORITAS pemakaian) nol. Harga TIDAK di-hardcode (berubah & beda per model;
+  salah menebak = laporan menyesatkan) → dari env; 0 = "belum dikonfigurasi", DITANDAI. Biaya
+  dihitung dari TOKEN × harga terkini, bukan kolom `cost` historis → menyelamatkan data lama.
+  `GET /api/usage` (tenant sendiri, dari TOKEN) & `GET /api/admin/usage` (lintas tenant; DUA
+  syarat: ADMIN_TENANT_ID + role OWNER; tanpa env → rute tak dipasang; ditolak → 404 bukan 403).
+- ✅ **T-073** Backup Postgres + runbook restore TERUJI (**PR #69**, `eaaa67c`, 2026-07-11).
+  Sebelumnya **NOL backup** — VPS/disk hilang = SEMUA tenant/situs/percakapan/foto hilang
+  permanen. Dua lapis: dump lokal harian (retensi 14 hr) + off-site TERENKRIPSI ke cPanel.
+  **Off-site WAJIB AES-256** karena akun FTP di-chroot ke DOCUMENT ROOT → apa pun yang diunggah
+  BISA DIAKSES PUBLIK; dump mentah di sana = membocorkan seluruh data pelanggan. Script mencegah
+  KEGAGALAN DIAM-DIAM: dump <1KB → gagal keras; dump diverifikasi TERBACA `pg_restore --list`;
+  restore default ke DB UJI; menimpa produksi butuh `CONFIRM=SAYA-YAKIN`; restore memverifikasi
+  ISI (jumlah baris). **Bukti uji:** restore → Tenant 2 · Website 2 · Revision 10 · Message 104 ·
+  MediaAsset 1 · LlmUsage 57 = IDENTIK produksi. **Cron harian 02:00 WIB terpasang & terverifikasi**
+  (wrapper sempat tak executable → akan gagal DIAM-DIAM tiap malam; ketahuan karena diuji).
+- ✅ **T-070** Alert operasional (**PR #70**, 2026-07-12; ADR-7). Kegagalan selama ini HANYA masuk
+  log → tak seorang pun tahu. Tiga alert (dipilih krn BERDAMPAK KE PELANGGAN): **bot tak menerima
+  pesan** (poller gagal beruntun — CRITICAL; pelanggan mengirim ke ruang hampa & container tetap
+  "sehat"), **publish dead-letter**, **pesan pelanggan gagal diproses**. **Telegram = jalur UTAMA,
+  bukan n8n**: alert yang bergantung pada komponen yang bisa IKUT TUMBANG bukan alert; Telegram
+  hidup di LUAR infrastruktur kita. `WebhookAlert` tetap ada (ADR-7 dihormati). **PEREDAM wajib**:
+  tanpa throttle, LLM tumbang → 100 notifikasi → PO mematikan alert → alert yang dimatikan = TIDAK
+  ADA ALERT. 1 notifikasi/masalah/15 mnt (Redis SET NX); Redis mati → alert TETAP dikirim.
+
 ### Gerbang keluar Fase 0
 - ✅ **T-083 — DEMO E2E TERCAPAI** (2026-07-11, produksi nyata, tanpa intervensi manual):
   **chat Telegram → wawancara (agent ingat konteks) → agent bangun situs → tombol approval →
@@ -784,6 +822,53 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   Node lokal v24 (CI pin 22); **gh CLI v2.96.0 terpasang & ter-autentikasi
   (`daruzboy`, scope `repo`/`workflow`)**; build esbuild sudah di-approve (tersimpan
   di `pnpm-workspace.yaml`); `.npmrc`: `verify-deps-before-run=false`.
+
+---
+
+## 7. Peta Jalan ke "100% SIAP DIJUAL" (keputusan PO 2026-07-12)
+
+> **Definisi "100%" (dipilih PO):** bukan "backlog Fase 0 habis", tapi **benar-benar siap
+> dijual ke pelanggan nyata**. **WhatsApp/WABA dikerjakan TERAKHIR** — semua yang lain
+> selesai dulu.
+
+**Status jujur per 2026-07-12:**
+
+| Level | Status |
+|---|---|
+| Fase 0 (backlog `07-Backlog-Fase0`) | **~80%** — inti jalan & live, sisa ops/QA |
+| **Siap dijual** | **~40%** — belum ada billing, admin UI, self-serve |
+
+Gerbang keluar Fase 0 (T-083) **sudah tercapai** — secara formal Fase 0 boleh dinyatakan
+selesai & sisanya digeser ke Fase 1. Keputusan itu milik PO.
+
+### Urutan kerja (disepakati PO; angka = urutan, bukan prioritas relatif)
+
+| # | Pekerjaan | Kenapa di posisi ini | Status |
+|---|---|---|---|
+| 1 | **Auth WS** (NFR-07) | Lubang keamanan: siapa pun bisa membaca/menulis chat tenant lain. WAJIB tutup sebelum API dibuka publik (yang dituntut WABA) | ✅ **PR #67** |
+| 2 | **T-082** dashboard biaya AI | PO buta terhadap anggaran token; tanpa angka ini harga paket tak bisa ditetapkan (syarat billing) | ✅ **PR #68** |
+| 3 | **T-073** backup DB | Nol backup = kehilangan Postgres berarti kehilangan SEMUA pelanggan, permanen | ✅ **PR #69** |
+| 4 | **T-070** alert kegagalan | Kegagalan hanya masuk log → tak ada yang tahu bot mati | ✅ **PR #70** |
+| 5 | **T-080** bayar utang integration test | Test di-gate `RUN_INTEGRATION_TESTS=1` yang TAK PERNAH diset di CI → **selalu skip**. CI "hijau" yang BOHONG. Cleanup-nya juga kena tenant-guard → tetap gagal bila diaktifkan | ⏳ berikutnya |
+| 6 | **Self-serve onboarding + kuota** | Tenant kini dibuat MANUAL lewat SQL & allowlist dipetakan MANUAL di env → pelanggan tak bisa mendaftar sendiri. Wajib disertai kuota (ADR-12) | ⏳ |
+| 7 | **Billing** — model `Subscription`/`Invoice` + Xendit (T-072) | Schema TIDAK punya model billing sama sekali (nol). Tanpa ini tak ada uang masuk | ⏳ |
+| 8 | **Admin UI** | `apps/portal` HANYA berisi chat widget. Tak ada dashboard untuk melihat tenant, biaya, job, situs | ⏳ |
+| 9 | **T-071** Umami + **T-081** regresi visual | Analytics untuk pelanggan; pengaman kualitas sites-kit di CI | ⏳ |
+| 10 | **Custom domain** | Kini hanya path `digimaestro.id/<slug>/` (ADR-13). Pelanggan berbayar akan menuntut domain sendiri | ⏳ |
+| 11 | **WhatsApp/WABA** (T-001, T-030..033 WA) | **TERAKHIR (keputusan PO).** Premis produk ("via WhatsApp" di BRD), tapi lead time Meta di luar kendali & seluruh hilir sudah terbukti lewat Telegram. Masuk sbg adapter `ChannelPort` (ADR-11) — core tak berubah | ⏳ |
+
+### Yang backlog TIDAK sebut tapi wajib ada sebelum jualan
+Ditemukan saat analisa gap 2026-07-12 — **bukan** bagian dari backlog Fase 0, tapi memblokir
+"siap dijual": **billing (nol model di schema)**, **admin UI (portal cuma chat widget)**,
+**self-serve (tenant & allowlist masih manual)**, **custom domain**.
+
+### Utang yang harus dibayar sebelum klaim "siap jual"
+- **Rotasi kredensial ter-ekspos** (DeepSeek, token bot, FTP, cPanel — plaintext di chat). PO.
+- **T-080** integration test yang selalu di-skip (CI hijau yang bohong).
+- **Off-site backup belum menyala** — backup kini HANYA di VPS yang sama dgn DB-nya; kalau VPS
+  hilang, backup ikut hilang. Butuh `BACKUP_OFFSITE_PASSPHRASE` dari PO.
+- **P2 audit Telegram**: `can_join_groups` masih aktif (matikan di BotFather).
+- **Auto-provision tenant + kuota** (ADR-12 menyiapkan jalannya, belum dibuka).
 
 ---
 
