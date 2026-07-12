@@ -26,6 +26,10 @@ export const TELEGRAM_SECRET_HEADER = 'x-telegram-bot-api-secret-token';
 
 export interface TelegramWebhookDeps {
   readonly queue: ChatInboundQueuePort;
+  // Self-serve (#6): resolusi tenant dari DB. Menggantikan allowlist env (yang tetap dipakai
+  // sebagai bootstrap/admin).
+  readonly resolveTenant?: (externalId: string) => Promise<string | null>;
+  readonly allowRegistration?: boolean;
   // Secret yang didaftarkan via setWebhook(secret_token). Wajib — tanpa ini endpoint
   // publik bisa disuntik siapa saja.
   readonly secretToken: string;
@@ -63,14 +67,21 @@ export function registerTelegramWebhook(app: FastifyInstance, deps: TelegramWebh
       return reply.code(200).send({ ok: true, ignored: 'update bukan pesan' });
     }
 
-    // 3) Allowlist. Chat asing berhenti di sini — tidak ada tenant, tidak ada LLM.
-    const tenant = resolveTenantForChat(allowlist, message.externalId);
-    if (!tenant) {
-      req.log.warn({ chatId: message.externalId }, 'telegram: chat di luar allowlist — diabaikan');
+    // 3) Resolusi tenant: DB (self-serve) → allowlist env (bootstrap/admin).
+    const fromDb = deps.resolveTenant ? await deps.resolveTenant(message.externalId) : null;
+    const tenant = fromDb ?? resolveTenantForChat(allowlist, message.externalId);
+
+    if (!tenant && !deps.allowRegistration) {
+      req.log.warn({ chatId: message.externalId }, 'telegram: chat tak dikenal — diabaikan');
       return reply.code(200).send({ ok: true, ignored: 'chat tidak terdaftar' });
     }
 
-    const enqueued = await deps.queue.enqueueInbound({ tenantId: tenant, message });
+    // Tak dikenal + pendaftaran aktif → enqueue TANPA tenantId (jalur kode undangan).
+    // LLM tetap tak tersentuh → gerbang biaya (ADR-12) utuh.
+    const enqueued = await deps.queue.enqueueInbound({
+      ...(tenant ? { tenantId: tenant } : {}),
+      message,
+    });
     if (!enqueued.ok) {
       // Gagal enqueue = pesan HILANG kalau kita balas 200. Balas 500 supaya Telegram
       // mengirim ulang; dedup providerMsgId menahan efek ganda bila ternyata sempat masuk.

@@ -113,9 +113,19 @@ model Tenant {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  users         User[]
-  conversations Conversation[]
-  mediaAssets   MediaAsset[]
+  // Kuota TRIAL (keputusan PO 2026-07-12: 100 pesan · 1 situs · 14 hari). Ini PAGAR BIAYA:
+  // tiap pesan memanggil LLM berbayar, jadi tenant tanpa kuota = lubang biaya terbuka.
+  quotaMessages  Int       @default(100)
+  usedMessages   Int       @default(0)
+  quotaWebsites  Int       @default(1)
+  trialEndsAt    DateTime?
+  inviteCodeId   String?
+
+  users          User[]
+  conversations  Conversation[]
+  mediaAssets    MediaAsset[]
+  channelBindings ChannelBinding[]
+  inviteCode     InviteCode? @relation(fields: [inviteCodeId], references: [id], onDelete: SetNull)
   messages      Message[]
   websites      Website[]
   agentJobs     AgentJob[]
@@ -194,6 +204,41 @@ model Website {
 }
 
 // T-033: media dari pelanggan (foto di chat) → dioptimasi & disimpan; dipakai galeri situs.
+// Self-serve (langkah #6): pemetaan chat kanal → tenant. MENGGANTIKAN allowlist env
+// (TELEGRAM_ALLOWLIST) yang harus disunting manual tiap pelanggan baru — mustahil untuk
+// self-serve. Env allowlist tetap didukung sebagai bootstrap/admin.
+model ChannelBinding {
+  id         String   @id @default(cuid())
+  tenantId   String
+  channel    Channel
+  // chat_id Telegram / nomor WA.
+  externalId String
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Satu chat = satu tenant. Chat yang sama tak bisa dipetakan ke dua tenant.
+  @@unique([channel, externalId])
+  @@index([tenantId])
+}
+
+// Kode undangan (keputusan PO 2026-07-12): self-serve TAPI tidak terbuka untuk siapa saja.
+// Tanpa gerbang ini, setiap orang iseng yang menemukan bot langsung membakar token LLM
+// (~$0.0034/pesan). Kode bisa dicabut kapan saja tanpa deploy.
+model InviteCode {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  // 0 = tak terbatas.
+  maxUses   Int       @default(1)
+  usedCount Int       @default(0)
+  expiresAt DateTime?
+  active    Boolean   @default(true)
+  note      String?
+  createdAt DateTime  @default(now())
+
+  redemptions Tenant[]
+}
+
 model MediaAsset {
   id             String   @id @default(cuid())
   tenantId       String

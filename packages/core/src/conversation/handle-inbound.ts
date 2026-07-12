@@ -20,6 +20,7 @@ import type {
   ChannelButton,
   ChannelPort,
   InboundRateLimiterPort,
+  QuotaPort,
   ConversationRepository,
   InboundChannelMessage,
   MessageRepository,
@@ -71,6 +72,9 @@ export interface InboundDeps {
   // pesan KELUAR (RateLimitedChannel) tak melindungi anggaran token, karena LLM sudah
   // terlanjur dipanggil saat balasan ditahan.
   readonly rateLimiter?: InboundRateLimiterPort;
+  // Self-serve (#6): KUOTA per tenant. Diperiksa SEBELUM LLM — kuota yang dicek setelah
+  // biaya terjadi tak melindungi apa pun (pelajaran audit P0).
+  readonly quota?: QuotaPort;
   readonly logger?: InboundLogger;
 }
 
@@ -121,6 +125,20 @@ export function mediaQuotaReply(): string {
   return (
     'Foto kamu udah penuh nih 📦 Aku nggak bisa nyimpen lagi.\n\n' +
     'Kalau mau ganti foto di galeri, bilang aja foto mana yang mau dipakai.'
+  );
+}
+
+// Kuota habis → sebutkan SEBABNYA & jalan keluarnya. "Gagal" saja membuat pelanggan pergi.
+export function quotaExhaustedReply(reason: string): string {
+  const inti =
+    reason === 'TRIAL_EXPIRED'
+      ? 'Masa cobamu sudah berakhir ⏰'
+      : reason === 'SUSPENDED'
+        ? 'Akunmu sedang tidak aktif.'
+        : 'Kuota pesan masa cobamu sudah habis 📊';
+  return (
+    `${inti}\n\n` +
+    'Situs & datamu tetap aman kok. Hubungi tim digimaestro untuk lanjut ke paket berbayar ya 🙏'
   );
 }
 
@@ -193,6 +211,28 @@ export async function handleInboundMessage(
       }
       return ok({ conversationId, duplicate: false, rateLimited: true });
     }
+  }
+
+  // 4b) GERBANG KUOTA (#6): pagar biaya per tenant. Dicek SEBELUM LLM/media disentuh.
+  //     Rate limit menahan BANJIR; kuota menahan TOTAL. Keduanya perlu: 100 pesan pelan-pelan
+  //     tetap menghabiskan anggaran yang sama dengan 100 pesan sekaligus.
+  if (deps.quota) {
+    const q = await deps.quota.check(tenantId);
+    if (!q.ok) return err(q.error);
+    if (!q.value.allowed) {
+      deps.logger?.error(`[kuota] tenant ${tenantId} ditolak: ${q.value.reason}`);
+      return replyAndPersist(
+        deps,
+        tenantId,
+        conversationId,
+        message,
+        quotaExhaustedReply(q.value.reason ?? 'MESSAGES'),
+        [],
+      );
+    }
+    // Konsumsi SETELAH lolos, SEBELUM LLM. Kalau dikonsumsi setelah LLM, pesan yang gagal
+    // di tengah jalan tetap sudah membakar token tapi tak terhitung kuota.
+    await deps.quota.consume(tenantId);
   }
 
   // 5) Foto (T-033): unduh → optimasi → simpan. Tak memanggil LLM (buang biaya token).

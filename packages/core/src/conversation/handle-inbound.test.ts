@@ -423,3 +423,53 @@ describe('tombol: callback dijawab sebelum kerja berat (P1)', () => {
     expect(ack).toHaveBeenCalled();
   });
 });
+
+// Self-serve (#6): KUOTA = pagar biaya per tenant. Rate limit menahan BANJIR; kuota menahan
+// TOTAL. Keduanya perlu — 100 pesan pelan-pelan menghabiskan anggaran yang sama dengan 100
+// pesan sekaligus.
+describe('gerbang kuota per tenant (#6)', () => {
+  function quota(allowed: boolean, reason?: string) {
+    return {
+      check: vi.fn(async () => ({ ok: true as const, value: { allowed, reason, remaining: allowed ? 5 : 0 } })),
+      consume: vi.fn(async () => ({ ok: true as const, value: undefined })),
+    };
+  }
+
+  it('kuota habis → LLM TIDAK dipanggil, pengguna diberi tahu SEBABNYA', async () => {
+    const reply = { reply: vi.fn() };
+    const deps = fakeDeps({ reply });
+    const q = quota(false, 'MESSAGES');
+    (deps as { quota?: unknown }).quota = q;
+
+    await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(reply.reply).not.toHaveBeenCalled();
+    const [, text] = (deps.channel.sendText as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(text).toContain('Kuota pesan');
+    expect(text).toContain('tetap aman'); // data pelanggan tak hilang — dia harus tahu itu
+  });
+
+  it('trial kedaluwarsa → ditolak dgn alasan yang benar', async () => {
+    const deps = fakeDeps();
+    (deps as { quota?: unknown }).quota = quota(false, 'TRIAL_EXPIRED');
+
+    await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    const [, text] = (deps.channel.sendText as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+    expect(text).toContain('Masa cobamu sudah berakhir');
+  });
+
+  // Konsumsi SEBELUM LLM: kalau setelah, pesan yang gagal di tengah tetap membakar token
+  // tapi tak terhitung kuota.
+  it('kuota tersedia → dikonsumsi lalu LLM dipanggil', async () => {
+    const reply = { reply: vi.fn(async () => ({ ok: true as const, value: { text: 'halo' } })) };
+    const deps = fakeDeps({ reply });
+    const q = quota(true);
+    (deps as { quota?: unknown }).quota = q;
+
+    await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(q.consume).toHaveBeenCalledWith(TENANT);
+    expect(reply.reply).toHaveBeenCalled();
+  });
+});

@@ -62,7 +62,11 @@ export interface SendResult {
 }
 
 export interface ChatInboundJob {
-  readonly tenantId: string;
+  // OPSIONAL (self-serve, langkah #6): null/undefined = chat BELUM dikenal → worker
+  // mengarahkannya ke jalur PENDAFTARAN (kode undangan), TANPA memanggil LLM.
+  // Sebelumnya wajib, karena tenant hanya bisa datang dari allowlist env yang disunting
+  // manual — mustahil untuk self-serve.
+  readonly tenantId?: string;
   readonly message: InboundChannelMessage;
 }
 

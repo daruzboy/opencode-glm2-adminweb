@@ -36,6 +36,12 @@ export interface TelegramPollerOptions {
   // terlihat dari luar (container tetap "sehat"). Error BERUNTUN → kabari PO.
   readonly alert?: AlertPort;
   readonly alertAfterFailures?: number;
+  // Self-serve (#6): resolusi tenant dari DB (ChannelBinding). Bila disuntik, ia MENGGANTIKAN
+  // allowlist env — allowlist env tetap dipakai sebagai bootstrap/admin (tenant PO).
+  readonly resolveTenant?: (externalId: string) => Promise<string | null>;
+  // Chat tak dikenal: true → tetap di-enqueue (tanpa tenantId) agar bisa MENDAFTAR.
+  // false (default lama) → dibuang. Tanpa ini, pelanggan baru tak akan pernah bisa masuk.
+  readonly allowRegistration?: boolean;
 }
 
 // Sekali gagal itu wajar (jaringan). Beruntun = bot benar-benar tak bisa menarik pesan.
@@ -100,15 +106,25 @@ export async function pollOnce(
       continue;
     }
 
-    // Gerbang biaya yang sama dengan webhook (ADR-12): chat asing tak menyentuh LLM.
-    const tenant = resolveTenantForChat(allowlist, message.externalId);
-    if (!tenant) {
-      options.logger?.info(`[telegram-poll] chat ${message.externalId} di luar allowlist — diabaikan`);
+    // Resolusi tenant: DB (self-serve) → allowlist env (bootstrap/admin).
+    const fromDb = options.resolveTenant
+      ? await options.resolveTenant(message.externalId)
+      : null;
+    const tenant = fromDb ?? resolveTenantForChat(allowlist, message.externalId);
+
+    if (!tenant && !options.allowRegistration) {
+      // Mode lama (allowlist ketat): chat asing tak menyentuh apa pun.
+      options.logger?.info(`[telegram-poll] chat ${message.externalId} tak dikenal — diabaikan`);
       ignored++;
       continue;
     }
 
-    const added = await options.queue.enqueueInbound({ tenantId: tenant, message });
+    // Chat tak dikenal + pendaftaran aktif → enqueue TANPA tenantId. Worker mengarahkannya ke
+    // jalur kode undangan; LLM tetap TIDAK tersentuh, jadi gerbang biaya (ADR-12) utuh.
+    const added = await options.queue.enqueueInbound({
+      ...(tenant ? { tenantId: tenant } : {}),
+      message,
+    });
     if (!added.ok) {
       // Redis tersendat: JANGAN majukan offset melewati update ini, supaya Telegram
       // mengirimkannya lagi di putaran berikutnya (pesan pengguna tak boleh hilang).

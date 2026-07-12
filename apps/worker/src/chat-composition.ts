@@ -7,6 +7,7 @@
 // semuanya hidup di core — jadi yang "berulang" hanyalah perakitannya, bukan logikanya.
 
 import {
+  ChannelBindingPrisma,
   ConversationRepositoryPrisma,
   DEFAULT_INBOUND_LIMIT,
   DEFAULT_INBOUND_WINDOW_MS,
@@ -24,8 +25,12 @@ import {
   createDeepSeekJsonAdapter,
   createGlmJsonAdapter,
   FtpsMediaStore,
+  InviteCodePrisma,
   MediaRepositoryPrisma,
   MultiAlert,
+  QuotaPrisma,
+  TenantProvisionPrisma,
+  type OnboardingClient,
   SharpMediaProcessor,
   TelegramAlert,
   ThrottledAlert,
@@ -54,8 +59,13 @@ import {
   createSitebuilderApplyPatchTool,
   createSitebuilderBuildSiteTool,
   createSitebuilderGetSiteOutlineTool,
+  deriveSlug,
   ingestMedia,
+  invalidCodeReply,
+  needsCodeReply,
   notifyPublishOutcome,
+  registerFromInvite,
+  registeredReply,
   type ApprovalDeps,
   type BuildDeps,
   type ConversationReplier,
@@ -78,7 +88,13 @@ import {
   tenantId,
 } from '@digimaestro/shared';
 import { parseTokenPrice } from '@digimaestro/shared';
-import type { AlertPort, InboundRateLimiterPort, LlmTokenPrice } from '@digimaestro/shared';
+import type {
+  AlertPort,
+  InboundRateLimiterPort,
+  LlmTokenPrice,
+  QuotaPort,
+} from '@digimaestro/shared';
+import type { RegistrationHandler } from './chat-inbound-worker.js';
 import type { ChannelPort, ConversationRepository, LlmJsonPort } from '@digimaestro/shared';
 import type { PublishNotifier } from './publish-worker.js';
 import type { PollerHandle } from '@digimaestro/adapters';
@@ -86,6 +102,7 @@ import type { PollerHandle } from '@digimaestro/adapters';
 export interface ChatWorkerEnv {
   readonly TELEGRAM_BOT_TOKEN?: string;
   readonly REDIS_URL?: string;
+  readonly DATABASE_URL?: string;
   readonly PREVIEW_TOKEN_SECRET?: string;
   readonly PUBLIC_API_URL?: string;
   readonly PUBLISH_BASE_DOMAIN?: string;
@@ -108,6 +125,11 @@ export interface ChatWorkerEnv {
   readonly ALERT_WEBHOOK_URL?: string;
   readonly ALERT_COOLDOWN_MS?: string;
   readonly APP_ENV?: string;
+  // Self-serve (#6). SELFSERVE_ENABLED=1 → chat tak dikenal boleh mendaftar dgn kode undangan.
+  readonly SELFSERVE_ENABLED?: string;
+  readonly TRIAL_QUOTA_MESSAGES?: string;
+  readonly TRIAL_QUOTA_WEBSITES?: string;
+  readonly TRIAL_DAYS?: string;
   readonly DIGIMAESTRO_LLM_PROVIDER?: string;
   readonly DEEPSEEK_API_KEY?: string;
   readonly DEEPSEEK_MODEL?: string;
@@ -353,6 +375,7 @@ export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps
     ...(approval ? { approval } : {}),
     ...(media ? { media } : {}),
     ...(rateLimiter ? { rateLimiter } : {}),
+    ...(createQuota(env) ? { quota: createQuota(env) } : {}),
   };
 }
 
@@ -399,12 +422,16 @@ export function startPoller(
     maxRetriesPerRequest: null,
   });
 
+  const resolver = createTenantResolver(env);
+
   return startTelegramPoller({
     botToken: env.TELEGRAM_BOT_TOKEN,
     queue,
     fetch: globalThis.fetch as never,
     ...(env.TELEGRAM_ALLOWLIST ? { allowlistRaw: env.TELEGRAM_ALLOWLIST } : {}),
     ...(alert ? { alert } : {}),
+    ...(resolver ? { resolveTenant: resolver } : {}),
+    allowRegistration: selfServeEnabled(env),
   });
 }
 
@@ -517,4 +544,81 @@ export function createAlert(env: ChatWorkerEnv = process.env): AlertPort | undef
     cooldownMs: Number(env.ALERT_COOLDOWN_MS ?? DEFAULT_ALERT_COOLDOWN_MS),
     logger: console,
   });
+}
+
+// ── Self-serve onboarding (#6) ───────────────────────────────────────────────
+// Kuota trial: keputusan PO 2026-07-12 (100 pesan · 1 situs · 14 hari). Ini PAGAR BIAYA —
+// tiap pesan memanggil LLM berbayar (~$0.0034 terukur).
+export const TRIAL_DEFAULTS = { messages: 100, websites: 1, days: 14 } as const;
+
+export function selfServeEnabled(env: ChatWorkerEnv = process.env): boolean {
+  return env.SELFSERVE_ENABLED === '1';
+}
+
+// Resolusi tenant dari DB (ChannelBinding) — menggantikan allowlist env yang harus disunting
+// manual tiap pelanggan baru.
+export function createTenantResolver(
+  env: ChatWorkerEnv = process.env,
+): ((externalId: string) => Promise<string | null>) | undefined {
+  if (!env.DATABASE_URL) return undefined;
+  const prisma = createPrismaClient();
+  const bindings = new ChannelBindingPrisma(prisma as unknown as OnboardingClient);
+
+  return async (externalId: string) => {
+    const r = await bindings.resolve('TELEGRAM', externalId);
+    return r.ok ? r.value : null;
+  };
+}
+
+export function createQuota(env: ChatWorkerEnv = process.env): QuotaPort | undefined {
+  if (!env.DATABASE_URL) return undefined;
+  const prisma = createPrismaClient();
+  return new QuotaPrisma(prisma as unknown as OnboardingClient);
+}
+
+// Menangani chat yang BELUM dikenal: kode undangan → provision tenant. TANPA LLM.
+export function createRegistrationHandler(
+  env: ChatWorkerEnv = process.env,
+): RegistrationHandler | undefined {
+  if (!selfServeEnabled(env) || !env.DATABASE_URL || !env.TELEGRAM_BOT_TOKEN) return undefined;
+
+  const prisma = createPrismaClient();
+  const db = prisma as unknown as OnboardingClient;
+  const channel = rateLimited(createTelegramChannel(env), env);
+
+  const deps = {
+    invites: new InviteCodePrisma(db),
+    bindings: new ChannelBindingPrisma(db),
+    tenants: new TenantProvisionPrisma(db),
+    quotaMessages: Number(env.TRIAL_QUOTA_MESSAGES ?? TRIAL_DEFAULTS.messages),
+    quotaWebsites: Number(env.TRIAL_QUOTA_WEBSITES ?? TRIAL_DEFAULTS.websites),
+    trialDays: Number(env.TRIAL_DAYS ?? TRIAL_DEFAULTS.days),
+    slugify: deriveSlug,
+  };
+
+  return {
+    async handle(message) {
+      const res = await registerFromInvite(deps, {
+        channel: message.channel,
+        externalId: message.externalId,
+        text: message.text ?? '',
+        ...(message.senderName ? { senderName: message.senderName } : {}),
+      });
+
+      if (!res.ok) {
+        console.error(`[daftar] gagal: ${res.error.message}`);
+        await channel.sendText(message.externalId, 'Maaf, pendaftaran lagi bermasalah. Coba lagi sebentar ya 🙏');
+        return;
+      }
+
+      const teks =
+        res.value.kind === 'registered'
+          ? registeredReply(deps.quotaMessages, deps.trialDays)
+          : res.value.kind === 'invalid_code'
+            ? invalidCodeReply(res.value.reason)
+            : needsCodeReply();
+
+      await channel.sendText(message.externalId, teks);
+    },
+  };
 }

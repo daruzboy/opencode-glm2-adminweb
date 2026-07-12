@@ -10,6 +10,8 @@ import {
   createAlert,
   createInboundDeps,
   createPublishNotifier,
+  createRegistrationHandler,
+  selfServeEnabled,
   startPoller,
 } from './chat-composition.js';
 import { startChatInboundWorker } from './chat-inbound-worker.js';
@@ -67,11 +69,17 @@ export async function runWorker(): Promise<void> {
 
   let poller: ReturnType<typeof startPoller>;
   if (process.env.TELEGRAM_BOT_TOKEN) {
+    // Self-serve (#6): chat tak dikenal → jalur kode undangan (tanpa LLM).
+    const registration = createRegistrationHandler();
     workers.push(
       startChatInboundWorker(createInboundDeps(), {
         connection,
         ...(alert ? { alert } : {}),
+        ...(registration ? { registration } : {}),
       }),
+    );
+    console.log(
+      `[${handle.name}] self-serve ${selfServeEnabled() ? 'AKTIF (kode undangan)' : 'nonaktif (allowlist env)'}.`,
     );
     console.log(`[${handle.name}] konsumen antrean 'chat-inbound' aktif (Telegram).`);
 
