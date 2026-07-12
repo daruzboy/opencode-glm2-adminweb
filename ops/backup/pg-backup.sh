@@ -62,6 +62,29 @@ if [ -n "${BACKUP_OFFSITE_PASSPHRASE:-}" ] && [ -n "${CPANEL_FTP_HOST:-}" ]; the
   rm -f "$ENC"
 fi
 
+# --- Salinan off-site ke Google Drive (opsional, via rclone) ------------------
+# Dipilih PO 2026-07-12: TANPA enkripsi. Trade-off yang disadari — restore jadi sederhana
+# (langsung pg_restore), tapi folder Drive ini BERISI DATA PELANGGAN mentah (percakapan,
+# kontak). JANGAN pernah di-share, dan jangan taruh di Drive bersama tim.
+#
+# Kenapa rclone (bukan diunggah lewat perantara): cron harus bisa mengunggah SENDIRI tiap
+# malam. Backup yang butuh manusia (atau agent) untuk menyalinnya bukan backup otomatis —
+# ia akan berhenti diam-diam pada hari pertama tak ada yang menjalankannya.
+if [ -n "${BACKUP_GDRIVE_REMOTE:-}" ]; then
+  DEST="${BACKUP_GDRIVE_REMOTE}:${BACKUP_GDRIVE_DIR:-glm2-backups}"
+  if rclone copy "$FILE" "$DEST" --config "${RCLONE_CONFIG:-/root/.config/rclone/rclone.conf}" 2>&1; then
+    echo "[backup] Google Drive: $(basename "$FILE") -> $DEST OK"
+  else
+    # Gagal unggah TIDAK boleh menggagalkan seluruh backup: dump lokal sudah aman & valid.
+    # Tapi harus TERLIHAT — off-site yang diam-diam mati = backup yang tak pernah keluar VPS.
+    echo "[backup] PERINGATAN: unggah ke Google Drive GAGAL (dump lokal tetap aman)" >&2
+  fi
+
+  # Retensi di Drive — jangan biarkan kuota Drive PO habis diam-diam.
+  rclone delete "$DEST" --min-age "${BACKUP_GDRIVE_KEEP_DAYS:-30}d" \
+    --config "${RCLONE_CONFIG:-/root/.config/rclone/rclone.conf}" 2>/dev/null || true
+fi
+
 # Retensi lokal.
 find "$DIR" -name 'glm2-*.dump' -type f -mtime "+${KEEP_DAYS}" -delete
 echo "[backup] selesai. Dump tersimpan: $(find "$DIR" -name 'glm2-*.dump' | wc -l)"
