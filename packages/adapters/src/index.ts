@@ -69,6 +69,10 @@ export * from './publish/bullmq-queue-factory.js';
 export * from './publish/publish-job-options.js';
 export * from './builder/sitebuilder-tool-adapter.js';
 export * from './auth/jwt-auth.js';
+// Alert operasional (T-070).
+export * from './alert/telegram-alert.js';
+export * from './alert/throttled-alert.js';
+export * from './alert/webhook-alert.js';
 // Kanal Telegram (T-030tg) — rencana B; WABA menyusul saat verifikasi Meta tuntas.
 export * from './llm/sanitize-tool-markup.js';
 // Media dari kanal (T-033).

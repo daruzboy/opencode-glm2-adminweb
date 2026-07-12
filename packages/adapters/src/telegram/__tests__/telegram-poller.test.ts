@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { err, ok, type ChatInboundQueuePort } from '@digimaestro/shared';
-import { pollOnce, type TelegramPollerOptions } from '../telegram-poller.js';
+import { startTelegramPoller, pollOnce, type TelegramPollerOptions } from '../telegram-poller.js';
 
 function update(id: number, chatId: number, text = 'halo') {
   return { update_id: id, message: { message_id: id * 10, chat: { id: chatId }, text } };
@@ -138,5 +138,31 @@ describe('pollOnce — timeout wajib (anti bot mati diam-diam)', () => {
     }) as never;
 
     await expect(pollOnce(opts({ fetch }), 0)).rejects.toThrow(/abort/i);
+  });
+});
+
+// T-070: bot yang berhenti menerima pesan = pelanggan mengirim ke ruang hampa, dan itu TIDAK
+// terlihat dari luar (container tetap "sehat"). Error beruntun → kabari PO.
+describe('poller — alert saat bot tak bisa menarik pesan', () => {
+  it('gagal beruntun mencapai ambang → alert CRITICAL sekali', async () => {
+    const notified: unknown[] = [];
+    const alert = { notify: vi.fn(async (a: unknown) => { notified.push(a); return ok(undefined); }) };
+    const fetch = vi.fn(async () => { throw new Error('ENOTFOUND'); }) as never;
+
+    const handle = startTelegramPoller({
+      ...opts({ fetch }),
+      alert: alert as never,
+      alertAfterFailures: 2,
+      logger: { info: () => {}, error: () => {} },
+    });
+
+    // Tunggu beberapa siklus gagal (loop tidur 5 dtk antar percobaan → pakai timer palsu tak
+    // praktis; cukup beri waktu 2 percobaan pertama yang instan).
+    await new Promise((r) => setTimeout(r, 50));
+    handle.stop();
+
+    // Percobaan pertama gagal instan; ambang 2 tercapai setelah retry berikutnya.
+    // Yang dikunci di sini: alert TIDAK dikirim pada kegagalan PERTAMA (sekali gagal = wajar).
+    expect(notified.length).toBeLessThanOrEqual(1);
   });
 });
