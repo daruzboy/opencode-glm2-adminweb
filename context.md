@@ -328,6 +328,16 @@ Data & DNS PO utuh.
 - **WS belum diuji otomatis** (butuh WS client) — dicakup lewat use-case test +
   smoke manual; REST riwayat teruji via `app.inject()`.
 
+## ⭐ TARGET: "100% SIAP DIJUAL" (keputusan PO 2026-07-12)
+Definisi 100% = **benar-benar siap dijual ke pelanggan nyata**, BUKAN "backlog Fase 0 habis".
+**WhatsApp/WABA dikerjakan TERAKHIR** — semua yang lain selesai dulu.
+Status: Fase 0 ~80% · **siap-jual ~40%**. **Peta jalan lengkap + urutan kerja: `decision.md` §7.**
+
+Selesai (2026-07-11..12): ✅ auth WS (#67, lubang keamanan) · ✅ T-082 dashboard biaya AI (#68,
++2 bug pencatatan) · ✅ T-073 backup+restore teruji (#69) · ✅ T-070 alert (#70).
+Berikutnya: **T-080** (utang: integration test SELALU di-skip → CI hijau yang bohong) →
+self-serve+kuota → billing → admin UI → analytics/regresi visual → custom domain → **WABA**.
+
 ## Langkah segera berikutnya
 1. **T-070** alert n8n (job gagal/webhook error → notifikasi internal) — ops, tak terblokir.
 2. **T-082** dashboard biaya AI per tenant (token/biaya harian) — `LlmUsage` sudah dicatat;
