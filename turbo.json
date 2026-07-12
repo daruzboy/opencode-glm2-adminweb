@@ -10,11 +10,21 @@
   ],
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "dist/**"
+      ]
     },
     "test": {
-      "dependsOn": ["build"]
+      "dependsOn": [
+        "build"
+      ],
+      "env": [
+        "DATABASE_URL",
+        "RUN_INTEGRATION_TESTS"
+      ]
     },
     "lint": {}
   }
