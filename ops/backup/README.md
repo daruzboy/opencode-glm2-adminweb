@@ -69,6 +69,40 @@ Backup + restore dijalankan sungguhan terhadap data produksi:
 
 Angka-angka itu **identik dengan produksi** → dump utuh, restore terbukti bekerja.
 
+## Off-site ke Google Drive (rclone)
+
+Dipilih PO 2026-07-12: **tanpa enkripsi**. Trade-off yang disadari — restore jadi sederhana
+(langsung `pg_restore`), tapi **folder Drive itu berisi data pelanggan mentah** (percakapan,
+kontak). **Jangan pernah di-share**, dan jangan taruh di Drive bersama tim.
+
+**Setup sekali (butuh PO — hanya PO yang boleh menyetujui akses ke Drive-nya):**
+
+```bash
+# 1. Di KOMPUTER PO (butuh browser). Pasang rclone: https://rclone.org/downloads/
+rclone authorize "drive"
+#    → browser terbuka → login Google → izinkan
+#    → terminal mencetak blok token JSON
+
+# 2. Di VPS — tulis config (ganti <TOKEN> dgn blok dari langkah 1)
+rclone config create gdrive drive config_is_local=false token '<TOKEN>'
+
+# 3. Uji
+rclone lsd gdrive:
+
+# 4. Aktifkan di /opt/containers/glm2/.env
+BACKUP_GDRIVE_REMOTE=gdrive
+```
+
+Setelah itu cron harian mengunggah sendiri; retensi Drive 30 hari (`BACKUP_GDRIVE_KEEP_DAYS`).
+
+**Kenapa rclone dan bukan diunggah lewat perantara:** cron harus bisa mengunggah **sendiri**
+tiap malam. Backup yang butuh manusia (atau agent) untuk menyalinnya **bukan backup otomatis**
+— ia berhenti diam-diam pada hari pertama tak ada yang menjalankannya.
+
+**Gagal unggah tidak menggagalkan backup**: dump lokal sudah aman & terverifikasi. Tapi
+kegagalannya **dicetak sebagai PERINGATAN** — off-site yang diam-diam mati = backup yang
+tak pernah keluar VPS, dan itu persis ilusi yang ingin kita hindari.
+
 ## Env
 
 | Variabel | Guna |
@@ -78,6 +112,9 @@ Angka-angka itu **identik dengan produksi** → dump utuh, restore terbukti beke
 | `BACKUP_OFFSITE_PASSPHRASE` | **kosong → off-site dilewati.** Simpan di password manager, BUKAN di VPS |
 | `BACKUP_REMOTE_DIR` | folder di hosting (default `_backups`) |
 | `CPANEL_FTP_*` | dipakai ulang dari konfigurasi deploy |
+| `BACKUP_GDRIVE_REMOTE` | nama remote rclone (mis. `gdrive`). **Kosong → Drive dilewati** |
+| `BACKUP_GDRIVE_DIR` | folder di Drive (default `glm2-backups`) |
+| `BACKUP_GDRIVE_KEEP_DAYS` | retensi di Drive (default 30) — jaga kuota Drive PO |
 
 ## Yang belum
 
