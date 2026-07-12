@@ -10,7 +10,7 @@
 
 import { parseTelegramAllowlist, resolveTenantForChat } from './allowlist.js';
 import { telegramUpdateSchema, toInboundMessage } from './normalize.js';
-import type { ChatInboundQueuePort } from '@digimaestro/shared';
+import type { AlertPort, ChatInboundQueuePort } from '@digimaestro/shared';
 import type { RuntimeFetch } from '../llm/openai-compatible-json-adapter.js';
 
 const TELEGRAM_API = 'https://api.telegram.org';
@@ -32,7 +32,14 @@ export interface TelegramPollerOptions {
   readonly baseUrl?: string;
   readonly pollTimeoutSec?: number;
   readonly logger?: { info(m: string): void; error(m: string): void };
+  // T-070: bot yang berhenti menerima pesan = pelanggan TIDAK TERLAYANI, dan itu tak
+  // terlihat dari luar (container tetap "sehat"). Error BERUNTUN → kabari PO.
+  readonly alert?: AlertPort;
+  readonly alertAfterFailures?: number;
 }
+
+// Sekali gagal itu wajar (jaringan). Beruntun = bot benar-benar tak bisa menarik pesan.
+export const DEFAULT_ALERT_AFTER_FAILURES = 3;
 
 export interface PollOutcome {
   // Offset berikutnya (= update_id terakhir + 1). Telegram menganggap update <offset
@@ -126,18 +133,36 @@ export function startTelegramPoller(options: TelegramPollerOptions): PollerHandl
   let offset = 0;
   let running = true;
 
+  const alertAfter = options.alertAfterFailures ?? DEFAULT_ALERT_AFTER_FAILURES;
+  let berturut = 0;
+
   const loop = async (): Promise<void> => {
     logger.info('[telegram-poll] mulai long-polling getUpdates');
     while (running) {
       try {
         const out = await pollOnce(options, offset);
         offset = out.nextOffset;
+        berturut = 0; // pulih
         if (out.enqueued > 0) {
           logger.info(`[telegram-poll] ${out.enqueued} pesan masuk antrean`);
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        logger.error(`[telegram-poll] error: ${msg} — coba lagi 5 dtk`);
+        berturut += 1;
+        logger.error(`[telegram-poll] error (${berturut}x beruntun): ${msg} — coba lagi 5 dtk`);
+
+        // Bot tak bisa menarik pesan berkali-kali → pelanggan mengirim pesan ke ruang hampa.
+        if (berturut === alertAfter && options.alert) {
+          void options.alert
+            .notify({
+              key: 'telegram-poller-down',
+              severity: 'critical',
+              title: 'BOT TIDAK MENERIMA PESAN',
+              detail: `getUpdates gagal ${berturut}x beruntun: ${msg}`,
+              context: { dampak: 'pesan pelanggan tidak terproses' },
+            })
+            .catch(() => undefined);
+        }
         await sleep(5_000);
       }
     }

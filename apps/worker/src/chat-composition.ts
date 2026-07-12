@@ -25,10 +25,16 @@ import {
   createGlmJsonAdapter,
   FtpsMediaStore,
   MediaRepositoryPrisma,
+  MultiAlert,
   SharpMediaProcessor,
+  TelegramAlert,
+  ThrottledAlert,
+  WebhookAlert,
+  DEFAULT_ALERT_COOLDOWN_MS,
   TelegramMediaDownload,
   createBasicFtpDeployClient,
   createBullMqChatInboundQueue,
+  createBullMqRedisClient,
   createPreviewToken,
   createRedisInboundRateLimiter,
   createPrismaClient,
@@ -72,7 +78,7 @@ import {
   tenantId,
 } from '@digimaestro/shared';
 import { parseTokenPrice } from '@digimaestro/shared';
-import type { InboundRateLimiterPort, LlmTokenPrice } from '@digimaestro/shared';
+import type { AlertPort, InboundRateLimiterPort, LlmTokenPrice } from '@digimaestro/shared';
 import type { ChannelPort, ConversationRepository, LlmJsonPort } from '@digimaestro/shared';
 import type { PublishNotifier } from './publish-worker.js';
 import type { PollerHandle } from '@digimaestro/adapters';
@@ -97,6 +103,11 @@ export interface ChatWorkerEnv {
   readonly CPANEL_FTP_REJECT_UNAUTHORIZED?: string;
   readonly TELEGRAM_MODE?: string;
   readonly TELEGRAM_ALLOWLIST?: string;
+  // T-070: alert operasional ke PO.
+  readonly ALERT_TELEGRAM_CHAT_ID?: string;
+  readonly ALERT_WEBHOOK_URL?: string;
+  readonly ALERT_COOLDOWN_MS?: string;
+  readonly APP_ENV?: string;
   readonly DIGIMAESTRO_LLM_PROVIDER?: string;
   readonly DEEPSEEK_API_KEY?: string;
   readonly DEEPSEEK_MODEL?: string;
@@ -373,7 +384,10 @@ export function createInboundRateLimiter(
 // T-030tg-poll: poller long-polling. Dipakai saat TELEGRAM_MODE=polling (VPS tanpa domain
 // publik → webhook tak bisa dipanggil Telegram). Update masuk ke antrean `chat-inbound`
 // YANG SAMA dengan webhook → tak ada cabang pemrosesan kedua.
-export function startPoller(env: ChatWorkerEnv = process.env): PollerHandle | undefined {
+export function startPoller(
+  env: ChatWorkerEnv = process.env,
+  alert?: AlertPort,
+): PollerHandle | undefined {
   if (env.TELEGRAM_MODE !== 'polling' || !env.TELEGRAM_BOT_TOKEN || !env.REDIS_URL) return undefined;
 
   const url = new URL(env.REDIS_URL);
@@ -390,6 +404,7 @@ export function startPoller(env: ChatWorkerEnv = process.env): PollerHandle | un
     queue,
     fetch: globalThis.fetch as never,
     ...(env.TELEGRAM_ALLOWLIST ? { allowlistRaw: env.TELEGRAM_ALLOWLIST } : {}),
+    ...(alert ? { alert } : {}),
   });
 }
 
@@ -453,4 +468,53 @@ export function createMediaDeps(env: ChatWorkerEnv = process.env): MediaDeps | u
 // biaya menampilkannya sebagai "belum diisi", bukan diam-diam melaporkan $0 sebagai fakta.
 function tokenPrice(env: { LLM_PRICE_INPUT_PER_1M?: string; LLM_PRICE_OUTPUT_PER_1M?: string }): LlmTokenPrice {
   return parseTokenPrice(env.LLM_PRICE_INPUT_PER_1M, env.LLM_PRICE_OUTPUT_PER_1M);
+}
+
+// T-070: alert operasional. Telegram = jalur UTAMA (hidup di luar infrastruktur kita, jadi
+// tetap ada saat platform sekarat); webhook (n8n, ADR-7) = tambahan opsional. Diredam lewat
+// Redis agar satu masalah tak jadi ratusan notifikasi (PO akan mematikan alert yang berisik,
+// dan alert yang dimatikan = tidak ada alert).
+export function createAlert(env: ChatWorkerEnv = process.env): AlertPort | undefined {
+  const targets: AlertPort[] = [];
+
+  if (env.ALERT_TELEGRAM_CHAT_ID && env.TELEGRAM_BOT_TOKEN) {
+    targets.push(
+      new TelegramAlert({
+        opsChatId: env.ALERT_TELEGRAM_CHAT_ID,
+        // Kanal MENTAH (tanpa rate limit pelanggan): alert tak boleh ikut tertahan kuota
+        // kirim justru saat sistem sedang bermasalah.
+        channel: createTelegramChannel(env),
+        ...(env.APP_ENV ? { environment: env.APP_ENV } : {}),
+      }),
+    );
+  }
+
+  if (env.ALERT_WEBHOOK_URL) {
+    targets.push(
+      new WebhookAlert({
+        url: env.ALERT_WEBHOOK_URL,
+        fetch: globalThis.fetch as never,
+        ...(env.APP_ENV ? { environment: env.APP_ENV } : {}),
+      }),
+    );
+  }
+
+  if (targets.length === 0) return undefined;
+  const base = targets.length === 1 ? (targets[0] as AlertPort) : new MultiAlert(targets);
+
+  if (!env.REDIS_URL) return base; // tanpa Redis: tetap alert (tanpa peredam)
+
+  const url = new URL(env.REDIS_URL);
+  const client = createBullMqRedisClient({
+    host: url.hostname,
+    port: url.port ? Number(url.port) : 6379,
+    username: url.username || undefined,
+    password: url.password || undefined,
+    maxRetriesPerRequest: null,
+  });
+
+  return new ThrottledAlert(base, client, {
+    cooldownMs: Number(env.ALERT_COOLDOWN_MS ?? DEFAULT_ALERT_COOLDOWN_MS),
+    logger: console,
+  });
 }

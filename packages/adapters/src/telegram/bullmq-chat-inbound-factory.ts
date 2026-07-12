@@ -47,3 +47,10 @@ export function createRedisInboundRateLimiter(
     options,
   );
 }
+
+// Klien Redis dari koneksi BullMQ (API publik `Queue.client`) — dipakai peredam alert &
+// limiter, tanpa menambah dependensi `ioredis`.
+export function createBullMqRedisClient(connection: ConnectionOptions): () => Promise<RedisRateCommands> {
+  const queue = new Queue(CHAT_INBOUND_QUEUE_NAME, { connection });
+  return () => queue.client as unknown as Promise<RedisRateCommands>;
+}

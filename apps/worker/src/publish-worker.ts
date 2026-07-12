@@ -13,6 +13,7 @@ import {
   type JobLogView,
   type Logger,
 } from './publish-observability.js';
+import type { AlertPort } from '@digimaestro/shared';
 import type { PublishDeps } from './publish.js';
 
 // T-032tg: pengabar hasil publish ke chat pengguna. Opsional — worker publish tetap jalan
@@ -43,6 +44,9 @@ export interface PublishWorkerOptions {
   // Logger terinjeksi (default console) → memudahkan uji & routing log terstruktur.
   readonly logger?: Logger;
   readonly notifier?: PublishNotifier;
+  // T-070: job yang habis retry (dead-letter) BERARTI situs pelanggan gagal terbit.
+  // Sebelumnya hanya masuk log → tak seorang pun tahu. Kini PO diberi tahu.
+  readonly alert?: AlertPort;
 }
 
 export function startPublishWorker(deps: PublishDeps, options: PublishWorkerOptions): Worker<PublishQueueJob> {
@@ -88,6 +92,24 @@ export function startPublishWorker(deps: PublishDeps, options: PublishWorkerOpti
     logger.error(formatJobFailure(view, err.message));
 
     const data = job.data as PublishQueueJob;
+
+    // Dead-letter = kegagalan FINAL. Kabari PO (bukan hanya pengguna).
+    if (isDeadLetter(view) && options.alert) {
+      void options.alert
+        .notify({
+          key: `publish-dead-letter:${data.websiteId}`,
+          severity: 'error',
+          title: 'Publish situs GAGAL (retry habis)',
+          detail: err.message,
+          context: {
+            websiteId: data.websiteId,
+            slug: data.slug,
+            percobaan: `${view.attemptsMade}/${view.opts?.attempts ?? 1}`,
+          },
+        })
+        .catch(() => undefined);
+    }
+
     if (!options.notifier || !shouldNotifyFailure(view, data)) return;
 
     void options.notifier
