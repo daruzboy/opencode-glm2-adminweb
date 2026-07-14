@@ -66,6 +66,7 @@ export * from './publish/basic-ftp-client.js';
 export * from './publish/cpanel-uapi-subdomain.js';
 export * from './publish/mobirise-site-builder.js';
 export * from './redis/with-deadline.js';
+export * from './editor/editor-web-handoff.js';
 export * from './templates/template-manifest.js';
 export * from './templates/template-source.js';
 export * from './templates/slot-contract.js';

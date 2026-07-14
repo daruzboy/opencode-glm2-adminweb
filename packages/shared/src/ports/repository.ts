@@ -168,6 +168,9 @@ export interface WebsiteEntity {
   status: WebsiteStatus;
   publishedRevisionId: string | null;
   themeId: string | null;
+  // P5: template yang SUDAH lolos review PO. Aturan gerbang O(1):
+  // revisi.templateId != approvedTemplateId → wajib review (null = build pertama).
+  approvedTemplateId?: string | null;
   deploymentTargetId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -176,6 +179,8 @@ export interface WebsiteEntity {
 export interface WebsiteUpdateInput {
   status?: WebsiteStatus;
   publishedRevisionId?: string | null;
+  // P5: diset TEPAT saat review PO selesai.
+  approvedTemplateId?: string;
 }
 
 // Input pembuatan Website (onboarding, T-020ext/A). slug @unique global; status default
@@ -224,6 +229,11 @@ export interface RevisionEntity {
   summary: string | null;
   status: RevisionStatus;
   createdBy: string;
+  // P2 dual-mode / P5 gerbang review. Opsional di entity: adapter/fake lama tanpa kolom
+  // ini tetap sah (dibaca sebagai sections-v1 tanpa template).
+  renderEngine?: string;
+  templateId?: string | null;
+  editorProjectId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -243,6 +253,8 @@ export interface RevisionCreateInput {
 export interface RevisionUpdateInput {
   status?: RevisionStatus;
   summary?: string;
+  // P5: diisi SETELAH handoff sukses (revisi dibuat dulu → id-nya jadi korelasi handoff).
+  editorProjectId?: string;
 }
 
 export interface RevisionRepository extends Port {

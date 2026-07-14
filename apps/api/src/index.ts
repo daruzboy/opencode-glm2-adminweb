@@ -8,6 +8,7 @@ import {
   createPreviewDeps,
   createPublishRequestDeps,
   createReadinessDeps,
+  createReviewRoutesDeps,
   createTelegramWebhookDeps,
   createTemplateAdminDeps,
   createUsageRoutesDeps,
@@ -21,6 +22,7 @@ import { registerPreviewRoutes } from './preview/routes.js';
 import { registerPublishRoutes } from './publish/routes.js';
 import { registerReadiness, type ReadinessDeps } from './readiness.js';
 import { registerTemplateAdminRoutes, type TemplateAdminDeps } from './admin/template-routes.js';
+import { registerReviewRoutes, type ReviewRoutesDeps } from './review/routes.js';
 import type { TelegramWebhookDeps } from './channel/telegram-webhook.js';
 import type { UsageRoutesDeps } from './admin/usage-routes.js';
 import type { ChatDeps } from './chat/handle-incoming.js';
@@ -41,6 +43,7 @@ export interface BuildServerOptions {
   usage?: UsageRoutesDeps;
   ready?: ReadinessDeps;
   templates?: TemplateAdminDeps;
+  reviewGate?: ReviewRoutesDeps;
   // P1: pino bawaan Fastify. `true`/objek konfigurasi di produksi; test tetap default false.
   logger?: boolean | { level?: string; redact?: readonly string[] };
 }
@@ -69,6 +72,7 @@ export async function buildServer(opts: BuildServerOptions = {}): Promise<Fastif
   if (opts.telegram) registerTelegramWebhook(app, opts.telegram);
   if (opts.usage) registerUsageRoutes(app, opts.usage);
   if (opts.templates) registerTemplateAdminRoutes(app, opts.templates);
+  if (opts.reviewGate) registerReviewRoutes(app, opts.reviewGate);
   if (opts.preview) registerPreviewRoutes(app, opts.preview);
   if (opts.publish) registerPublishRoutes(app, opts.publish);
   // /healthz = liveness (proses hidup); /readyz = readiness (DB+Redis terjangkau).
@@ -88,6 +92,7 @@ export async function start(): Promise<void> {
   const telegram = process.env.TELEGRAM_WEBHOOK_SECRET ? createTelegramWebhookDeps() : undefined;
   const usage = process.env.DATABASE_URL ? createUsageRoutesDeps() : undefined;
   const templates = createTemplateAdminDeps();
+  const reviewGate = createReviewRoutesDeps();
   const app = await buildServer({
     auth,
     preview,
@@ -95,6 +100,7 @@ export async function start(): Promise<void> {
     telegram,
     usage,
     ...(templates ? { templates } : {}),
+    ...(reviewGate ? { reviewGate } : {}),
     ready: createReadinessDeps(),
     // P1: log terstruktur (pino bawaan Fastify). Token/authorization diredaksi — log
     // adalah tempat paling umum kredensial bocor tanpa sengaja.

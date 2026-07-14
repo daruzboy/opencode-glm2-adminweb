@@ -23,7 +23,7 @@ export interface WebsiteDelegate {
   // (tenantId bukan @id/@unique meski @unique — tetap perlu composite). Re-read findFirst.
   updateMany(args: {
     where: { tenantId: string; id: string };
-    data: { status?: string; publishedRevisionId?: string | null };
+    data: { status?: string; publishedRevisionId?: string | null; approvedTemplateId?: string };
   }): Promise<{ count: number }>;
   create(args: {
     data: { tenantId: string; slug: string; status: string; themeId?: string | null };
@@ -44,6 +44,8 @@ function toEntity(row: PrismaWebsite): WebsiteEntity {
     status: row.status,
     publishedRevisionId: row.publishedRevisionId,
     themeId: row.themeId,
+    // P5: dasar aturan gerbang review (klien lama tanpa kolom → null = build pertama).
+    approvedTemplateId: row.approvedTemplateId ?? null,
     deploymentTargetId: row.deploymentTargetId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -99,13 +101,18 @@ export class WebsiteRepositoryPrisma implements WebsiteRepository {
     websiteId: string,
     input: WebsiteUpdateInput,
   ): Promise<Result<WebsiteEntity, RepositoryError>> {
-    if (input.status === undefined && input.publishedRevisionId === undefined) {
+    if (
+      input.status === undefined &&
+      input.publishedRevisionId === undefined &&
+      input.approvedTemplateId === undefined
+    ) {
       return err({ code: 'CONFLICT', message: 'Tidak ada field untuk diperbarui.' });
     }
     try {
-      const data: { status?: string; publishedRevisionId?: string | null } = {};
+      const data: { status?: string; publishedRevisionId?: string | null; approvedTemplateId?: string } = {};
       if (input.status !== undefined) data.status = input.status;
       if (input.publishedRevisionId !== undefined) data.publishedRevisionId = input.publishedRevisionId;
+      if (input.approvedTemplateId !== undefined) data.approvedTemplateId = input.approvedTemplateId;
 
       const res = await this.delegate.updateMany({
         where: { tenantId, id: websiteId },

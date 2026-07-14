@@ -17,6 +17,7 @@ import {
   OpenAiCompatibleAgentAdapter,
   PublishSourcePrisma,
   RateLimitedChannel,
+  EditorWebHandoff,
   RevisionRepositoryPrisma,
   SitebuilderToolAdapter,
   TelegramChannel,
@@ -133,6 +134,11 @@ export interface ChatWorkerEnv {
   // P4: 'mobirise-v1' + TEMPLATES_DIR → build dari template Mobirise; selain itu legacy.
   readonly SITE_ENGINE?: string;
   readonly TEMPLATES_DIR?: string;
+  // P5: gerbang review PO (handoff ke editor-web).
+  readonly REVIEW_GATE?: string;
+  readonly EDITOR_WEB_API_URL?: string;
+  readonly EDITOR_WEB_APP_URL?: string;
+  readonly HANDOFF_SERVICE_TOKEN?: string;
   readonly TRIAL_QUOTA_MESSAGES?: string;
   readonly TRIAL_QUOTA_WEBSITES?: string;
   readonly TRIAL_DAYS?: string;
@@ -252,6 +258,18 @@ export function createChatReplier(
           delegate: prisma.template as unknown as TemplateQueryDelegate,
         })
       : undefined;
+  // P5: gerbang review PO — aktif bila REVIEW_GATE=1 + kredensial editor-web lengkap.
+  // Tanpa itu, build template langsung ke pelanggan (alur P4 murni).
+  const handoff =
+    env.REVIEW_GATE === '1' && env.EDITOR_WEB_API_URL && env.EDITOR_WEB_APP_URL && env.HANDOFF_SERVICE_TOKEN
+      ? new EditorWebHandoff({
+          apiBaseUrl: env.EDITOR_WEB_API_URL,
+          appBaseUrl: env.EDITOR_WEB_APP_URL,
+          serviceToken: env.HANDOFF_SERVICE_TOKEN,
+          fetch: globalThis.fetch as never,
+        })
+      : undefined;
+
   const buildTool = templateCatalog
     ? createTemplateBuildSiteTool({
         llm: jsonLlm,
@@ -259,6 +277,9 @@ export function createChatReplier(
         websites,
         catalog: templateCatalog,
         mediaUrls: buildDeps.mediaUrls as NonNullable<BuildDeps['mediaUrls']>,
+        ...(handoff ? { handoff } : {}),
+        ...(handoff ? { alert: createAlert(env) } : {}),
+        ...(env.PUBLIC_API_URL ? { publicApiUrl: env.PUBLIC_API_URL } : {}),
       })
     : createSitebuilderBuildSiteTool(buildDeps);
 
