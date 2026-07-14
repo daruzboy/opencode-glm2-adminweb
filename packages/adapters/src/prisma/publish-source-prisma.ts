@@ -19,7 +19,12 @@ export interface PublishSourceDelegate {
     findFirst(args: { where: { id: string; tenantId: string } }): Promise<{ id: string; slug: string } | null>;
   };
   readonly revision: {
-    findFirst(args: { where: { websiteId: string; number: number } }): Promise<{ siteDoc: unknown } | null>;
+    findFirst(args: { where: { websiteId: string; number: number } }): Promise<{
+      siteDoc: unknown;
+      // P2: opsional di delegate (fake lama tanpa kolom ini tetap sah = sections-v1).
+      renderEngine?: string;
+      templateId?: string | null;
+    } | null>;
   };
 }
 
@@ -46,6 +51,9 @@ export class PublishSourcePrisma implements PublishSourcePort {
         revisionNumber: input.revisionNumber,
         slug: website.slug,
         siteDocument: revision.siteDoc,
+        // P2 dual-mode: engine ikut ke job publish; revisi lama tanpa kolom = sections-v1.
+        renderEngine: revision.renderEngine ?? 'sections-v1',
+        templateId: revision.templateId ?? null,
       });
     } catch (e) {
       return err({ code: 'UNKNOWN', message: `gagal memuat sumber publish: ${(e as Error).message}` });

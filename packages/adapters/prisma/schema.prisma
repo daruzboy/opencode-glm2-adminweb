@@ -82,6 +82,9 @@ enum RevisionStatus {
   APPROVED
   PUBLISHED
   REJECTED
+  // Gerbang review PO (P5): revisi ber-template BARU menunggu review admin di editor-web
+  // sebelum pelanggan melihat preview. Template sama = lewat langsung (keputusan PO 2026-07-14).
+  PENDING_ADMIN_REVIEW
 }
 
 enum AgentJobKind {
@@ -193,6 +196,9 @@ model Website {
   status              WebsiteStatus @default(DRAFTING)
   publishedRevisionId String?
   themeId             String?
+  // P5: template yang SUDAH lolos review PO untuk tenant ini. Aturan gerbang O(1):
+  // revisi.templateId != approvedTemplateId → wajib review admin (null = build pertama).
+  approvedTemplateId  String?
   deploymentTargetId  String?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
@@ -250,12 +256,43 @@ model MediaAsset {
   width          Int
   height         Int
   sizeBytes      Int
+  // P6 (gambar stok): atribusi WAJIB disimpan saat foto berasal dari Unsplash/Pexels —
+  // syarat lisensi keduanya (foto di-download & di-rehost, bukan hotlink). Null = foto
+  // kiriman pelanggan sendiri.
+  sourceProvider String?
+  sourceUrl      String?
+  authorName     String?
+  authorUrl      String?
   createdAt      DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, providerFileId])
   @@index([tenantId])
+}
+
+// P3: registry template Mobirise. Baris = folder di TEMPLATES_DIR (satu folder yang sama
+// juga dilayani editor-web) — diindeks `pnpm templates:index`, BUKAN sumber kebenaran;
+// folder-lah sumbernya (template di-gitignore: lisensi). TIDAK ber-tenantId: katalog
+// bersama seluruh platform, bukan data pelanggan.
+model Template {
+  id            String   @id
+  name          String
+  description   String
+  // Jenis usaha yang cocok (mis. "kuliner","jasa","bengkel") — filter shortlist AI
+  // sebelum LLM memilih; ratusan template tak mungkin dimuat semua ke prompt.
+  businessTypes String[]
+  tags          String[]
+  // Ringkasan slot hasil derive indexer (jumlah halaman/blok/slot teks/gambar) —
+  // bahan ringkas prompt pemilihan.
+  slotSummary   Json
+  coverPath     String?
+  active        Boolean  @default(true)
+  // Hash isi project.mobirise → indexer tahu folder berubah tanpa membandingkan isi penuh.
+  sourceHash    String
+  indexedAt     DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model Revision {
@@ -266,6 +303,15 @@ model Revision {
   summary   String?
   status    RevisionStatus @default(DRAFT)
   createdBy String
+  // P2 dual-mode: 'sections-v1' (renderer lama sites-kit) | 'mobirise-v1' (engine Mobirise).
+  // Diskriminator per-REVISI, bukan per-Website: situs lama tetap ter-render selamanya,
+  // dan sebuah tenant "bermigrasi" cukup dengan mendapat revisi mobirise baru.
+  renderEngine String @default("sections-v1")
+  // mobirise-v1: template asal (id folder di TEMPLATES_DIR) — dasar aturan gerbang review
+  // ("template BARU untuk tenant ini?") + resolusi aset saat publish.
+  templateId String?
+  // P5: Project editor-web hasil handoff (korelasi review PO). Null = tak/belum di-handoff.
+  editorProjectId String?
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
 

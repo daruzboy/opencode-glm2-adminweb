@@ -8,11 +8,19 @@ import { err, ok } from '@digimaestro/shared';
 import type {
   ArtifactRef,
   ArtifactStorePort,
+  DeployableFile,
   DeployPort,
   PublishError,
   Result,
   SubdomainPort,
 } from '@digimaestro/shared';
+
+// P2: perakit berkas untuk revisi 'mobirise-v1' (engine Mobirise + aset template).
+// Port sempit → use case ini tetap murni & teruji offline; implementasinya
+// MobiriseSiteBuilder (adapters, baca TEMPLATES_DIR).
+export interface MobiriseBuilderPort {
+  build(siteDocument: unknown): Promise<Result<readonly DeployableFile[], PublishError>>;
+}
 
 // Docroot default per slug (selaras template adapter cPanel 'public_html/{slug}').
 const DEFAULT_DOCROOT_TEMPLATE = 'public_html/{slug}';
@@ -25,6 +33,9 @@ export interface PublishDeps {
   // Provisioning subdomain sebelum deploy (FR-PUB-004b). Opsional; bila absen, dilewati
   // (mis. dev lokal-FS). Bila di-inject, `rootDomain` pada input wajib.
   readonly subdomain?: SubdomainPort;
+  // P2: wajib di-inject bila ada revisi 'mobirise-v1'; tanpa ini revisi mobirise gagal
+  // dengan pesan jelas (bukan render setengah-jadi lewat jalur sections).
+  readonly mobirise?: MobiriseBuilderPort;
 }
 
 export interface PublishInput {
@@ -33,6 +44,9 @@ export interface PublishInput {
   readonly slug: string;
   readonly baseUrl: string;
   readonly siteDocument: unknown;
+  // P2 dual-mode: 'sections-v1' (default — revisi & job lama tak punya field ini) |
+  // 'mobirise-v1'. Menentukan perakit berkas, BUKAN pipeline (store/deploy/verify sama).
+  readonly renderEngine?: string;
   readonly docroot?: string;
   // Domain induk subdomain (mis. 'digimaestro.id'). Wajib bila deps.subdomain di-inject.
   readonly rootDomain?: string;
@@ -84,13 +98,32 @@ async function ensureSubdomainIfConfigured(
   return res.ok ? null : res.error;
 }
 
-export async function publishSite(deps: PublishDeps, input: PublishInput): Promise<Result<PublishResult, PublishError>> {
+// Rakit berkas sesuai engine revisi. Kegagalan parse/rakit = BUILD error (bukan crash).
+async function buildFiles(
+  deps: PublishDeps,
+  input: PublishInput,
+): Promise<Result<readonly DeployableFile[], PublishError>> {
+  if (input.renderEngine === 'mobirise-v1') {
+    if (!deps.mobirise) {
+      return err({
+        code: 'BUILD',
+        message: 'revisi mobirise-v1 tapi builder mobirise tak terpasang (TEMPLATES_DIR belum diset?)',
+      });
+    }
+    return deps.mobirise.build(input.siteDocument);
+  }
+
   const parsed = parseSiteDocument(input.siteDocument);
   if (!parsed.ok) {
     return err({ code: 'BUILD', message: `site document tidak valid: ${parsed.issues[0] ?? 'unknown'}` });
   }
+  return ok(buildStaticSite(parsed.value, { baseUrl: input.baseUrl }));
+}
 
-  const files = buildStaticSite(parsed.value, { baseUrl: input.baseUrl });
+export async function publishSite(deps: PublishDeps, input: PublishInput): Promise<Result<PublishResult, PublishError>> {
+  const built = await buildFiles(deps, input);
+  if (!built.ok) return built;
+  const files = built.value;
 
   const stored = await deps.artifacts.store({ key: artifactKey(input.websiteId, input.revisionNumber), files });
   if (!stored.ok) return stored;

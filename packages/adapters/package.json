@@ -26,7 +26,9 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1083.0",
+    "@digimaestro/engine-mobirise": "workspace:*",
     "@digimaestro/shared": "workspace:*",
+    "@digimaestro/sites-kit": "workspace:*",
     "@prisma/client": "^6.0.0",
     "basic-ftp": "^6.0.1",
     "bullmq": "^5.79.3",

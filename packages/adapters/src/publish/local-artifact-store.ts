@@ -11,6 +11,9 @@ import type { ArtifactRef, ArtifactStorePort, DeployableFile, PublishError, Resu
 interface ManifestEntry {
   readonly path: string;
   readonly contentType: string;
+  // P2: berkas biner (aset template Mobirise) dibaca-tulis tanpa encoding; teks tetap
+  // utf8 agar artifact lama (tanpa flag ini) terbaca persis seperti sebelumnya.
+  readonly binary?: boolean;
 }
 
 const MANIFEST = '_manifest.json';
@@ -24,9 +27,13 @@ export class LocalArtifactStore implements ArtifactStorePort {
       for (const file of input.files) {
         const target = join(base, file.path);
         await mkdir(dirname(target), { recursive: true });
-        await writeFile(target, file.contents, 'utf8');
+        await writeFile(target, file.contents);
       }
-      const manifest: ManifestEntry[] = input.files.map((f) => ({ path: f.path, contentType: f.contentType }));
+      const manifest: ManifestEntry[] = input.files.map((f) => ({
+        path: f.path,
+        contentType: f.contentType,
+        ...(typeof f.contents === 'string' ? {} : { binary: true }),
+      }));
       await mkdir(base, { recursive: true });
       await writeFile(join(base, MANIFEST), JSON.stringify(manifest), 'utf8');
       return ok({ key: input.key, location: base, fileCount: input.files.length });
@@ -46,7 +53,9 @@ export class LocalArtifactStore implements ArtifactStorePort {
     try {
       const files: DeployableFile[] = [];
       for (const entry of manifest) {
-        const contents = await readFile(join(base, entry.path), 'utf8');
+        const contents = entry.binary
+          ? new Uint8Array(await readFile(join(base, entry.path)))
+          : await readFile(join(base, entry.path), 'utf8');
         files.push({ path: entry.path, contents, contentType: entry.contentType });
       }
       return ok(files);

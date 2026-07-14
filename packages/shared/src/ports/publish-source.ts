@@ -11,6 +11,10 @@ export interface PublishSource {
   readonly slug: string;
   // Site Document tersimpan (Revision.siteDoc, JSONB). Divalidasi saat build (worker).
   readonly siteDocument: unknown;
+  // P2 dual-mode: engine revisi ('sections-v1' | 'mobirise-v1'); absen = sections-v1.
+  readonly renderEngine?: string;
+  // mobirise-v1: template asal (resolusi aset saat publish).
+  readonly templateId?: string | null;
 }
 
 export interface PublishSourceLookup {

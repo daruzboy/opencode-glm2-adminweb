@@ -9,7 +9,9 @@ import type { Result } from '../index.js';
 // File statis siap-deploy (kompatibel struktural dgn StaticFile sites-kit).
 export interface DeployableFile {
   readonly path: string;
-  readonly contents: string;
+  // string untuk berkas teks (HTML/CSS/JS); Uint8Array untuk biner (gambar/font aset
+  // template Mobirise, P2). Transport FTP/SFTP sudah menerima keduanya sejak awal.
+  readonly contents: string | Uint8Array;
   readonly contentType: string;
 }
 

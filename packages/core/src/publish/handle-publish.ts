@@ -38,7 +38,7 @@ export async function handlePublishRequest(deps: PublishRequestDeps, req: Publis
   if (!src.ok) return { ok: false, status: 500, message: src.error.message };
   if (!src.value) return { ok: false, status: 404, message: 'revisi tidak ditemukan' };
 
-  const { slug, siteDocument, websiteId, revisionNumber } = src.value;
+  const { slug, siteDocument, websiteId, revisionNumber, renderEngine } = src.value;
   const url = publicSiteUrl(slug, deps.rootDomain, deps.urlMode ?? 'subdomain');
 
   const enq = await deps.queue.enqueuePublish({
@@ -49,6 +49,8 @@ export async function handlePublishRequest(deps: PublishRequestDeps, req: Publis
     slug,
     baseUrl: url,
     siteDocument,
+    // P2 dual-mode: worker memilih perakit berkas dari sini (absen = sections-v1).
+    ...(renderEngine ? { renderEngine } : {}),
     rootDomain: deps.rootDomain,
   });
   if (!enq.ok) return { ok: false, status: 500, message: enq.error.message };

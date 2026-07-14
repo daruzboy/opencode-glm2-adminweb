@@ -19,6 +19,9 @@ export interface PublishJobRequest {
   readonly slug: string;
   readonly baseUrl: string;
   readonly siteDocument: unknown;
+  // P2 dual-mode: 'sections-v1' (default bila absen) | 'mobirise-v1'. Ikut payload supaya
+  // worker memilih perakit berkas yang benar tanpa query balik.
+  readonly renderEngine?: string;
   readonly docroot?: string;
   readonly rootDomain?: string;
   // Bentuk URL yang dijanjikan ke pengguna → worker memverifikasi URL yang SAMA.

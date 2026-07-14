@@ -9,6 +9,7 @@ import {
   CpanelSftpDeploy,
   LocalArtifactStore,
   LocalFilesystemDeploy,
+  MobiriseSiteBuilder,
   S3ArtifactStore,
   createAwsS3ObjectClient,
   createBasicFtpDeployClient,
@@ -21,6 +22,9 @@ import type { ConnectionOptions } from 'bullmq';
 import type { PublishDeps } from './publish.js';
 
 export interface PublishEnv {
+  // P2: root folder template Mobirise (folder yang sama dilayani editor-web). Diisi →
+  // builder mobirise terpasang; kosong → revisi mobirise-v1 gagal dengan pesan jelas.
+  readonly TEMPLATES_DIR?: string;
   readonly S3_ENDPOINT?: string;
   readonly S3_BUCKET?: string;
   readonly S3_KEY?: string;
@@ -173,6 +177,10 @@ export function createPublishDeps(env: PublishEnv = process.env): PublishDeps {
     deploy: createDeploy(env),
     verify: createHttpVerify(),
     subdomain: createSubdomain(env),
+    // P2: perakit revisi 'mobirise-v1' (engine Mobirise + aset template dari disk).
+    ...(env.TEMPLATES_DIR
+      ? { mobirise: new MobiriseSiteBuilder({ templatesDir: env.TEMPLATES_DIR }) }
+      : {}),
   };
 }
 

@@ -1,0 +1,28 @@
+{
+  "name": "@digimaestro/engine-mobirise",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "VENDORED dari editor-web packages/block-engine — mesin render blok Mobirise (lihat VENDORED.md; JANGAN edit langsung, jalankan ops/sync-block-engine.sh)",
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/engine.test.js",
+    "lint": "echo 'vendored dari editor-web — lint di repo asal (lihat VENDORED.md)'"
+  },
+  "dependencies": {
+    "less": "^4.2.0",
+    "node-html-parser": "^6.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  }
+}
