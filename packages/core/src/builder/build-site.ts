@@ -172,7 +172,10 @@ export async function buildSiteFromBrief(
     system,
     messages,
     schema: deps.siteDocSchema,
-    maxTokens: 4096,
+    // 8192, bukan 4096: situs multi-halaman (6 halaman terukur di produksi 2026-07-14)
+    // butuh > 4096 token output — di 4096 JSON terpotong PERSIS di batas → tak valid →
+    // 3× retry semuanya terpotong → build gagal "gangguan teknis" + token terbakar sia-sia.
+    maxTokens: 8192,
     temperature: DEFAULT_TEMPERATURE_BY_TASK[BUILD_TASK],
   });
   if (!llmResult.ok) {

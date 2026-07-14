@@ -347,6 +347,8 @@ export function createLlmJsonPort(options: CreateLlmJsonPortOptions = {}): LlmJs
       baseUrl: env.GLM_BASE_URL,
       fetch: options.fetch,
       usageLogger,
+      // Tanpa price, cost tercatat $0 padahal token terbakar (T-082).
+      price: tokenPrice(env),
       timeoutMs: BUILD_LLM_TIMEOUT_MS,
     });
   }
@@ -357,6 +359,7 @@ export function createLlmJsonPort(options: CreateLlmJsonPortOptions = {}): LlmJs
     baseUrl: env.DEEPSEEK_BASE_URL,
     fetch: options.fetch,
     usageLogger,
+    price: tokenPrice(env),
     timeoutMs: BUILD_LLM_TIMEOUT_MS,
   });
 }

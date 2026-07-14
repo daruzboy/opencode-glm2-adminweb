@@ -110,7 +110,10 @@ export class SitebuilderToolAdapter implements SitebuilderToolPort {
           { role: 'user', content: `Site Document saat ini:\n${JSON.stringify(latest.value.siteDoc, null, 2)}` },
         ],
         schema: this.schema,
-        maxTokens: 4096,
+        // 8192: revisi mengembalikan SELURUH dokumen — dokumen multi-halaman tak muat di
+        // 4096 (insiden produksi 2026-07-14, lihat build-site.ts). Desain "LLM tulis ulang
+        // seluruh dokumen" memang tak skalabel; digantikan pengisian slot di mesin template.
+        maxTokens: 8192,
         temperature: 0.1,
       });
       if (!llmResult.ok) {
