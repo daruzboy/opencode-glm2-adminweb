@@ -96,6 +96,36 @@ describe('ThrottledAlert — satu masalah ≠ ratusan notifikasi', () => {
     expect(target.notify).toHaveBeenCalledTimes(1);
     expect(errors.some((e) => e.includes('redis down'))).toBe(true);
   });
+
+  // Insiden P0 2026-07-12: perintah pada koneksi `maxRetriesPerRequest: null` MENGANTRE tanpa
+  // reject saat Redis tak terjangkau → tanpa deadline, notify() menggantung dan alert mati
+  // persis saat paling dibutuhkan.
+  it('SET yang TAK PERNAH selesai → alert tetap dikirim pada deadline (bukan menggantung)', async () => {
+    vi.useFakeTimers();
+    try {
+      const target = inner();
+      const errors: string[] = [];
+      const macet = {
+        incr: vi.fn(),
+        pexpire: vi.fn(),
+        set: () => new Promise<string | null>(() => undefined), // menggantung selamanya
+      } as unknown as RedisRateCommands;
+      const t = new ThrottledAlert(target, async () => macet, {
+        cooldownMs: 60_000,
+        deadlineMs: 2_000,
+        logger: { error: (m) => errors.push(m) },
+      });
+
+      const pending = t.notify(ALERT);
+      await vi.advanceTimersByTimeAsync(2_001);
+      await pending;
+
+      expect(target.notify).toHaveBeenCalledTimes(1); // fail-open: alert tetap keluar
+      expect(errors.some((e) => e.includes('REDIS_DEADLINE'))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('MultiAlert — satu kanal gagal tak membungkam yang lain', () => {

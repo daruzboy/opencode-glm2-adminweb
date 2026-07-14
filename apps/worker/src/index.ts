@@ -76,6 +76,10 @@ export async function runWorker(): Promise<void> {
         connection,
         ...(alert ? { alert } : {}),
         ...(registration ? { registration } : {}),
+        // P0: hang senyap → kegagalan terlihat (retry + alert), worker tak pernah beku.
+        ...(process.env.CHAT_JOB_TIMEOUT_MS
+          ? { jobTimeoutMs: Number(process.env.CHAT_JOB_TIMEOUT_MS) }
+          : {}),
       }),
     );
     console.log(

@@ -102,4 +102,35 @@ describe('RedisInboundRateLimiter — gerbang biaya pesan masuk', () => {
     expect(d.allowed).toBe(true);
     expect(errors.some((e) => e.includes('redis down'))).toBe(true);
   });
+
+  // Insiden P0 2026-07-12: koneksi `maxRetriesPerRequest: null` MENGANTRE perintah tanpa
+  // pernah reject saat Redis tak terjangkau → `await incr()` menggantung selamanya, catch
+  // fail-open tak pernah menyala, dua job macet membekukan seluruh worker. Deadline harus
+  // mengubah hang itu menjadi fail-open.
+  it('perintah Redis yang TAK PERNAH selesai → fail-open pada deadline (bukan menggantung)', async () => {
+    vi.useFakeTimers();
+    try {
+      const errors: string[] = [];
+      const neverResolves: RedisRateCommands = {
+        incr: () => new Promise<number>(() => undefined), // menggantung selamanya
+        pexpire: () => new Promise(() => undefined),
+        set: () => new Promise<string | null>(() => undefined),
+      };
+      const l = new RedisInboundRateLimiter(async () => neverResolves, {
+        limit: 1,
+        windowMs: 60_000,
+        deadlineMs: 2_000,
+        logger: { error: (m) => errors.push(m) },
+      });
+
+      const pending = l.check(T);
+      await vi.advanceTimersByTimeAsync(2_001);
+      const d = await pending;
+
+      expect(d.allowed).toBe(true); // fail-open, pesan tetap lewat
+      expect(errors.some((e) => e.includes('REDIS_DEADLINE'))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
