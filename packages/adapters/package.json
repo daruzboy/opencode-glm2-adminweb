@@ -27,6 +27,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1083.0",
     "@digimaestro/engine-mobirise": "workspace:*",
+    "node-html-parser": "^6.1.13",
     "@digimaestro/shared": "workspace:*",
     "@digimaestro/sites-kit": "workspace:*",
     "@prisma/client": "^6.0.0",
