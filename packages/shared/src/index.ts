@@ -50,3 +50,4 @@ export * from './ports/publish.js';
 export * from './ports/publish-queue.js';
 export * from './ports/publish-source.js';
 export * from './ports/repository.js';
+export * from './ports/template.js';

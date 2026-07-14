@@ -15,7 +15,8 @@
     "lint": "turbo run lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "turbo run build"
+    "typecheck": "turbo run build",
+    "templates:index": "turbo run build --filter=@digimaestro/adapters && node packages/adapters/dist/templates/index-templates-cli.js"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

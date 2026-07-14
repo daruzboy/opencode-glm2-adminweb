@@ -16,6 +16,8 @@ import {
   createBullMqPublishQueue,
   createBullMqChatInboundQueue,
   createBullMqRedisClient,
+  indexTemplates,
+  type TemplateDelegate,
   PreviewPortPrisma,
   PublishSourcePrisma,
   type ConversationDelegate,
@@ -56,6 +58,7 @@ import {
 } from '@digimaestro/shared';
 import type { LlmTokenPrice } from '@digimaestro/shared';
 import type { ReadinessDeps } from './readiness.js';
+import type { TemplateAdminDeps } from './admin/template-routes.js';
 import type {
   AgentToolDefinition,
   AuthPort,
@@ -406,6 +409,20 @@ function sectionCatalog(): Record<string, readonly string[]> {
 // biaya menampilkannya sebagai "belum diisi", bukan diam-diam melaporkan $0 sebagai fakta.
 function tokenPrice(env: { LLM_PRICE_INPUT_PER_1M?: string; LLM_PRICE_OUTPUT_PER_1M?: string }): LlmTokenPrice {
   return parseTokenPrice(env.LLM_PRICE_INPUT_PER_1M, env.LLM_PRICE_OUTPUT_PER_1M);
+}
+
+// P3: deps admin reindex template. Butuh TEMPLATES_DIR (folder) + DATABASE_URL (registry)
+// + ADMIN_TENANT_ID (pagar akses) — kurang satu pun → rute tak dipasang (fail-closed).
+export function createTemplateAdminDeps(
+  env: NodeJS.ProcessEnv = process.env,
+): TemplateAdminDeps | undefined {
+  if (!env.TEMPLATES_DIR || !env.DATABASE_URL || !env.ADMIN_TENANT_ID) return undefined;
+  const templatesDir = env.TEMPLATES_DIR;
+  const prisma = createPrismaClient() as unknown as { template: TemplateDelegate };
+  return {
+    adminTenantId: env.ADMIN_TENANT_ID,
+    reindex: () => indexTemplates({ templatesDir, delegate: prisma.template }),
+  };
 }
 
 // P1: probe kesiapan untuk /readyz. DB = SELECT 1 (lolos tenant-guard: raw tanpa model);
