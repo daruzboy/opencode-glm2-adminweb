@@ -10,10 +10,15 @@
 import { ok } from '@digimaestro/shared';
 import type { Alert, AlertError, AlertPort, Result } from '@digimaestro/shared';
 import type { RedisRateCommands } from '../telegram/redis-inbound-rate-limiter.js';
+import { DEFAULT_REDIS_DEADLINE_MS, withDeadline } from '../redis/with-deadline.js';
 
 export interface ThrottleOptions {
   // Jendela redam per `alert.key`.
   readonly cooldownMs: number;
+  // Deadline cek Redis. Tanpa ini, koneksi `maxRetriesPerRequest: null` yang mengantre
+  // perintah saat Redis tumbang membuat `notify()` menggantung — dan alert justru mati
+  // persis saat paling dibutuhkan (insiden P0 2026-07-12).
+  readonly deadlineMs?: number;
   readonly logger?: { error(msg: string): void };
 }
 
@@ -28,14 +33,11 @@ export class ThrottledAlert implements AlertPort {
 
   async notify(alert: Alert): Promise<Result<void, AlertError>> {
     try {
-      const client = await this.getClient();
-      // SET NX → hanya yang PERTAMA dalam jendela yang lolos.
-      const first = await client.set(
-        `alert:${alert.key}`,
-        '1',
-        'PX',
-        this.options.cooldownMs,
-        'NX',
+      // Deadline: cek peredam tak boleh menggantung — lihat komentar ThrottleOptions.
+      const first = await withDeadline(
+        this.markFirst(alert.key),
+        this.options.deadlineMs ?? DEFAULT_REDIS_DEADLINE_MS,
+        'alert throttle',
       );
       // Sudah pernah dialertkan dalam jendela ini → diamkan (bukan kegagalan).
       if (first !== 'OK') return ok(undefined);
@@ -47,5 +49,11 @@ export class ThrottledAlert implements AlertPort {
     }
 
     return this.inner.notify(alert);
+  }
+
+  // SET NX → hanya yang PERTAMA dalam jendela yang lolos.
+  private async markFirst(key: string): Promise<string | null> {
+    const client = await this.getClient();
+    return client.set(`alert:${key}`, '1', 'PX', this.options.cooldownMs, 'NX');
   }
 }
