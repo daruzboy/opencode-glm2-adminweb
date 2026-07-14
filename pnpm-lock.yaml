@@ -107,6 +107,9 @@ importers:
       jsonwebtoken:
         specifier: ^9.0.3
         version: 9.0.3
+      node-html-parser:
+        specifier: ^6.1.13
+        version: 6.1.13
       sharp:
         specifier: ^0.35.3
         version: 0.35.3(@types/node@22.20.0)
