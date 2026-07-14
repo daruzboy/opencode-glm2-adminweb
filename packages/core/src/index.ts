@@ -42,6 +42,17 @@ export {
   type TemplateBuildDeps,
 } from './builder/build-site-template.js';
 
+// P5: gerbang review PO (dua gerbang; editor-web sebagai meja review).
+export {
+  completeAdminReview,
+  needsAdminReview,
+  reviewedReadyMessage,
+  type ReviewCompleteCmd,
+  type ReviewCompleteDeps,
+  type ReviewCompleteError,
+  type ReviewCompleteResult,
+} from './review/review-gate.js';
+
 export {
   executeFunctionToolCalls,
   type ToolCallResultMessage,
@@ -186,6 +197,7 @@ export {
   mediaQuotaReply,
   mediaReceivedReply,
   quotaExhaustedReply,
+  pendingReviewMessage,
   rateLimitedReply,
   unsupportedTypeReply,
   type ApprovalDeps,

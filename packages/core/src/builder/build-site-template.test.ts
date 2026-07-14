@@ -68,6 +68,7 @@ function fakeRepos() {
       create: vi.fn(async (_t: unknown, input: Record<string, unknown>) =>
         ok({ id: 'r1', number: 1, ...input }),
       ),
+      update: vi.fn(async () => ok({ id: 'r1', number: 1 })),
     } as never,
   };
 }
@@ -161,6 +162,79 @@ describe('buildSiteFromTemplateBrief', () => {
     );
 
     expect(!res.ok && res.error.code).toBe('LLM_FAILED');
+  });
+
+  // P5: gerbang review PO.
+  it('handoff aktif + template BARU → revisi PENDING_ADMIN_REVIEW + kirim ke editor + alert PO', async () => {
+    const catalog = fakeCatalog();
+    const { websites, revisions } = fakeRepos();
+    const llm = fakeLlm({
+      template_pick: { templateId: 'tpl-rental' },
+      slot_fill: { fills: {} },
+    });
+    const handoff = {
+      createProject: vi.fn(async () => ok({ projectId: 'proj-1', editorUrl: 'http://editor/?project=proj-1' })),
+    };
+    const alert = { notify: vi.fn(async () => ok(undefined)) };
+
+    const res = await buildSiteFromTemplateBrief(
+      { llm, revisions, websites, catalog, handoff: handoff as never, alert: alert as never, publicApiUrl: 'http://api' },
+      REQ,
+    );
+
+    expect(res.ok).toBe(true);
+    const create = (revisions as { create: ReturnType<typeof vi.fn> }).create;
+    expect(create).toHaveBeenCalledWith(T, expect.objectContaining({ status: 'PENDING_ADMIN_REVIEW' }));
+    expect(handoff.createProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        templateId: 'tpl-rental',
+        source: expect.objectContaining({ returnUrl: 'http://api/api/internal/review/complete' }),
+      }),
+    );
+    // Korelasi disimpan + PO di-alert dgn tautan editor.
+    expect((revisions as { update: ReturnType<typeof vi.fn> }).update).toHaveBeenCalledWith(
+      T, 'w1', expect.any(String), { editorProjectId: 'proj-1' },
+    );
+    expect(alert.notify).toHaveBeenCalledWith(expect.objectContaining({ key: 'review-pending' }));
+  });
+
+  it('template SAMA dgn approvedTemplateId → DRAFT langsung, TANPA handoff (perubahan isi lewat)', async () => {
+    const { revisions } = fakeRepos();
+    const websites = {
+      findByTenantId: vi.fn(async () =>
+        ok({ id: 'w1', slug: 's', status: 'DRAFTING', approvedTemplateId: 'tpl-rental' }),
+      ),
+    } as never;
+    const handoff = { createProject: vi.fn() };
+    const llm = fakeLlm({ template_pick: { templateId: 'tpl-rental' }, slot_fill: { fills: {} } });
+
+    const res = await buildSiteFromTemplateBrief(
+      { llm, revisions, websites, catalog: fakeCatalog(), handoff: handoff as never },
+      REQ,
+    );
+
+    expect(res.ok).toBe(true);
+    expect((revisions as { create: ReturnType<typeof vi.fn> }).create).toHaveBeenCalledWith(
+      T, expect.objectContaining({ status: 'DRAFT' }),
+    );
+    expect(handoff.createProject).not.toHaveBeenCalled();
+  });
+
+  it('handoff GAGAL → build tetap sukses (fail-soft), alert error berisi cara memicu ulang', async () => {
+    const { websites, revisions } = fakeRepos();
+    const alert = { notify: vi.fn(async () => ok(undefined)) };
+    const handoff = { createProject: vi.fn(async () => err({ code: 'HTTP', message: 'editor mati' })) };
+    const llm = fakeLlm({ template_pick: { templateId: 'tpl-rental' }, slot_fill: { fills: {} } });
+
+    const res = await buildSiteFromTemplateBrief(
+      { llm, revisions, websites, catalog: fakeCatalog(), handoff: handoff as never, alert: alert as never },
+      REQ,
+    );
+
+    expect(res.ok).toBe(true); // revisi PENDING sudah ada; pelanggan diberi ekspektasi
+    expect(alert.notify).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'review-handoff-failed', severity: 'error' }),
+    );
   });
 
   it('katalog kosong → error yang menyebut cara memperbaikinya', async () => {

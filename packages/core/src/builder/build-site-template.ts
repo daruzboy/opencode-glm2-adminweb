@@ -13,6 +13,8 @@
 
 import { DEFAULT_TEMPERATURE_BY_TASK, err, ok } from '@digimaestro/shared';
 import type {
+  AlertPort,
+  EditorHandoffPort,
   LlmChatMessage,
   LlmJsonPort,
   LlmJsonSchema,
@@ -28,6 +30,7 @@ import type {
   TenantId,
   WebsiteRepository,
 } from '@digimaestro/shared';
+import { needsAdminReview } from '../review/review-gate.js';
 import type { BuildError, BuildRequest, BuildResult, InterviewBrief } from './build-site.js';
 
 export interface TemplateBuildDeps {
@@ -38,6 +41,13 @@ export interface TemplateBuildDeps {
   // Foto milik tenant — HANYA URL di sini yang boleh dipakai slot gambar (P4).
   // Slot tanpa foto cocok → 'keep' (gambar bawaan template). Stok Unsplash/Pexels = P6.
   readonly mediaUrls?: (tenantId: TenantId) => Promise<readonly string[]>;
+  // P5 (gerbang review PO): bila di-inject, revisi ber-template BARU untuk tenant ini
+  // dibuat PENDING_ADMIN_REVIEW + dikirim ke editor-web + PO di-alert. Tanpa ini
+  // (REVIEW_GATE off) → alur P4 murni.
+  readonly handoff?: EditorHandoffPort;
+  readonly alert?: AlertPort;
+  // Nama tenant/usaha utk nama proyek editor (konvensi "AI · <usaha> (<slug>)").
+  readonly publicApiUrl?: string;
 }
 
 // ── Pemilihan template ─────────────────────────────────────────────────────────
@@ -232,20 +242,91 @@ export async function buildSiteFromTemplateBrief(
   const doc = await deps.catalog.materialize(templateId, filled.value);
   if (!doc.ok) return err({ code: 'LLM_FAILED', message: doc.error.message });
 
-  // 6. Persist Revision 'mobirise-v1'.
+  // 6. Gerbang review PO (P5): template BARU untuk tenant ini → PENDING_ADMIN_REVIEW;
+  //    template yang sudah lolos review → DRAFT langsung ke pelanggan (alur lama).
+  const gated =
+    Boolean(deps.handoff) && needsAdminReview(templateId, website.value.approvedTemplateId);
+
   const summary = `Build dari template ${templateId} untuk ${req.brief.businessName}.`;
   const created = await deps.revisions.create(req.tenantId, {
     websiteId: req.websiteId,
     siteDoc: doc.value,
     summary,
-    status: 'DRAFT',
+    status: gated ? 'PENDING_ADMIN_REVIEW' : 'DRAFT',
     createdBy: 'agent',
     renderEngine: 'mobirise-v1',
     templateId,
   });
   if (!created.ok) return err(created.error);
 
+  if (gated && deps.handoff) {
+    await handoffForReview(deps, req, created.value.id, templateId, doc.value, website.value.slug);
+  }
+
   return ok({ revisionId: created.value.id, revisionNumber: created.value.number, summary });
+}
+
+// Kirim dokumen ke editor-web + alert PO. GAGAL = fail-soft: revisi tetap PENDING (pelanggan
+// sudah diberi tahu "sedang disiapkan"), alert memuat error, dan PO bisa memicu ulang lewat
+// POST /api/admin/review/:revisionId/handoff — pelanggan tak pernah menggantung senyap.
+async function handoffForReview(
+  deps: TemplateBuildDeps,
+  req: BuildRequest,
+  revisionId: string,
+  templateId: string,
+  document: unknown,
+  tenantSlug: string,
+): Promise<void> {
+  const handoff = deps.handoff;
+  if (!handoff) return;
+
+  const returnUrl = `${(deps.publicApiUrl ?? '').replace(/\/$/, '')}/api/internal/review/complete`;
+  const sent = await handoff.createProject({
+    name: `AI · ${req.brief.businessName} (${tenantSlug})`,
+    templateId,
+    document,
+    source: { websiteId: req.websiteId, revisionId, returnUrl },
+  });
+
+  if (sent.ok) {
+    const upd = await deps.revisions.update(req.tenantId, req.websiteId, revisionId, {
+      editorProjectId: sent.value.projectId,
+    });
+    if (!upd.ok && deps.alert) {
+      await deps.alert
+        .notify({
+          key: 'review-handoff-correlation',
+          severity: 'error',
+          title: 'Handoff terkirim tapi korelasi GAGAL disimpan',
+          detail: upd.error.message,
+          context: { revisionId, projectId: sent.value.projectId },
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  if (deps.alert) {
+    await deps.alert
+      .notify(
+        sent.ok
+          ? {
+              key: 'review-pending',
+              // 'warn' (bukan error): butuh TINDAKAN PO, bukan tanda sistem rusak.
+              severity: 'warn',
+              title: `Situs AI baru menunggu review: ${req.brief.businessName}`,
+              detail: `Buka di editor: ${sent.value.editorUrl}\nSelesai merapikan? Tekan "Kirim ke pelanggan" di editor.`,
+              context: { revisionId, templateId },
+            }
+          : {
+              key: 'review-handoff-failed',
+              severity: 'error',
+              title: `Handoff ke editor GAGAL: ${req.brief.businessName}`,
+              detail: `${sent.error.message}\nPicu ulang: POST /api/admin/review/${revisionId}/handoff`,
+              context: { revisionId, templateId },
+            },
+      )
+      .catch(() => undefined);
+  }
 }
 
 async function fillAllPages(

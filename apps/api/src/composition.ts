@@ -16,7 +16,10 @@ import {
   createBullMqPublishQueue,
   createBullMqChatInboundQueue,
   createBullMqRedisClient,
+  createPreviewToken,
   indexTemplates,
+  EditorWebHandoff,
+  TelegramChannel,
   type TemplateDelegate,
   PreviewPortPrisma,
   PublishSourcePrisma,
@@ -46,6 +49,7 @@ import {
   SECTION_REGISTRY,
   THEME_IDS,
   assembleSiteDocument,
+  parseMobiriseProject,
   siteDraftJsonSchema,
   siteDocumentSchema,
   siteDraftSchema,
@@ -55,10 +59,13 @@ import {
   DEFAULT_DEEPSEEK_MODEL,
   parsePublishUrlMode,
   parseTokenPrice,
+  tenantId as asTenantId,
 } from '@digimaestro/shared';
-import type { LlmTokenPrice } from '@digimaestro/shared';
+import type { EditorHandoffPort, LlmTokenPrice } from '@digimaestro/shared';
+import type { ReviewCompleteDeps } from '@digimaestro/core';
 import type { ReadinessDeps } from './readiness.js';
 import type { TemplateAdminDeps } from './admin/template-routes.js';
+import type { ReviewRoutesDeps } from './review/routes.js';
 import type {
   AgentToolDefinition,
   AuthPort,
@@ -455,4 +462,131 @@ export function createReadinessDeps(env: NodeJS.ProcessEnv = process.env): Readi
   }
 
   return deps;
+}
+
+// ── P5: gerbang review PO ──────────────────────────────────────────────────────
+// Callback "Kirim ke pelanggan" dari editor-web + re-trigger handoff (admin).
+// Butuh REVIEW_CALLBACK_TOKEN + TELEGRAM_BOT_TOKEN + DATABASE_URL; kurang satu →
+// rute tak dipasang (fail-closed).
+export function createReviewRoutesDeps(
+  env: NodeJS.ProcessEnv = process.env,
+): ReviewRoutesDeps | undefined {
+  if (!env.REVIEW_CALLBACK_TOKEN || !env.TELEGRAM_BOT_TOKEN || !env.DATABASE_URL) {
+    return undefined;
+  }
+
+  const prisma = createPrismaClient();
+  const revisions = new RevisionRepositoryPrisma(prisma as unknown as RevisionDelegate);
+  const websites = new WebsiteRepositoryPrisma(prisma.website as unknown as WebsiteDelegate);
+  const channel = new TelegramChannel({
+    botToken: env.TELEGRAM_BOT_TOKEN,
+    fetch: globalThis.fetch as never,
+  });
+
+  const secret = env.PREVIEW_TOKEN_SECRET;
+  const apiUrl = env.PUBLIC_API_URL;
+  const previewUrl =
+    secret && apiUrl
+      ? (revisionId: string) =>
+          `${apiUrl.replace(/\/$/, '')}/api/preview/${revisionId}?t=${createPreviewToken(secret, revisionId)}`
+      : undefined;
+
+  const review: ReviewCompleteDeps = {
+    revisions,
+    websites,
+    conversations: new ConversationRepositoryPrisma(
+      prisma.conversation as unknown as ConversationDelegate,
+    ),
+    messages: new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate),
+    channel,
+    // Validasi dokumen editan — skema BERSAMA dgn editor-web (sites-kit).
+    parseDocument: (value) => {
+      const parsed = parseMobiriseProject(value);
+      return parsed.ok ? { ok: true } : { ok: false, message: parsed.message };
+    },
+    ...(previewUrl ? { previewUrl } : {}),
+    logger: console,
+  };
+
+  // tenantId pemilik website — dari DB TEPERCAYA (bukan body callback). Raw query lolos
+  // tenant-guard (guard hanya mencegat operasi ber-model).
+  const tenantOfWebsite = async (websiteId: string): Promise<string | null> => {
+    const rows = await (prisma as unknown as {
+      $queryRawUnsafe<T>(q: string, ...v: unknown[]): Promise<T>;
+    }).$queryRawUnsafe<{ tenantId: string }[]>(
+      'SELECT "tenantId" FROM "Website" WHERE "id" = $1',
+      websiteId,
+    );
+    return rows[0]?.tenantId ?? null;
+  };
+
+  // Re-trigger handoff (pemulihan): baca ulang revisi PENDING → kirim ulang ke editor-web.
+  const handoff = createEditorHandoff(env);
+  const admin =
+    env.ADMIN_TENANT_ID && handoff
+      ? {
+          adminTenantId: env.ADMIN_TENANT_ID,
+          retrigger: async (revisionId: string): Promise<{ ok: boolean; message: string }> => {
+            const rows = await (prisma as unknown as {
+              $queryRawUnsafe<T>(q: string, ...v: unknown[]): Promise<T>;
+            }).$queryRawUnsafe<
+              { id: string; websiteId: string; siteDoc: unknown; templateId: string | null; status: string; tenantId: string; slug: string; name: string }[]
+            >(
+              `SELECT r."id", r."websiteId", r."siteDoc", r."templateId", r."status", w."tenantId", w."slug", t."name"
+                 FROM "Revision" r
+                 JOIN "Website" w ON w."id" = r."websiteId"
+                 JOIN "Tenant" t ON t."id" = w."tenantId"
+                WHERE r."id" = $1`,
+              revisionId,
+            );
+            const row = rows[0];
+            if (!row) return { ok: false, message: 'revisi tidak ditemukan' };
+            if (row.status !== 'PENDING_ADMIN_REVIEW') {
+              return { ok: false, message: `revisi berstatus ${row.status}, bukan menunggu review` };
+            }
+            const sent = await handoff.createProject({
+              name: `AI · ${row.name} (${row.slug})`,
+              templateId: row.templateId ?? 'tanpa-template',
+              document: row.siteDoc,
+              source: {
+                websiteId: row.websiteId,
+                revisionId: row.id,
+                returnUrl: `${(env.PUBLIC_API_URL ?? '').replace(/\/$/, '')}/api/internal/review/complete`,
+              },
+            });
+            if (!sent.ok) return { ok: false, message: sent.error.message };
+            const upd = await revisions.update(
+              asTenantId(row.tenantId),
+              row.websiteId,
+              row.id,
+              { editorProjectId: sent.value.projectId },
+            );
+            return upd.ok
+              ? { ok: true, message: `handoff ulang OK → ${sent.value.editorUrl}` }
+              : { ok: false, message: `terkirim tapi korelasi gagal disimpan: ${upd.error.message}` };
+          },
+        }
+      : undefined;
+
+  return {
+    serviceToken: env.REVIEW_CALLBACK_TOKEN,
+    review,
+    tenantOfWebsite,
+    ...(admin ? { admin } : {}),
+  };
+}
+
+// P5: adapter handoff ke editor-web (dipakai worker via build deps & re-trigger admin).
+export function createEditorHandoff(
+  env: NodeJS.ProcessEnv = process.env,
+): EditorHandoffPort | undefined {
+  if (!env.EDITOR_WEB_API_URL || !env.EDITOR_WEB_APP_URL || !env.HANDOFF_SERVICE_TOKEN) {
+    return undefined;
+  }
+  return new EditorWebHandoff({
+    apiBaseUrl: env.EDITOR_WEB_API_URL,
+    appBaseUrl: env.EDITOR_WEB_APP_URL,
+    serviceToken: env.HANDOFF_SERVICE_TOKEN,
+    fetch: globalThis.fetch as never,
+  });
 }

@@ -44,7 +44,7 @@ export interface RevisionDelegate {
     }): Promise<PrismaRevision>;
     updateMany(args: {
       where: { id: string; websiteId: string };
-      data: { status?: string; summary?: string };
+      data: { status?: string; summary?: string; editorProjectId?: string };
     }): Promise<{ count: number }>;
   };
 }
@@ -58,6 +58,10 @@ function toEntity(row: PrismaRevision): RevisionEntity {
     summary: row.summary,
     status: row.status,
     createdBy: row.createdBy,
+    // P2/P5: kolom baru; klien lama (row tanpa kolom) terbaca sections-v1 tanpa template.
+    renderEngine: row.renderEngine ?? 'sections-v1',
+    templateId: row.templateId ?? null,
+    editorProjectId: row.editorProjectId ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -161,7 +165,11 @@ export class RevisionRepositoryPrisma implements RevisionRepository {
     revisionId: string,
     input: RevisionUpdateInput,
   ): Promise<Result<RevisionEntity, RepositoryError>> {
-    if (input.status === undefined && input.summary === undefined) {
+    if (
+      input.status === undefined &&
+      input.summary === undefined &&
+      input.editorProjectId === undefined
+    ) {
       return err({ code: 'CONFLICT', message: 'Tidak ada field untuk diperbarui.' });
     }
     const owned = await this.assertOwned(tenantId, websiteId);
@@ -170,9 +178,10 @@ export class RevisionRepositoryPrisma implements RevisionRepository {
       return err({ code: 'NOT_FOUND', message: `Website ${websiteId} tidak ditemukan.` });
     }
     try {
-      const data: { status?: string; summary?: string } = {};
+      const data: { status?: string; summary?: string; editorProjectId?: string } = {};
       if (input.status !== undefined) data.status = input.status;
       if (input.summary !== undefined) data.summary = input.summary;
+      if (input.editorProjectId !== undefined) data.editorProjectId = input.editorProjectId;
 
       const res = await this.delegate.revision.updateMany({
         where: { id: revisionId, websiteId },

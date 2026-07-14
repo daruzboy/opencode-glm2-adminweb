@@ -149,6 +149,15 @@ export function rateLimitedReply(retryAfterSec: number): string {
   );
 }
 
+// P5: pesan saat situs menunggu review admin. Jujur soal proses, tanpa janji waktu spesifik.
+export function pendingReviewMessage(): string {
+  return (
+    'Sip! Rancangan situsmu sudah jadi 🎨\n\n' +
+    'Sekarang tim kami memeriksa & merapikannya dulu ya, biar hasilnya benar-benar rapi. ' +
+    'Begitu siap, aku kirim preview-nya ke sini untuk kamu setujui 🙏'
+  );
+}
+
 export function approvalButtons(revisionNumber: number): ChannelButton[] {
   return [
     { label: '✅ Setuju & publish', action: encodeChannelAction({ kind: 'publish', revisionNumber }) },
@@ -264,6 +273,23 @@ export async function handleInboundMessage(
   const built = after !== null && (before === null || after > before);
   if (!built) {
     return replyAndPersist(deps, tenantId, conversationId, message, replyText, []);
+  }
+
+  // P5 (gerbang review PO): revisi ber-template BARU menunggu review admin — pelanggan
+  // diberi ekspektasi, TANPA tombol & preview (preview yang bisa disetujui sebelum review
+  // = gerbangnya bocor). Tombol datang nanti dari completeAdminReview.
+  const latest = await latestRevision(deps, tenantId);
+  if (latest?.status === 'PENDING_ADMIN_REVIEW') {
+    const res = await replyAndPersist(
+      deps,
+      tenantId,
+      conversationId,
+      message,
+      pendingReviewMessage(),
+      [],
+    );
+    if (!res.ok) return res;
+    return ok({ ...res.value, revisionNumber: after });
   }
 
   const withPreview = appendPreviewLink(deps, replyText, await latestRevisionId(deps, tenantId));
@@ -432,13 +458,13 @@ async function latestRevisionId(deps: InboundDeps, tenantId: TenantId): Promise<
 async function latestRevision(
   deps: InboundDeps,
   tenantId: TenantId,
-): Promise<{ id: string; number: number } | null> {
+): Promise<{ id: string; number: number; status: string } | null> {
   if (!deps.approval) return null;
   const website = await deps.approval.websites.findByTenantId(tenantId);
   if (!website.ok || !website.value) return null;
   const rev = await deps.approval.revisions.findLatest(tenantId, website.value.id);
   if (!rev.ok || !rev.value) return null;
-  return { id: rev.value.id, number: rev.value.number };
+  return { id: rev.value.id, number: rev.value.number, status: rev.value.status };
 }
 
 function appendPreviewLink(deps: InboundDeps, text: string, revisionId: string | null): string {
