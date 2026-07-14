@@ -178,6 +178,11 @@ function fillUserMessage(
 
 const PICK_MAX_TOKENS = 1_536; // reasoning model: jangan < ~1536 (pelajaran v4-pro)
 const FILL_MAX_TOKENS = 4_096; // nilai slot saja — bukan dokumen utuh
+// Slot per panggilan slot_fill. Template Mobirise nyata bisa 150+ slot per halaman —
+// satu panggilan memotong batas output (terbukti di uji kontainer 2026-07-14:
+// "Unexpected end of JSON input" pada halaman 112 slot). Kelompok kecil = output kecil,
+// prompt fokus, dan kegagalan satu kelompok tak membuang kelompok lain.
+const FILL_CHUNK_SIZE = 40;
 
 export async function buildSiteFromTemplateBrief(
   deps: TemplateBuildDeps,
@@ -253,24 +258,42 @@ async function fillAllPages(
       out.push({ slug: page.slug, fills: {} });
       continue;
     }
-    const filled = await deps.llm.completeJson({
-      tenantId: req.tenantId,
-      ...(req.jobId ? { jobId: req.jobId } : {}),
-      task: 'slot_fill',
-      system: fillSystemPrompt(),
-      messages: [
-        { role: 'user', content: fillUserMessage(briefText, page, media) },
-      ] as readonly LlmChatMessage[],
-      schema: fillSchema(page, media),
-      maxTokens: FILL_MAX_TOKENS,
-      temperature: DEFAULT_TEMPERATURE_BY_TASK.slot_fill,
-    });
-    // Satu halaman gagal → build gagal (bukan situs setengah terisi tanpa penjelasan);
-    // retry/self-repair sudah dikerjakan adapter LLM di bawah.
-    if (!filled.ok) {
-      return err({ code: 'LLM_FAILED', message: `slot_fill ${page.slug}: ${filled.error.message}` });
+
+    // Pecah slot jadi kelompok kecil; gabungkan isian semua kelompok jadi satu PageFills.
+    const merged: Record<string, SlotFill> = {};
+    let title: string | undefined;
+    for (let i = 0; i < page.slots.length; i += FILL_CHUNK_SIZE) {
+      const chunk: TemplatePageContract = {
+        slug: page.slug,
+        title: page.title,
+        slots: page.slots.slice(i, i + FILL_CHUNK_SIZE),
+      };
+      const filled = await deps.llm.completeJson({
+        tenantId: req.tenantId,
+        ...(req.jobId ? { jobId: req.jobId } : {}),
+        task: 'slot_fill',
+        system: fillSystemPrompt(),
+        messages: [
+          { role: 'user', content: fillUserMessage(briefText, chunk, media) },
+        ] as readonly LlmChatMessage[],
+        schema: fillSchema(chunk, media),
+        maxTokens: FILL_MAX_TOKENS,
+        temperature: DEFAULT_TEMPERATURE_BY_TASK.slot_fill,
+      });
+      // Satu kelompok gagal → build gagal (bukan situs setengah terisi tanpa penjelasan);
+      // retry/self-repair sudah dikerjakan adapter LLM di bawah.
+      if (!filled.ok) {
+        return err({
+          code: 'LLM_FAILED',
+          message: `slot_fill ${page.slug} (slot ${i + 1}-${i + chunk.slots.length}): ${filled.error.message}`,
+        });
+      }
+      Object.assign(merged, filled.value.fills);
+      // Judul halaman diambil dari kelompok PERTAMA saja (slot terpenting ada di awal).
+      if (i === 0 && filled.value.title) title = filled.value.title;
     }
-    out.push(filled.value);
+
+    out.push({ slug: page.slug, ...(title ? { title } : {}), fills: merged });
   }
   return ok(out);
 }

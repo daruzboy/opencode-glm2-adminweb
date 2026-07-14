@@ -102,6 +102,55 @@ describe('buildSiteFromTemplateBrief', () => {
     );
   });
 
+  // Template nyata bisa 150+ slot per halaman; satu panggilan memotong batas output
+  // (uji kontainer 2026-07-14). Halaman besar HARUS dipecah dan hasilnya digabung.
+  it('halaman >40 slot → slot_fill dipecah per kelompok, isian DIGABUNG', async () => {
+    const banyakSlot = Array.from({ length: 90 }, (_, i) => ({
+      editId: `e${i}`,
+      blockIndex: 0,
+      kind: 'text' as const,
+      hint: 'blok · Teks',
+      current: `bawaan ${i}`,
+    }));
+    const catalog = fakeCatalog({
+      getContract: vi.fn(async () =>
+        ok({ templateId: 'tpl-rental', pages: [{ slug: 'index', title: 'B', slots: banyakSlot }] }),
+      ),
+    });
+    const { websites, revisions } = fakeRepos();
+    // Tiap panggilan slot_fill mengisi slot PERTAMA di kelompoknya → bukti tiap kelompok
+    // benar-benar dipanggil & digabung.
+    const llm = {
+      name: 'LlmJsonPort',
+      calls: [] as LlmJsonRequest<unknown>[],
+      async completeJson(req: LlmJsonRequest<unknown>) {
+        this.calls.push(req);
+        if (req.task === 'template_pick') {
+          return ok(req.schema.safeParse({ templateId: 'tpl-rental' }) as never).ok
+            ? ok({ templateId: 'tpl-rental' } as never)
+            : err({ code: 'INVALID_SCHEMA', message: 'x', retryable: false, attempt: 1 });
+        }
+        // Isi slot pertama yang muncul di prompt kelompok ini.
+        const m = req.messages[0]?.content.match(/- (e\d+) \[text\]/);
+        const parsed = req.schema.safeParse({
+          fills: { [m?.[1] ?? 'e0']: { kind: 'text', text: `isi-${m?.[1]}` } },
+        });
+        return parsed.success ? ok(parsed.data as never) : err({ code: 'INVALID_SCHEMA', message: parsed.error.message, retryable: false, attempt: 1 });
+      },
+    };
+
+    const res = await buildSiteFromTemplateBrief(
+      { llm: llm as never, revisions, websites, catalog },
+      REQ,
+    );
+
+    expect(res.ok).toBe(true);
+    const fillCalls = llm.calls.filter((c) => c.task === 'slot_fill');
+    expect(fillCalls.length).toBe(3); // 90 slot / 40 = 3 kelompok
+    const fills = (catalog.materialize as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]?.[0]?.fills;
+    expect(Object.keys(fills)).toEqual(['e0', 'e40', 'e80']); // gabungan semua kelompok
+  });
+
   it('LLM memilih id di LUAR shortlist → LLM_FAILED (schema menolak, bukan diam-diam pakai)', async () => {
     const llm = fakeLlm({ template_pick: { templateId: 'tpl-hack' } });
     const { websites, revisions } = fakeRepos();
