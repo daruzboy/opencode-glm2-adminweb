@@ -721,6 +721,34 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   tanpa throttle, LLM tumbang → 100 notifikasi → PO mematikan alert → alert yang dimatikan = TIDAK
   ADA ALERT. 1 notifikasi/masalah/15 mnt (Redis SET NX); Redis mati → alert TETAP dikirim.
 
+- ✅ **T-080** Utang integration test dibayar (**PR #73**, 2026-07-12): test integrasi kini
+  jalan saat `DATABASE_URL` ada; guard anti-silent-skip; `turbo.json` meneruskan env (tanpa ini
+  CI "hijau" BOHONG — test selalu skip). Backup off-site Google Drive via rclone (**PR #72**).
+- ✅ **Self-serve onboarding + kuota trial** (**PR #74**, 2026-07-12/14): kode undangan
+  (`InviteCode`, penukaran ATOMIK), `ChannelBinding` chat→tenant (menggantikan allowlist env),
+  kuota 100 pesan · 1 situs · 14 hari (keputusan PO), gerbang kuota SEBELUM LLM. **Terbukti di
+  produksi 2026-07-14**: PO mendaftar sendiri via `DIGIMAESTRO2026` → tenant "Darusman" TRIALING
+  → wawancara → situs **Sewabos** live — tanpa satu pun sentuhan SQL/env.
+- ✅ **P0 INSIDEN worker beku** (**PR #75**, 2026-07-14): dua job chat-inbound macet SELAMANYA
+  di `active` → worker (concurrency 2) BEKU TOTAL tanpa alert. **Akar:** koneksi Redis BullMQ
+  `maxRetriesPerRequest: null` → saat Redis tak terjangkau perintah MENGANTRE tanpa reject →
+  `await` di rate-limiter (jalur balasan keluar) menggantung selamanya; catch fail-open tak
+  pernah menyala (hanya menangkap reject, bukan promise yang tak selesai). **Perbaikan 2 lapis:**
+  deadline 2 dtk semua operasi Redis jalur pesan (`withDeadline`) + batas waktu keras per job
+  (`CHAT_JOB_TIMEOUT_MS`, default 5 mnt) → hang sebab APA PUN = job gagal = retry + alert T-070.
+- ✅ **fix output terpotong + biaya $0** (**PR #76**, 2026-07-14, ditemukan dari pemakaian
+  nyata): (1) `maxTokens` 4096 memotong dokumen situs 6 halaman PERSIS di batas → 3× retry
+  semua terpotong → "gangguan teknis" + token terbakar sia-sia → dinaikkan 8192 (interim; desain
+  "LLM tulis ulang SELURUH dokumen" digantikan pengisian slot template, lihat §7 revisi); (2)
+  adapter JSON tak disuntik `price` → `site_plan` tercatat $0.0000 → dashboard T-082 mencatat
+  LEBIH KECIL dari belanja nyata → `tokenPrice(env)` disuntik di kedua composition.
+- ✅ **P1 pengerasan produksi** (**PR #77**, 2026-07-14): log terstruktur pino di API (redaksi
+  `authorization`/`cookie`); **`/readyz`** (probe DB+Redis berdeadline 2 dtk — kontainer "hidup
+  tapi buta DB" tak boleh dianggap sehat, pola insiden worker-stub) — healthcheck compose deploy
+  diarahkan ke `/readyz`; graceful shutdown API (SIGTERM → `app.close()`; worker sudah punya).
+  **Ditunda sadar:** metrics Prometheus — alert T-070 + pino + failed-count BullMQ = anggaran
+  observability v1 untuk operasi 1 orang.
+
 ### Gerbang keluar Fase 0
 - ✅ **T-083 — DEMO E2E TERCAPAI** (2026-07-11, produksi nyata, tanpa intervensi manual):
   **chat Telegram → wawancara (agent ingat konteks) → agent bangun situs → tombol approval →

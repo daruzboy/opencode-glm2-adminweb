@@ -64,6 +64,7 @@ export * from './publish/ssh2-sftp-client.js';
 export * from './publish/cpanel-ftp-deploy.js';
 export * from './publish/basic-ftp-client.js';
 export * from './publish/cpanel-uapi-subdomain.js';
+export * from './redis/with-deadline.js';
 export * from './publish/bullmq-publish-queue.js';
 export * from './publish/bullmq-queue-factory.js';
 export * from './publish/publish-job-options.js';
