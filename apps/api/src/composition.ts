@@ -15,6 +15,7 @@ import {
   createPrismaClient,
   createBullMqPublishQueue,
   createBullMqChatInboundQueue,
+  createBullMqRedisClient,
   PreviewPortPrisma,
   PublishSourcePrisma,
   type ConversationDelegate,
@@ -54,6 +55,7 @@ import {
   parseTokenPrice,
 } from '@digimaestro/shared';
 import type { LlmTokenPrice } from '@digimaestro/shared';
+import type { ReadinessDeps } from './readiness.js';
 import type {
   AgentToolDefinition,
   AuthPort,
@@ -404,4 +406,36 @@ function sectionCatalog(): Record<string, readonly string[]> {
 // biaya menampilkannya sebagai "belum diisi", bukan diam-diam melaporkan $0 sebagai fakta.
 function tokenPrice(env: { LLM_PRICE_INPUT_PER_1M?: string; LLM_PRICE_OUTPUT_PER_1M?: string }): LlmTokenPrice {
   return parseTokenPrice(env.LLM_PRICE_INPUT_PER_1M, env.LLM_PRICE_OUTPUT_PER_1M);
+}
+
+// P1: probe kesiapan untuk /readyz. DB = SELECT 1 (lolos tenant-guard: raw tanpa model);
+// Redis = SET kunci probe ber-TTL singkat (RedisRateCommands tak punya ping; SET PX 1000
+// terhapus sendiri). Dependensi yang tak dikonfigurasi dilewati — bukan "tak siap".
+export function createReadinessDeps(env: NodeJS.ProcessEnv = process.env): ReadinessDeps {
+  const deps: { db?: () => Promise<void>; redis?: () => Promise<void> } = {};
+
+  if (env.DATABASE_URL) {
+    const prisma = createPrismaClient() as unknown as {
+      $queryRawUnsafe(query: string): Promise<unknown>;
+    };
+    deps.db = async () => {
+      await prisma.$queryRawUnsafe('SELECT 1');
+    };
+  }
+
+  if (env.REDIS_URL) {
+    const url = new URL(env.REDIS_URL);
+    const client = createBullMqRedisClient({
+      host: url.hostname,
+      port: url.port ? Number(url.port) : 6379,
+      username: url.username || undefined,
+      password: url.password || undefined,
+      maxRetriesPerRequest: null,
+    });
+    deps.redis = async () => {
+      await (await client()).set('readyz:probe', '1', 'PX', 1_000, 'NX');
+    };
+  }
+
+  return deps;
 }

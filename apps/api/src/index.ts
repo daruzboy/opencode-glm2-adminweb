@@ -7,6 +7,7 @@ import {
   createChatDeps,
   createPreviewDeps,
   createPublishRequestDeps,
+  createReadinessDeps,
   createTelegramWebhookDeps,
   createUsageRoutesDeps,
 } from './composition.js';
@@ -17,6 +18,7 @@ import { registerUsageRoutes } from './admin/usage-routes.js';
 import { registerTelegramWebhook } from './channel/telegram-webhook.js';
 import { registerPreviewRoutes } from './preview/routes.js';
 import { registerPublishRoutes } from './publish/routes.js';
+import { registerReadiness, type ReadinessDeps } from './readiness.js';
 import type { TelegramWebhookDeps } from './channel/telegram-webhook.js';
 import type { UsageRoutesDeps } from './admin/usage-routes.js';
 import type { ChatDeps } from './chat/handle-incoming.js';
@@ -35,11 +37,13 @@ export interface BuildServerOptions {
   auth?: AuthDeps;
   telegram?: TelegramWebhookDeps;
   usage?: UsageRoutesDeps;
-  logger?: boolean;
+  ready?: ReadinessDeps;
+  // P1: pino bawaan Fastify. `true`/objek konfigurasi di produksi; test tetap default false.
+  logger?: boolean | { level?: string; redact?: readonly string[] };
 }
 
 export async function buildServer(opts: BuildServerOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: opts.logger ?? false });
+  const app = Fastify({ logger: (opts.logger ?? false) as never });
   await app.register(websocket);
 
   // T-002auth: SELALU pasang resolver tenant. Dengan JWT (opts.auth) → rute wajib token;
@@ -63,7 +67,11 @@ export async function buildServer(opts: BuildServerOptions = {}): Promise<Fastif
   if (opts.usage) registerUsageRoutes(app, opts.usage);
   if (opts.preview) registerPreviewRoutes(app, opts.preview);
   if (opts.publish) registerPublishRoutes(app, opts.publish);
+  // /healthz = liveness (proses hidup); /readyz = readiness (DB+Redis terjangkau).
+  // Healthcheck compose memakai /readyz — kontainer yang "hidup tapi buta DB" tak boleh
+  // dianggap sehat (pelajaran insiden worker-stub: hijau di luar, mati di dalam).
   app.get('/healthz', async () => ({ status: 'ok', name: APP_NAME }));
+  registerReadiness(app, opts.ready ?? {});
   return app;
 }
 
@@ -75,9 +83,31 @@ export async function start(): Promise<void> {
   // publik ini tak boleh terpasang sama sekali.
   const telegram = process.env.TELEGRAM_WEBHOOK_SECRET ? createTelegramWebhookDeps() : undefined;
   const usage = process.env.DATABASE_URL ? createUsageRoutesDeps() : undefined;
-  const app = await buildServer({ auth, preview, publish, telegram, usage });
+  const app = await buildServer({
+    auth,
+    preview,
+    publish,
+    telegram,
+    usage,
+    ready: createReadinessDeps(),
+    // P1: log terstruktur (pino bawaan Fastify). Token/authorization diredaksi — log
+    // adalah tempat paling umum kredensial bocor tanpa sengaja.
+    logger: {
+      level: process.env.LOG_LEVEL ?? 'info',
+      redact: ['req.headers.authorization', 'req.headers.cookie'],
+    },
+  });
   const port = Number(process.env.PORT ?? '3000');
   await app.listen({ port, host: '0.0.0.0' });
+
+  // P1: graceful shutdown — tanpa ini, deploy/restart memutus request yang sedang jalan
+  // dan koneksi WS begitu saja (worker sudah punya handler serupa sejak awal).
+  const shutdown = (signal: NodeJS.Signals): void => {
+    app.log.info(`${signal} diterima — menutup server...`);
+    void app.close().then(() => process.exit(0));
+  };
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
 }
 
 const entryUrl = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
