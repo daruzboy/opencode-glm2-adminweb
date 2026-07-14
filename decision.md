@@ -748,6 +748,19 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   diarahkan ke `/readyz`; graceful shutdown API (SIGTERM → `app.close()`; worker sudah punya).
   **Ditunda sadar:** metrics Prometheus — alert T-070 + pino + failed-count BullMQ = anggaran
   observability v1 untuk operasi 1 orang.
+- ✅ **P2–P4 ARAH BARU: engine template Mobirise** (**PR #78, #81, #80**, 2026-07-14; lihat
+  peta jalan §7 revisi). Vendor `block-engine` editor-web → `packages/engine-mobirise`
+  (SHA di `VENDORED.md`, `ops/sync-block-engine.sh`, 25 test vendored ikut CI); skema dokumen
+  BERSAMA dgn editor-web; migrasi dual-mode `Revision.renderEngine` (aditif — situs
+  sections-v1 live tak tersentuh); registry template (`TEMPLATES_DIR` mount ro dari folder
+  editor-web + `template.json` + indexer + `TemplateCatalogPort`); AI pilih template
+  (shortlist→enum ketat) + isi slot (sanitasi URL gambar) → Revision `mobirise-v1`, di balik
+  `SITE_ENGINE` (default legacy). **Terindeks 6 template nyata** di produksi.
+- ✅ **fix hasil UJI NYATA jalur template** (**PR #82, #83**, 2026-07-14): halaman template
+  nyata 112–152 slot → `slot_fill` satu panggilan MEMOTONG output; 40 slot @4096 MASIH
+  terpotong (jatah termakan REASONING v4-pro — pola insiden "balasan kosong"). Kini kelompok
+  25 slot @8192, isian digabung. Dua-duanya mustahil ketahuan dari unit test hijau — hanya
+  dari menjalankan produk nyata (pelajaran T-083 terulang persis).
 
 ### Gerbang keluar Fase 0
 - ✅ **T-083 — DEMO E2E TERCAPAI** (2026-07-11, produksi nyata, tanpa intervensi manual):
@@ -853,37 +866,43 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
 
 ---
 
-## 7. Peta Jalan ke "100% SIAP DIJUAL" (keputusan PO 2026-07-12)
+## 7. Peta Jalan ke "100% SIAP DIJUAL" (revisi besar PO 2026-07-14; asal 2026-07-12)
 
 > **Definisi "100%" (dipilih PO):** bukan "backlog Fase 0 habis", tapi **benar-benar siap
-> dijual ke pelanggan nyata**. **WhatsApp/WABA dikerjakan TERAKHIR** — semua yang lain
-> selesai dulu.
+> dijual ke pelanggan nyata**. **Billing (Xendit) dan WhatsApp/WABA dikerjakan PALING
+> AKHIR** — semua yang lain selesai dulu (keputusan PO 2026-07-14, memindahkan billing
+> dari posisi #7 lama ke ekor).
 
-**Status jujur per 2026-07-12:**
+**ARAH BARU (PO 2026-07-14) — production-grade via template Mobirise + editor-web:**
+Renderer sections-v1 (13 section + 3 tema token) variasi visualnya terbatas dan desain
+"LLM menulis ulang seluruh dokumen" terbukti tak skalabel (insiden output terpotong).
+Produk beralih ke **ratusan template Mobirise**: AI **memilih** template yang cocok lalu
+**mengisi slot kontennya** (teks + gambar); editor visualnya = repo terpisah
+**`/opt/dig/projects/editor-web`** milik PO (block-engine pixel-perfect + editor React).
+Rujukan arsitektur: `editor-web/docs/integrasi-glm2.md` + memory `production-grade-pivot`.
 
-| Level | Status |
-|---|---|
-| Fase 0 (backlog `07-Backlog-Fase0`) | **~80%** — inti jalan & live, sisa ops/QA |
-| **Siap dijual** | **~40%** — belum ada billing, admin UI, self-serve |
+### Urutan kerja BARU (P0–P7; status per 2026-07-14)
 
-Gerbang keluar Fase 0 (T-083) **sudah tercapai** — secara formal Fase 0 boleh dinyatakan
-selesai & sisanya digeser ke Fase 1. Keputusan itu milik PO.
-
-### Urutan kerja (disepakati PO; angka = urutan, bukan prioritas relatif)
-
-| # | Pekerjaan | Kenapa di posisi ini | Status |
+| # | Pekerjaan | Inti | Status |
 |---|---|---|---|
-| 1 | **Auth WS** (NFR-07) | Lubang keamanan: siapa pun bisa membaca/menulis chat tenant lain. WAJIB tutup sebelum API dibuka publik (yang dituntut WABA) | ✅ **PR #67** |
-| 2 | **T-082** dashboard biaya AI | PO buta terhadap anggaran token; tanpa angka ini harga paket tak bisa ditetapkan (syarat billing) | ✅ **PR #68** |
-| 3 | **T-073** backup DB | Nol backup = kehilangan Postgres berarti kehilangan SEMUA pelanggan, permanen | ✅ **PR #69** |
-| 4 | **T-070** alert kegagalan | Kegagalan hanya masuk log → tak ada yang tahu bot mati | ✅ **PR #70** |
-| 5 | **T-080** bayar utang integration test | Test di-gate `RUN_INTEGRATION_TESTS=1` yang TAK PERNAH diset di CI → **selalu skip**. CI "hijau" yang BOHONG. Cleanup-nya juga kena tenant-guard → tetap gagal bila diaktifkan | ⏳ berikutnya |
-| 6 | **Self-serve onboarding + kuota** | Tenant kini dibuat MANUAL lewat SQL & allowlist dipetakan MANUAL di env → pelanggan tak bisa mendaftar sendiri. Wajib disertai kuota (ADR-12) | ⏳ |
-| 7 | **Billing** — model `Subscription`/`Invoice` + Xendit (T-072) | Schema TIDAK punya model billing sama sekali (nol). Tanpa ini tak ada uang masuk | ⏳ |
-| 8 | **Admin UI** | `apps/portal` HANYA berisi chat widget. Tak ada dashboard untuk melihat tenant, biaya, job, situs | ⏳ |
-| 9 | **T-071** Umami + **T-081** regresi visual | Analytics untuk pelanggan; pengaman kualitas sites-kit di CI | ⏳ |
-| 10 | **Custom domain** | Kini hanya path `digimaestro.id/<slug>/` (ADR-13). Pelanggan berbayar akan menuntut domain sendiri | ⏳ |
-| 11 | **WhatsApp/WABA** (T-001, T-030..033 WA) | **TERAKHIR (keputusan PO).** Premis produk ("via WhatsApp" di BRD), tapi lead time Meta di luar kendali & seluruh hilir sudah terbukti lewat Telegram. Masuk sbg adapter `ChannelPort` (ADR-11) — core tak berubah | ⏳ |
+| P0 | **Insiden worker beku** | Deadline Redis + timeout per job — hang senyap jadi kegagalan ber-alert | ✅ **PR #75** (+#76 output 4096/biaya $0) — live |
+| P1 | **Pengerasan produksi** | pino, `/readyz` (DB+Redis), graceful shutdown API, healthcheck compose → `/readyz` | ✅ **PR #77** — live |
+| P2 | **Fondasi engine Mobirise** | Vendor `block-engine` (`packages/engine-mobirise` + sync ber-SHA), `mobiriseProjectSchema` (bentuk BERSAMA dgn editor-web), migrasi dual-mode `Revision.renderEngine` (situs lama aman selamanya), publish mobirise via `exportSite`+aset template | ✅ **PR #78** — live |
+| P3 | **Registry template** | Folder (`TEMPLATES_DIR` = folder templates editor-web, mount ro) + `template.json` + indexer `pnpm templates:index` + `TemplateCatalogPort` (shortlist/kontrak slot/materialize) + `POST /api/admin/templates/reindex` | ✅ **PR #81** — live; 6 template terindeks |
+| P4 | **AI pilih template + isi slot** | shortlist top-12 → `template_pick` (enum ketat) → `slot_fill` per kelompok 25 slot (sanitasi: URL gambar liar dibuang) → Revision `mobirise-v1`. Di balik `SITE_ENGINE=mobirise-v1` (default masih legacy) | ✅ **PR #80** (+#82/#83 chunking & anggaran reasoning — dua-duanya temuan UJI NYATA) |
+| P5 | **Gerbang review PO + handoff editor-web** | Template BARU utk tenant → `PENDING_ADMIN_REVIEW` → Project di editor-web (service token) → PO edit → tombol "Kirim ke pelanggan" → dokumen EDITAN jadi revisi → preview+tombol pelanggan (2 gerbang; pelanggan tetap pemegang akhir). Perlu PR kecil di repo editor-web | ⏳ berikutnya |
+| P6 | **Gambar stok Unsplash+Pexels** | `ImageSourcePort`; download→Sharp→rehost FTPS+atribusi (JANGAN hotlink); foto pelanggan selalu prioritas; gagal → slot `keep`. Butuh 2 API key gratis dari PO | ⏳ |
+| P7 | **Revisi PRD + ADR** | ADR: adopsi engine Mobirise, registry template, gerbang review & aturan SoT, vendoring, sumber gambar. PRD: F-11 via stok+rehost; F-14 sebagian via editor-web | 🔧 berjalan tiap PR |
+| — | **Cutover `SITE_ENGINE=mobirise-v1`** | Setelah P5 + uji E2E lulus. Rollback = env; situs sections-v1 tetap ter-render | ⏳ |
+| E1 | **Billing** — `Subscription`/`Invoice` + Xendit (T-072) | **EKOR (PO 2026-07-14).** Tanpa ini tak ada uang masuk — dikerjakan setelah produk inti matang | ⏳ |
+| E2 | **WhatsApp/WABA** (T-001, T-030..033 WA) | **PALING TERAKHIR (keputusan PO tetap).** Adapter `ChannelPort` — core tak berubah | ⏳ |
+
+Butir lama yang terserap arah baru: **Admin UI** (#8 lama) → sebagian dipenuhi **editor-web**
+sebagai konsol admin (review + maintenance template); **T-081 regresi visual** → golden test
+engine + fixture sintetis di CI; **T-071 Umami** & **custom domain** → dijadwalkan ulang
+setelah cutover. Langkah #5–6 lama (T-080 integration test, self-serve+kuota) **sudah
+selesai** (PR #73, #74 — self-serve terbukti di produksi: PO mendaftar sendiri → situs
+Sewabos live).
 
 ### Yang backlog TIDAK sebut tapi wajib ada sebelum jualan
 Ditemukan saat analisa gap 2026-07-12 — **bukan** bagian dari backlog Fase 0, tapi memblokir
