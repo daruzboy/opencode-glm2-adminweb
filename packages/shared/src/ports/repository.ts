@@ -206,7 +206,15 @@ export interface WebsiteRepository extends Port {
 // Revision tidak punya tenantId langsung → scope via Website (tenantId) di setiap
 // method (NFR-09: tenant guard mengecek Website milik tenant DULU).
 
-export type RevisionStatus = 'DRAFT' | 'PREVIEW' | 'APPROVED' | 'PUBLISHED' | 'REJECTED';
+// PENDING_ADMIN_REVIEW (P5): revisi ber-template BARU menunggu review PO di editor-web
+// sebelum pelanggan melihat preview (keputusan PO 2026-07-14).
+export type RevisionStatus =
+  | 'DRAFT'
+  | 'PREVIEW'
+  | 'APPROVED'
+  | 'PUBLISHED'
+  | 'REJECTED'
+  | 'PENDING_ADMIN_REVIEW';
 
 export interface RevisionEntity {
   id: string;
