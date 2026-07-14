@@ -164,6 +164,9 @@ function createLlmJsonPort(
         apiKey: env.GLM_API_KEY ?? '',
         baseUrl: env.GLM_BASE_URL,
         usageLogger,
+        // Tanpa price, cost tercatat $0 padahal token terbakar (terbukti di produksi:
+        // site_plan 3×4096 token out, cost 0.000000) — dashboard T-082 jadi bohong kecil.
+        price: tokenPrice(env),
         timeoutMs: BUILD_LLM_TIMEOUT_MS,
       })
     : createDeepSeekJsonAdapter({
@@ -171,6 +174,7 @@ function createLlmJsonPort(
         apiKey: env.DEEPSEEK_API_KEY ?? '',
         baseUrl: env.DEEPSEEK_BASE_URL,
         usageLogger,
+        price: tokenPrice(env),
         // Build situs = JSON besar & penalaran berat → 30 dtk default tak cukup (timeout
         // konsisten di uji nyata).
         timeoutMs: BUILD_LLM_TIMEOUT_MS,
