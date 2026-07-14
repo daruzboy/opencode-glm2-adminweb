@@ -3,7 +3,16 @@
 
 import type { Port, Result, TenantId } from '../index.js';
 
-export type LlmTask = 'site_plan' | 'section_copy' | 'revision_patch' | 'article' | 'intent' | 'interview';
+export type LlmTask =
+  | 'site_plan'
+  | 'section_copy'
+  | 'revision_patch'
+  | 'article'
+  | 'intent'
+  | 'interview'
+  // P4 (engine template Mobirise): pilih template dari shortlist; isi nilai slot per halaman.
+  | 'template_pick'
+  | 'slot_fill';
 
 export type LlmChatRole = 'system' | 'user' | 'assistant' | 'tool';
 
@@ -91,9 +100,11 @@ export const BUILD_LLM_TIMEOUT_MS = 180_000;
 
 export const DEFAULT_TEMPERATURE_BY_TASK: Readonly<Record<LlmTask, number>> = Object.freeze({
   intent: 0,
+  template_pick: 0, // keputusan kategoris — determinisme penuh
   revision_patch: 0.1,
   site_plan: 0.3,
   interview: 0.4,
+  slot_fill: 0.4, // copywriting pendek — sedikit divergensi, tetap patuh slot
   section_copy: 0.5,
   article: 0.7,
 });

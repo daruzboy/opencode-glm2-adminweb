@@ -234,6 +234,10 @@ export interface RevisionCreateInput {
   summary?: string;
   createdBy: string;
   status?: RevisionStatus;
+  // P2 dual-mode: absen = 'sections-v1' (default kolom DB) — pemanggil lama tak berubah.
+  renderEngine?: string;
+  // mobirise-v1: template asal (aturan gerbang review + resolusi aset publish).
+  templateId?: string;
 }
 
 export interface RevisionUpdateInput {

@@ -29,9 +29,18 @@ export {
 // worker sama-sama bisa merakit agent loop).
 export {
   createSitebuilderBuildSiteTool,
+  createTemplateBuildSiteTool,
   deriveSlug,
   parseBriefInput,
 } from './agent/build-site-tool.js';
+
+// P4: build dari template Mobirise (pengganti jalur "LLM mengarang seluruh dokumen").
+export {
+  buildSiteFromTemplateBrief,
+  fillSchema,
+  fillSystemPrompt,
+  type TemplateBuildDeps,
+} from './builder/build-site-template.js';
 
 export {
   executeFunctionToolCalls,
