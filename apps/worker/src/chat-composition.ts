@@ -20,6 +20,8 @@ import {
   RevisionRepositoryPrisma,
   SitebuilderToolAdapter,
   TelegramChannel,
+  TemplateCatalogFs,
+  type TemplateQueryDelegate,
   WebsiteRepositoryPrisma,
   createBullMqPublishQueue,
   createDeepSeekJsonAdapter,
@@ -59,6 +61,7 @@ import {
   createSitebuilderApplyPatchTool,
   createSitebuilderBuildSiteTool,
   createSitebuilderGetSiteOutlineTool,
+  createTemplateBuildSiteTool,
   deriveSlug,
   ingestMedia,
   invalidCodeReply,
@@ -127,6 +130,9 @@ export interface ChatWorkerEnv {
   readonly APP_ENV?: string;
   // Self-serve (#6). SELFSERVE_ENABLED=1 → chat tak dikenal boleh mendaftar dgn kode undangan.
   readonly SELFSERVE_ENABLED?: string;
+  // P4: 'mobirise-v1' + TEMPLATES_DIR → build dari template Mobirise; selain itu legacy.
+  readonly SITE_ENGINE?: string;
+  readonly TEMPLATES_DIR?: string;
   readonly TRIAL_QUOTA_MESSAGES?: string;
   readonly TRIAL_QUOTA_WEBSITES?: string;
   readonly TRIAL_DAYS?: string;
@@ -236,6 +242,26 @@ export function createChatReplier(
     },
   };
 
+  // P4: SITE_ENGINE=mobirise-v1 + TEMPLATES_DIR → build dari template Mobirise (AI memilih
+  // template lalu mengisi slot). Default tetap legacy sections-v1 sampai QA lulus; cutover
+  // = ganti env, situs lama tak terpengaruh (diskriminator per-Revision).
+  const templateCatalog =
+    env.SITE_ENGINE === 'mobirise-v1' && env.TEMPLATES_DIR
+      ? new TemplateCatalogFs({
+          templatesDir: env.TEMPLATES_DIR,
+          delegate: prisma.template as unknown as TemplateQueryDelegate,
+        })
+      : undefined;
+  const buildTool = templateCatalog
+    ? createTemplateBuildSiteTool({
+        llm: jsonLlm,
+        revisions,
+        websites,
+        catalog: templateCatalog,
+        mediaUrls: buildDeps.mediaUrls as NonNullable<BuildDeps['mediaUrls']>,
+      })
+    : createSitebuilderBuildSiteTool(buildDeps);
+
   return createAgentReplier({
     router: { conversations },
     // T-053f: riwayat percakapan → agent ingat konteks (tanpa ini: amnesia tiap pesan).
@@ -245,7 +271,7 @@ export function createChatReplier(
       tools: createAgentToolRegistry([
         createSitebuilderGetSiteOutlineTool(sitebuilder),
         createSitebuilderApplyPatchTool(sitebuilder),
-        createSitebuilderBuildSiteTool(buildDeps),
+        buildTool,
       ]),
     },
   });

@@ -10,9 +10,16 @@
 // belum ada) → buildSiteFromBrief → Revision DRAFT pertama.
 
 import { buildSiteFromBrief } from '../builder/build-site.js';
-import type { BuildDeps, BuildResult, InterviewBrief } from '../builder/build-site.js';
+import type { BuildDeps, BuildError, BuildRequest, BuildResult, InterviewBrief } from '../builder/build-site.js';
+import { buildSiteFromTemplateBrief, type TemplateBuildDeps } from '../builder/build-site-template.js';
 import { err, ok } from '@digimaestro/shared';
-import type { AgentToolDefinition, AgentToolError, Result } from '@digimaestro/shared';
+import type {
+  AgentToolDefinition,
+  AgentToolError,
+  RepositoryError,
+  Result,
+  WebsiteRepository,
+} from '@digimaestro/shared';
 
 // Parse argumen tool (dari LLM) → InterviewBrief. businessName+businessType wajib; sisanya opsional.
 export function parseBriefInput(input: unknown): Result<InterviewBrief, AgentToolError> {
@@ -39,9 +46,26 @@ export function parseBriefInput(input: unknown): Result<InterviewBrief, AgentToo
   return ok(brief);
 }
 
-// Factory tool build-site. `deps` = BuildDeps (llm JSON, repo Revision/Website, schema
-// Site Document nyata). Website tenant diambil via repo (tenantId @unique → 0/1 website).
+type BuildRunner = (req: BuildRequest) => Promise<Result<BuildResult, BuildError | RepositoryError>>;
+
+// Factory tool build-site (jalur legacy sections-v1). Website tenant diambil via repo
+// (tenantId @unique → 0/1 website).
 export function createSitebuilderBuildSiteTool(deps: BuildDeps): AgentToolDefinition<unknown, BuildResult> {
+  return buildSiteTool(deps.websites, (req) => buildSiteFromBrief(deps, req));
+}
+
+// P4: tool yang SAMA (nama/deskripsi/skema input identik — agent tak perlu tahu bedanya)
+// tapi membangun dari TEMPLATE Mobirise. Dipilih composition root via env SITE_ENGINE.
+export function createTemplateBuildSiteTool(
+  deps: TemplateBuildDeps,
+): AgentToolDefinition<unknown, BuildResult> {
+  return buildSiteTool(deps.websites, (req) => buildSiteFromTemplateBrief(deps, req));
+}
+
+function buildSiteTool(
+  websites: WebsiteRepository,
+  run: BuildRunner,
+): AgentToolDefinition<unknown, BuildResult> {
   return {
     name: 'sitebuilder_build_site',
     description:
@@ -67,13 +91,13 @@ export function createSitebuilderBuildSiteTool(deps: BuildDeps): AgentToolDefini
 
       // Onboarding otomatis (opsi A): tenant baru belum punya Website → buat (DRAFTING)
       // dgn slug dari nama usaha, agar loop chat→bangun jalan tanpa langkah onboarding manual.
-      const existing = await deps.websites.findByTenantId(context.tenantId);
+      const existing = await websites.findByTenantId(context.tenantId);
       if (!existing.ok) return err({ code: 'UNKNOWN', message: existing.error.message });
       let websiteId: string;
       if (existing.value) {
         websiteId = existing.value.id;
       } else {
-        const created = await deps.websites.create(context.tenantId, {
+        const created = await websites.create(context.tenantId, {
           slug: deriveSlug(brief.value.businessName),
         });
         if (!created.ok) {
@@ -82,7 +106,7 @@ export function createSitebuilderBuildSiteTool(deps: BuildDeps): AgentToolDefini
         websiteId = created.value.id;
       }
 
-      const built = await buildSiteFromBrief(deps, {
+      const built = await run({
         tenantId: context.tenantId,
         websiteId,
         brief: brief.value,

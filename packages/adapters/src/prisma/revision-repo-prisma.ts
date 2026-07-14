@@ -37,6 +37,9 @@ export interface RevisionDelegate {
         summary?: string | null;
         status: string;
         createdBy: string;
+        // P2 dual-mode (opsional — absen = default kolom 'sections-v1').
+        renderEngine?: string;
+        templateId?: string;
       };
     }): Promise<PrismaRevision>;
     updateMany(args: {
@@ -141,6 +144,9 @@ export class RevisionRepositoryPrisma implements RevisionRepository {
           summary: input.summary ?? null,
           status: input.status ?? 'DRAFT',
           createdBy: input.createdBy,
+          // P2 dual-mode: absen → default kolom DB 'sections-v1'.
+          ...(input.renderEngine ? { renderEngine: input.renderEngine } : {}),
+          ...(input.templateId ? { templateId: input.templateId } : {}),
         },
       });
       return ok(toEntity(row));
