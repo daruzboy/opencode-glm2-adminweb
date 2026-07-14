@@ -17,6 +17,7 @@ COPY apps/worker/package.json apps/worker/package.json
 COPY apps/portal/package.json apps/portal/package.json
 COPY packages/adapters/package.json packages/adapters/package.json
 COPY packages/core/package.json packages/core/package.json
+COPY packages/engine-mobirise/package.json packages/engine-mobirise/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/sites-kit/package.json packages/sites-kit/package.json
 RUN pnpm install --frozen-lockfile

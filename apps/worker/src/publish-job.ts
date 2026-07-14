@@ -18,6 +18,8 @@ export interface PublishJobData {
   readonly slug: string;
   readonly baseUrl: string;
   readonly siteDocument: unknown;
+  // P2 dual-mode. Job lama (antre sebelum versi ini) tak punya field ini → sections-v1.
+  readonly renderEngine?: string;
   readonly docroot?: string;
   // Domain induk subdomain (mis. 'digimaestro.id'); wajib bila provisioning subdomain aktif.
   readonly rootDomain?: string;
@@ -56,6 +58,7 @@ export async function processPublishJob(
     slug: data.slug,
     baseUrl: data.baseUrl,
     siteDocument: data.siteDocument,
+    renderEngine: data.renderEngine,
     docroot: data.docroot,
     rootDomain: data.rootDomain,
   });

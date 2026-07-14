@@ -13,8 +13,15 @@ import type { ArtifactRef, ArtifactStorePort, DeployableFile, PublishError, Resu
 // Bucket terikat di dalam klien; store hanya berurusan dengan key relatif.
 export interface S3ObjectClient {
   readonly bucket: string;
-  putObject(input: { readonly key: string; readonly body: string; readonly contentType: string }): Promise<void>;
+  putObject(input: {
+    readonly key: string;
+    readonly body: string | Uint8Array;
+    readonly contentType: string;
+  }): Promise<void>;
   // Mengembalikan isi objek sebagai string, atau null bila objek tak ada (NoSuchKey/404).
+  // CATATAN (P2): jalur retrieve masih string-only → artifact BINER (aset template mobirise)
+  // belum bisa di-rollback lewat store S3; produksi memakai LocalArtifactStore yang sudah
+  // biner-utuh. Dilengkapi saat S3 benar-benar dipakai.
   getObject(input: { readonly key: string }): Promise<string | null>;
 }
 

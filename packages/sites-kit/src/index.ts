@@ -38,6 +38,17 @@ export {
   type SiteDocumentParseResult,
 } from './site-document.js';
 
+// Engine Mobirise (P2): dokumen situs bentuk BERSAMA dengan editor-web — dipakai
+// Revision.siteDoc saat renderEngine 'mobirise-v1'. Renderer-nya @digimaestro/engine-mobirise.
+export {
+  mobiriseBlockSchema,
+  mobirisePageSchema,
+  mobiriseProjectSchema,
+  parseMobiriseProject,
+  type MobiriseProject,
+  type MobirisePage,
+} from './mobirise/project-schema.js';
+
 // Renderer statis (T-061): Site Document → HTML zero-JS + CSS token + JSON-LD.
 export {
   escapeHtml,

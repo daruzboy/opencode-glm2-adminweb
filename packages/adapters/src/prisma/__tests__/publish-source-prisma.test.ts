@@ -23,7 +23,15 @@ describe('PublishSourcePrisma (tenant-scoped)', () => {
     const res = await new PublishSourcePrisma(d).getPublishSource(TENANT, { websiteId: 'w1', revisionNumber: 3 });
     expect(res).toEqual({
       ok: true,
-      value: { websiteId: 'w1', revisionNumber: 3, slug: 'warung-demo', siteDocument: SITE_DOC },
+      value: {
+        websiteId: 'w1',
+        revisionNumber: 3,
+        slug: 'warung-demo',
+        siteDocument: SITE_DOC,
+        // P2 dual-mode: delegate lama tanpa kolom renderEngine → default sections-v1.
+        renderEngine: 'sections-v1',
+        templateId: null,
+      },
     });
     // Guard NFR-09: query website SELALU menyertakan tenantId pemanggil.
     expect(d.websiteFind).toHaveBeenCalledWith({ where: { id: 'w1', tenantId: 't1' } });

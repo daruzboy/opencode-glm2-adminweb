@@ -24,7 +24,8 @@ export class LocalFilesystemDeploy implements DeployPort {
       for (const file of input.files) {
         const target = join(docroot, file.path);
         await mkdir(dirname(target), { recursive: true });
-        await writeFile(target, file.contents, 'utf8');
+        // Tanpa encoding eksplisit: string default utf8, Uint8Array (aset biner) ditulis apa adanya.
+        await writeFile(target, file.contents);
       }
       const url = `https://${input.target.slug}.${this.options.baseDomain}`;
       return ok({ url, fileCount: input.files.length });
