@@ -146,9 +146,9 @@ describe('buildSiteFromTemplateBrief', () => {
 
     expect(res.ok).toBe(true);
     const fillCalls = llm.calls.filter((c) => c.task === 'slot_fill');
-    expect(fillCalls.length).toBe(3); // 90 slot / 40 = 3 kelompok
+    expect(fillCalls.length).toBe(4); // 90 slot / 25 = 4 kelompok
     const fills = (catalog.materialize as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]?.[0]?.fills;
-    expect(Object.keys(fills)).toEqual(['e0', 'e40', 'e80']); // gabungan semua kelompok
+    expect(Object.keys(fills)).toEqual(['e0', 'e25', 'e50', 'e75']); // gabungan semua kelompok
   });
 
   it('LLM memilih id di LUAR shortlist → LLM_FAILED (schema menolak, bukan diam-diam pakai)', async () => {

@@ -177,12 +177,15 @@ function fillUserMessage(
 // ── Use case utama ─────────────────────────────────────────────────────────────
 
 const PICK_MAX_TOKENS = 1_536; // reasoning model: jangan < ~1536 (pelajaran v4-pro)
-const FILL_MAX_TOKENS = 4_096; // nilai slot saja — bukan dokumen utuh
+// Model REASONING (v4-pro) memakai jatah max_tokens untuk BERPIKIR dulu, baru menulis —
+// 4096 utk 40 slot masih terpotong di uji nyata. 8192 + kelompok kecil = aman.
+const FILL_MAX_TOKENS = 8_192;
 // Slot per panggilan slot_fill. Template Mobirise nyata bisa 150+ slot per halaman —
 // satu panggilan memotong batas output (terbukti di uji kontainer 2026-07-14:
-// "Unexpected end of JSON input" pada halaman 112 slot). Kelompok kecil = output kecil,
-// prompt fokus, dan kegagalan satu kelompok tak membuang kelompok lain.
-const FILL_CHUNK_SIZE = 40;
+// "Unexpected end of JSON input" pada halaman 112 slot, MASIH terpotong di 40 slot
+// karena anggaran reasoning). Kelompok kecil = output kecil, prompt fokus, dan
+// kegagalan satu kelompok tak membuang kelompok lain.
+const FILL_CHUNK_SIZE = 25;
 
 export async function buildSiteFromTemplateBrief(
   deps: TemplateBuildDeps,
