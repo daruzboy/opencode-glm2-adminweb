@@ -21,6 +21,9 @@ import type { PublishDeps } from './publish.js';
 export interface PublishNotifier {
   publishSucceeded(tenantId: string, url: string): Promise<void>;
   publishFailed(tenantId: string, reason: string): Promise<void>;
+  // Mode 'preview': pratinjau publik siap → pesan + tombol approval (gerbang akhir BRU-02).
+  // Opsional demi kompat notifier lama; tanpa ini job preview jatuh ke publishSucceeded.
+  previewReady?(tenantId: string, url: string, revisionNumber: number): Promise<void>;
 }
 
 // Siapa yang harus dikabari untuk job ini? null = tak seorang pun:
@@ -71,7 +74,12 @@ export function startPublishWorker(deps: PublishDeps, options: PublishWorkerOpti
       const target = notifyTarget(job.data);
       if (target && options.notifier) {
         try {
-          await options.notifier.publishSucceeded(target, result.value.url);
+          const data = job.data;
+          if (data.kind === 'publish' && data.mode === 'preview' && options.notifier.previewReady) {
+            await options.notifier.previewReady(target, result.value.url, data.revisionNumber);
+          } else {
+            await options.notifier.publishSucceeded(target, result.value.url);
+          }
         } catch (e) {
           logger.error(`[publish-worker] gagal mengabari "sudah live": ${asMessage(e)}`);
         }

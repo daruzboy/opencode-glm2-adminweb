@@ -160,6 +160,16 @@ export {
   type PublishRequestDeps,
 } from './publish/handle-publish.js';
 
+// Preview PUBLIK (2026-07-15): bundel pratinjau diunggah ke hosting (tautan /api/preview
+// lama = VPS tailnet, tak terbuka utk pelanggan) — dipakai handle-inbound & review-gate.
+export {
+  previewSlug,
+  requestPreview,
+  type PreviewOutcome,
+  type PreviewRequest,
+  type PreviewRequestDeps,
+} from './publish/request-preview.js';
+
 // Media dari chat → storage (T-033, FR-MED-001/002).
 export {
   ingestMedia,
@@ -190,6 +200,7 @@ export {
   failedPublishMessage,
   livePublishMessage,
   notifyPublishOutcome,
+  previewReadyMessage,
   type NotifyDeps,
   type NotifyRequest,
   type NotifyResult,
@@ -206,6 +217,7 @@ export {
   mediaReceivedReply,
   quotaExhaustedReply,
   pendingReviewMessage,
+  previewUploadingMessage,
   rateLimitedReply,
   unsupportedTypeReply,
   type ApprovalDeps,

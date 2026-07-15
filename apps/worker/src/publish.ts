@@ -50,6 +50,11 @@ export interface PublishInput {
   readonly docroot?: string;
   // Domain induk subdomain (mis. 'digimaestro.id'). Wajib bila deps.subdomain di-inject.
   readonly rootDomain?: string;
+  // Pratinjau publik: (1) semua halaman disuntik meta noindex — folder preview tak boleh
+  // bersaing dgn situs live di mesin pencari; (2) artifact TIDAK disimpan — kunci artifact
+  // (websiteId, revisionNumber) sama dgn milik live, dan artifact adalah SUMBER ROLLBACK:
+  // menimpanya dengan versi ber-noindex akan meracuni rollback.
+  readonly preview?: boolean;
 }
 
 export interface PublishResult {
@@ -120,15 +125,35 @@ async function buildFiles(
   return ok(buildStaticSite(parsed.value, { baseUrl: input.baseUrl }));
 }
 
+// Suntik <meta name="robots" content="noindex"> ke tiap halaman HTML (pratinjau).
+export function withNoindex(files: readonly DeployableFile[]): readonly DeployableFile[] {
+  const META = '<meta name="robots" content="noindex">';
+  return files.map((f) => {
+    if (typeof f.contents !== 'string' || !f.path.endsWith('.html') || f.contents.includes(META)) {
+      return f;
+    }
+    const i = f.contents.search(/<head[^>]*>/i);
+    if (i === -1) return { ...f, contents: `${META}\n${f.contents}` };
+    const headEnd = f.contents.indexOf('>', i) + 1;
+    return { ...f, contents: `${f.contents.slice(0, headEnd)}\n${META}${f.contents.slice(headEnd)}` };
+  });
+}
+
 export async function publishSite(deps: PublishDeps, input: PublishInput): Promise<Result<PublishResult, PublishError>> {
   const built = await buildFiles(deps, input);
   if (!built.ok) return built;
-  const files = built.value;
+  const files = input.preview ? withNoindex(built.value) : built.value;
 
-  const stored = await deps.artifacts.store({ key: artifactKey(input.websiteId, input.revisionNumber), files });
-  if (!stored.ok) return stored;
+  // Pratinjau tak menyimpan artifact (lihat komentar PublishInput.preview).
+  let artifact: ArtifactRef = { key: '', location: '', fileCount: files.length };
+  if (!input.preview) {
+    const stored = await deps.artifacts.store({ key: artifactKey(input.websiteId, input.revisionNumber), files });
+    if (!stored.ok) return stored;
+    artifact = stored.value;
+  }
 
-  const subErr = await ensureSubdomainIfConfigured(deps, input);
+  // Pratinjau selalu path-mode di domain utama → tak pernah butuh provisioning subdomain.
+  const subErr = input.preview ? null : await ensureSubdomainIfConfigured(deps, input);
   if (subErr) return err(subErr);
 
   const deployed = await deps.deploy.deploy({ target: { slug: input.slug, docroot: input.docroot }, files });
@@ -137,7 +162,7 @@ export async function publishSite(deps: PublishDeps, input: PublishInput): Promi
   const verifyErr = await verifyIfRequested(deps, deployed.value.url);
   if (verifyErr) return err(verifyErr);
 
-  return ok({ url: deployed.value.url, artifact: stored.value, fileCount: deployed.value.fileCount });
+  return ok({ url: deployed.value.url, artifact, fileCount: deployed.value.fileCount });
 }
 
 export async function rollbackSite(deps: PublishDeps, input: RollbackInput): Promise<Result<PublishResult, PublishError>> {

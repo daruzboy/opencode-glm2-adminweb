@@ -23,6 +23,9 @@ export interface PublishJobData {
   readonly docroot?: string;
   // Domain induk subdomain (mis. 'digimaestro.id'); wajib bila provisioning subdomain aktif.
   readonly rootDomain?: string;
+  // 'preview' → unggah pratinjau publik (noindex, tanpa artifact rollback, notifikasi
+  // pratinjau+tombol approval). Absen/'live' → publish sungguhan (job lama tetap sah).
+  readonly mode?: 'live' | 'preview';
 }
 
 export interface RollbackJobData {
@@ -61,5 +64,6 @@ export async function processPublishJob(
     renderEngine: data.renderEngine,
     docroot: data.docroot,
     rootDomain: data.rootDomain,
+    preview: data.mode === 'preview',
   });
 }

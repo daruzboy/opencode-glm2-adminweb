@@ -147,3 +147,59 @@ describe('publishSite — provisioning subdomain (FR-PUB-004b)', () => {
     expect((await publishSite(deps, input)).ok).toBe(true);
   });
 });
+
+// Preview PUBLIK (2026-07-15): mode pratinjau — noindex, tanpa artifact, tanpa subdomain.
+describe('publishSite — mode preview', () => {
+  it('preview: html disuntik noindex, artifact TIDAK disimpan, subdomain dilewati', async () => {
+    let stored = 0;
+    const store: ArtifactStorePort = {
+      async store({ key, files }) {
+        stored += 1;
+        return ok({ key, location: key, fileCount: files.length });
+      },
+      async retrieve() {
+        return ok(null);
+      },
+    };
+    let deployedFiles: readonly DeployableFile[] = [];
+    const deploy: DeployPort = {
+      async deploy({ target, files }) {
+        deployedFiles = files;
+        return ok({ url: `https://digimaestro.id/${target.slug}/`, fileCount: files.length });
+      },
+    };
+    let subdomainCalled = 0;
+    const deps: PublishDeps = {
+      artifacts: store,
+      deploy,
+      subdomain: {
+        async ensureSubdomain() {
+          subdomainCalled += 1;
+          return ok({ created: false });
+        },
+      },
+    };
+
+    const res = await publishSite(deps, { ...input, slug: 'preview/warung-demo-tok', preview: true });
+    expect(res.ok).toBe(true);
+    expect(stored).toBe(0);
+    expect(subdomainCalled).toBe(0);
+    const html = deployedFiles.find((f) => f.path.endsWith('.html'));
+    expect(String(html?.contents)).toContain('<meta name="robots" content="noindex">');
+  });
+
+  it('mode live tak berubah: artifact tersimpan, TANPA noindex', async () => {
+    let deployedFiles: readonly DeployableFile[] = [];
+    const deploy: DeployPort = {
+      async deploy({ target, files }) {
+        deployedFiles = files;
+        return ok({ url: `https://${target.slug}.digimaestro.id`, fileCount: files.length });
+      },
+    };
+    const res = await publishSite({ artifacts: fakeStore(), deploy }, input);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.artifact.key).toContain('w1/rev-3');
+    const html = deployedFiles.find((f) => f.path.endsWith('.html'));
+    expect(String(html?.contents)).not.toContain('noindex');
+  });
+});

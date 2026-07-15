@@ -143,3 +143,25 @@ describe('notifyPublishOutcome — tak ada yang bisa dikabari', () => {
     expect(createMsg).toHaveBeenCalledWith(TENANT, expect.objectContaining({ status: 'FAILED' }));
   });
 });
+
+// Preview PUBLIK (2026-07-15): kind 'preview' → pesan + TOMBOL approval.
+describe('notifyPublishOutcome — kind preview', () => {
+  it('mengirim tombol approval (bukan sendText) + mencatat OUT', async () => {
+    const { deps, sendText } = fakeDeps();
+    const sendButtons = vi.fn(async () => ok({ providerMsgId: 'tg-77' }));
+    (deps.channel as unknown as Record<string, unknown>).sendButtons = sendButtons;
+
+    const res = await notifyPublishOutcome(deps, {
+      tenantId: TENANT,
+      notice: { kind: 'preview', url: 'https://digimaestro.id/preview/kopi-x/', revisionNumber: 4 },
+    });
+
+    expect(res.ok && res.ok && res.value.notified).toBe(true);
+    expect(sendText).not.toHaveBeenCalled();
+    expect(sendButtons).toHaveBeenCalledTimes(1);
+    const [, text, buttons] = sendButtons.mock.calls[0] as unknown as [string, string, unknown[]];
+    expect(text).toContain('https://digimaestro.id/preview/kopi-x/');
+    expect(text).toContain('Setuju & publish');
+    expect(buttons.length).toBeGreaterThan(0);
+  });
+});

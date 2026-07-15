@@ -58,10 +58,17 @@ interface Opts {
   createMsg?: unknown;
   withApproval?: boolean;
   previewUrl?: boolean;
+  // Preview PUBLIK: token folder pratinjau → build di-enqueue mode 'preview'.
+  previewToken?: boolean;
+  enqueueErr?: boolean;
 }
 
 function build(opts: Opts = {}) {
-  const enqueuePublish = vi.fn(async () => ok({ jobId: 'job-1' }));
+  const enqueuePublish = vi.fn(async () =>
+    opts.enqueueErr
+      ? { ok: false as const, error: { code: 'QUEUE' as const, message: 'redis down' } }
+      : ok({ jobId: 'job-1' }),
+  );
   const sendButtons = vi.fn(async () => ok({ providerMsgId: 'tg-555-2' }));
   const sendText = vi.fn(async () => ok({ providerMsgId: 'tg-555-3' }));
   const answerCallback = vi.fn(async () => ok(undefined));
@@ -89,6 +96,7 @@ function build(opts: Opts = {}) {
       rootDomain: 'digimaestro.id',
     },
     ...(opts.previewUrl ? { previewUrl: (id: string) => `https://api.test/api/preview/${id}?t=tok` } : {}),
+    ...(opts.previewToken ? { previewToken: () => 'tok123' } : {}),
   };
 
   const deps = {
@@ -241,5 +249,36 @@ describe('tombol lain & payload karangan', () => {
     expect(res.ok).toBe(true);
     expect(enqueuePublish).not.toHaveBeenCalled();
     expect(answerCallback).toHaveBeenCalled();
+  });
+});
+
+
+// Preview PUBLIK (2026-07-15): dengan previewToken, build TIDAK langsung mengirim tombol —
+// pratinjau di-enqueue (mode preview) dan tombol datang dari worker setelah tayang.
+describe('preview publik saat build (previewToken terpasang)', () => {
+  it('build → enqueue job mode preview + pesan ekspektasi TANPA tombol', async () => {
+    const { deps, sendButtons, sendText, enqueuePublish } = build({
+      latest: [null, 1],
+      previewToken: true,
+    });
+
+    const res = await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(res.ok).toBe(true);
+    expect(enqueuePublish).toHaveBeenCalledTimes(1);
+    const job = enqueuePublish.mock.calls[0]?.[0] as { mode?: string; slug?: string };
+    expect(job.mode).toBe('preview');
+    expect(job.slug).toBe('preview/warung-sari-tok123');
+    expect(sendButtons).not.toHaveBeenCalled();
+    const [, text] = sendText.mock.calls[0] as [string, string];
+    expect(text).toContain('pratinjau');
+  });
+
+  it('enqueue pratinjau GAGAL → fallback jalur lama (tombol tetap terkirim)', async () => {
+    const { deps, sendButtons } = build({ latest: [null, 1], previewToken: true, enqueueErr: true });
+
+    await handleInboundMessage(deps, { tenantId: TENANT, message: textMsg });
+
+    expect(sendButtons).toHaveBeenCalledTimes(1);
   });
 });

@@ -32,6 +32,7 @@ import type {
   WebsiteRepository,
 } from '@digimaestro/shared';
 import { handlePublishRequest, type PublishRequestDeps } from '../publish/handle-publish.js';
+import { requestPreview } from '../publish/request-preview.js';
 import { encodeChannelAction, parseChannelAction, type ChannelAction } from './channel-actions.js';
 import type { ConversationReplier } from './replier.js';
 
@@ -41,8 +42,13 @@ export interface ApprovalDeps {
   readonly websites: WebsiteRepository;
   readonly revisions: RevisionRepository;
   readonly publish: PublishRequestDeps;
-  // URL preview draft ber-token (T-064). Tanpa ini, pesan tetap dikirim tanpa tautan.
+  // URL preview draft ber-token (T-064) — kini FALLBACK saja: URL ini menunjuk API di VPS
+  // yang hanya terjangkau via tailnet (temuan 2026-07-15). Jalur utama = previewToken.
   readonly previewUrl?: (revisionId: string) => string;
+  // Preview PUBLIK: token folder pratinjau per website → build di-enqueue mode 'preview'
+  // (unggah ke digimaestro.id/preview/<slug>-<token>/), tombol approval dikirim worker
+  // SETELAH pratinjau tayang. Absen → perilaku lama (tautan dinamis, langsung tombol).
+  readonly previewToken?: (websiteId: string) => string;
 }
 
 // Logger opsional (disuntik dari worker). Core tak boleh bergantung pada console/pino —
@@ -292,6 +298,32 @@ export async function handleInboundMessage(
     return ok({ ...res.value, revisionNumber: after });
   }
 
+  // Preview PUBLIK (2026-07-15): enqueue unggahan pratinjau ke hosting — tautan + tombol
+  // datang dari worker publish begitu pratinjau tayang. Pelanggan diberi ekspektasi dulu.
+  if (deps.approval?.previewToken) {
+    const website = await deps.approval.websites.findByTenantId(tenantId);
+    if (website.ok && website.value) {
+      const queued = await requestPreview(
+        { ...deps.approval.publish, previewToken: deps.approval.previewToken },
+        { tenantId, websiteId: website.value.id, revisionNumber: after },
+      );
+      if (queued.ok) {
+        const res = await replyAndPersist(
+          deps,
+          tenantId,
+          conversationId,
+          message,
+          previewUploadingMessage(replyText),
+          [],
+        );
+        if (!res.ok) return res;
+        return ok({ ...res.value, revisionNumber: after });
+      }
+      deps.logger?.error(`[preview] enqueue pratinjau gagal: ${queued.message}`);
+      // jatuh ke jalur lama di bawah — pelanggan tetap dapat tombol.
+    }
+  }
+
   const withPreview = appendPreviewLink(deps, replyText, await latestRevisionId(deps, tenantId));
   const res = await replyAndPersist(
     deps,
@@ -303,6 +335,12 @@ export async function handleInboundMessage(
   );
   if (!res.ok) return res;
   return ok({ ...res.value, revisionNumber: after });
+}
+
+// Balasan giliran build saat pratinjau publik sedang diunggah: ekspektasi, TANPA tombol —
+// tombol menempel pada pesan pratinjau dari worker (pelanggan menyetujui yang ia LIHAT).
+export function previewUploadingMessage(agentReply: string): string {
+  return `${agentReply}\n\n⏳ Sebentar ya, aku siapkan link pratinjaunya — kukirim ke sini ±1 menit lagi.`;
 }
 
 // ── Tombol ────────────────────────────────────────────────────────────────────
