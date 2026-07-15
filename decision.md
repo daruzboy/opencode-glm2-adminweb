@@ -73,6 +73,42 @@ n8n (self-host) · Umami · Caddy.
   AutoSSL belum terbit → **publish SUKSES dilaporkan gagal**) demi keuntungan kosmetik.
   Konsekuensi: kredensial cPanel UAPI **tidak disimpan** di server; tak ada perubahan DNS.
 
+### 1.3c Keputusan arah production-grade (ADR-14..18, 2026-07-14/15 — konteks §7)
+- **ADR-14 — Mesin situs = template Mobirise; `sections-v1` jadi legacy dibekukan.**
+  Renderer lama (13 section + 3 tema token) variasinya terbatas dan "LLM menulis seluruh
+  dokumen" terbukti memotong batas output (insiden 2026-07-14). Kini AI hanya MEMILIH
+  template (ratusan milik PO) dan MENGISI slot bernama. Diskriminator per-Revision
+  `renderEngine` → situs pelanggan lama ter-render selamanya; tak ada migrasi data;
+  rollback = env `SITE_ENGINE`. **LIVE 2026-07-15.**
+- **ADR-15 — Vendoring block-engine, bukan dependency lintas-repo.** `packages/
+  engine-mobirise` = salinan verbatim `editor-web/packages/block-engine` + stempel SHA
+  (`VENDORED.md`, `ops/sync-block-engine.sh`, menolak sumber kotor). `file:../editor-web`
+  merusak CI GitHub & Docker build; memindah kepemilikan merusak dev-loop editor. Sumber
+  kebenaran pengembangan engine TETAP editor-web; glm2 menyinkron sadar, bukan diam-diam.
+- **ADR-16 — Registry template: folder = sumber kebenaran, DB = indeks.** Satu folder
+  dipakai dua sistem (`TEMPLATES_DIR` = folder templates editor-web, di-mount read-only
+  ke kontainer). `template.json` (kurasi PO) + indexer (`pnpm templates:index`) → baris
+  `Template` ber-`slotSummary`. Template berlisensi TIDAK PERNAH masuk git/CI — test
+  memakai fixture sintetis. Shortlist deterministik (businessTypes/tags, top-12) → LLM
+  memilih dari ringkasan; TANPA embeddings di v1.
+- **ADR-17 — Gerbang review PO dua lapis + aturan sumber kebenaran.** Revisi ber-template
+  BARU utk tenant (`templateId !== approvedTemplateId`, O(1)) → `PENDING_ADMIN_REVIEW` →
+  handoff ke editor-web (service token statis dua arah, TIMING-SAFE, fail-closed; BUKAN
+  cookie-JWT manusia). Selama review, dokumen editor-web otoritatif; saat PO menekan
+  "Kirim ke pelanggan", dokumen EDITAN dibekukan jadi Revision glm2 (`createdBy:
+  'admin-review'`) — sejak itu Revision glm2 otoritatif; publish hanya membaca Revision.
+  Perubahan isi pada template yang sudah lolos → langsung ke pelanggan (tanpa antre di
+  meja PO). Pelanggan TETAP gerbang akhir (BRU-02). Fail-soft: handoff gagal → revisi
+  tetap PENDING + alert + endpoint picu-ulang. **AKTIF 2026-07-15 (REVIEW_GATE=1).**
+- **ADR-18 — Gambar stok: download & rehost, JANGAN hotlink.** Urutan: foto pelanggan →
+  stok (Unsplash lalu Pexels) → aset bawaan template (`keep`). LLM menulis kueri BAHASA
+  INGGRIS (indeks Indonesia tipis: "bengkel motor" = 1 hasil); resolver menukar isian
+  `stock` SEBELUM materialize — dokumen final tak pernah memuat kueri. Rehost via pipeline
+  media yang ada (Sharp WebP → FTPS `media/<tenant>/`) + atribusi WAJIB tercatat di
+  `MediaAsset` (syarat lisensi; Unsplash `download_location` di-GET saat foto dipakai).
+  Fail-soft total + pagar 12 foto/build + kuota media tenant. Image GENERATION (F-11
+  paruh kedua) tetap ditunda — belum ada provider yang dipilih.
+
 ### 1.4 Prinsip produk
 - **Approval-first** (BRU-02): tidak ada publikasi tanpa persetujuan eksplisit klien.
 - **SEO heavy** sebagai kelas satu (ADR-10): terlibat sejak generasi konten → build

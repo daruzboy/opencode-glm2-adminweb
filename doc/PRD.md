@@ -4,8 +4,8 @@ Platform Website Builder Berbasis Chatbot & Agentic AI — digimaestro.id
 
 | Field | Keterangan |
 | --- | --- |
-| Versi Dokumen | 1.2 (Rebrand ke digimaestro.id; fokus tunggal produk) |
-| Tanggal | 2 Juli 2026 |
+| Versi Dokumen | 1.3 (Revisi arah production-grade: mesin template Mobirise + gerbang review PO — ADR-14..18; F-11/F-14 diperbarui) |
+| Tanggal | 15 Juli 2026 |
 | Pemilik Dokumen | Darusman (Product Owner) |
 | Audiens | Tim pengembang, desain, operasional |
 | Dokumen Terkait | BRD v1.0 (mengapa), FRD v1.0 (fungsi rinci), SRS v1.0 (teknis) |
@@ -77,10 +77,10 @@ Jika klien frustrasi, meminta manusia, atau bot mendeteksi kebuntuan (3x gagal m
 | F-08 | Pipeline publish | Build statis (Astro) → deploy otomatis ke shared hosting (subdomain, AutoSSL) ≤ 5 menit; preview tetap di VPS. |
 | F-09 | Media pipeline | Terima foto/video via WA & web, kompresi, penyimpanan objek, galeri per tenant. |
 | F-10 | Generator konten blog | Artikel SEO-friendly Bahasa Indonesia dari instruksi singkat + jadwal. |
-| F-11 | AI image generation & stock | Gambar ilustrasi via provider image-gen + pencarian stock photo berlisensi. |
+| F-11 | AI image generation & stock | Gambar ilustrasi via provider image-gen + pencarian stock photo berlisensi. **Revisi 2026-07-15:** paruh *stock photo* TERPENUHI (Unsplash+Pexels; download & rehost + atribusi, bukan hotlink — ADR-18); *image generation* tetap Fase 2 (provider belum dipilih). |
 | F-12 | Billing Xendit | Checkout langganan, recurring, webhook status bayar, dunning, suspensi otomatis. |
 | F-13 | Kuota & metering AI | Penghitungan job AI per tenant sesuai paket; blokir halus saat kuota habis. |
-| F-14 | Dashboard operator | Daftar tenant & status, inbox eskalasi, monitor antrean job, kontrol billing. |
+| F-14 | Dashboard operator | Daftar tenant & status, inbox eskalasi, monitor antrean job, kontrol billing. **Revisi 2026-07-15:** sebagian dipenuhi **editor-web** sebagai konsol admin (review situs AI sebelum ke pelanggan — ADR-17 — dan maintenance template); daftar tenant/billing menyusul bersama E1. |
 | F-15 | Custom domain (premium) | Verifikasi DNS + TLS otomatis, dipandu chatbot. |
 | F-16 | SEO Engine “heavy” | Meta & structured data otomatis, sitemap + ping indexing, internal linking, integrasi Google Search Console, artikel berbasis riset kata kunci, laporan ranking via WA. |
 
@@ -106,7 +106,7 @@ Dengan kapasitas 1–2 developer, scope penuh dipecah menjadi tiga fase internal
 | Fase | Durasi (estimasi) | Cakupan | Gerbang Keluar (Exit Criteria) |
 | --- | --- | --- | --- |
 | Fase 0 — Fondasi | 3–4 minggu | Setup monorepo (pnpm+Turborepo), CI, skema data inti, autentikasi tenant, integrasi WABA & webhook, LLM abstraction layer, web chat dasar, PoC pipeline deploy Astro → shared hosting (cPanel API + rsync/SSH), setup n8n & Umami. | Pesan WA & web chat masuk-keluar tercatat per tenant; satu situs contoh berhasil ter-deploy otomatis ke shared hosting dengan AutoSSL. |
-| Fase 1 — Builder Inti | 6–8 minggu | F-03 s.d. F-09, F-12, F-13: wawancara, agent perakit, library komponen (min. 12 section, 3 tema), preview, approval, publish subdomain, billing & kuota. | 10 klien pilot menyelesaikan alur end-to-end; GO-04 (draft < 30 menit) tercapai. |
+| Fase 1 — Builder Inti | 6–8 minggu | F-03 s.d. F-09, F-12, F-13: wawancara, agent perakit, **mesin template Mobirise (ratusan template, AI memilih + mengisi slot — ADR-14/16; menggantikan library 12 section/3 tema yang kini legacy)**, preview, approval + **gerbang review PO (ADR-17)**, publish path digimaestro.id/<slug> (ADR-13), billing & kuota. | 10 klien pilot menyelesaikan alur end-to-end; GO-04 (draft < 30 menit) tercapai. |
 | Fase 2 — Konten & Premium | 4–6 minggu | F-10, F-11, F-15, F-14 lengkap: blog & konten AI, image-gen + stock, custom domain, dashboard operator penuh. | Klien premium pertama aktif dengan custom domain; laporan kuota akurat. |
 
 
