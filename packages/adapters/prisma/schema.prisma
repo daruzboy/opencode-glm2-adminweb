@@ -134,6 +134,7 @@ model Tenant {
   agentJobs     AgentJob[]
   llmUsages     LlmUsage[]
   profile       TenantProfile?
+  adminActings  AdminActing[]
 
   @@index([brandId])
 }
@@ -153,6 +154,17 @@ model TenantProfile {
   notes        String[] @default([])
   updatedAt    DateTime @updatedAt
   createdAt    DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// Konsol admin via chat (PO 2026-07-15): chat Telegram ADMIN bisa "bertindak sebagai"
+// satu konsumen (tenant) — build/review/preview/publish berjalan atas nama tenant itu,
+// semua notifikasi mendarat di chat admin. Satu baris per chat admin (praktis: satu).
+model AdminActing {
+  chatId    String   @id
+  tenantId  String
+  updatedAt DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }

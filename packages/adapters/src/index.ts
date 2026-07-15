@@ -94,6 +94,7 @@ export * from './images/chained-image-source.js';
 export * from './images/http-image-download.js';
 export * from './prisma/media-repo-prisma.js';
 export * from './prisma/tenant-profile-prisma.js';
+export * from './prisma/admin-console-prisma.js';
 export * from './prisma/onboarding-prisma.js';
 export * from './telegram/normalize.js';
 export * from './telegram/allowlist.js';

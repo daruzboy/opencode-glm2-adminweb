@@ -33,7 +33,7 @@ import type {
 } from '@digimaestro/shared';
 import { handlePublishRequest, type PublishRequestDeps } from '../publish/handle-publish.js';
 import { requestPreview } from '../publish/request-preview.js';
-import { encodeChannelAction, parseChannelAction, type ChannelAction } from './channel-actions.js';
+import { encodeChannelAction, parseChannelAction, tenantHintOf, type ChannelAction } from './channel-actions.js';
 import type { ConversationReplier } from './replier.js';
 
 // Kemampuan approval lewat chat. Opsional: tanpa ini bot tetap bisa mengobrol & membangun
@@ -164,10 +164,14 @@ export function pendingReviewMessage(): string {
   );
 }
 
-export function approvalButtons(revisionNumber: number): ChannelButton[] {
+// tenantId opsional (konsol admin 2026-07-15): tombol diberi SIDIK tenant — chat admin
+// bisa berganti konsumen; tombol lama milik konsumen A tak boleh dieksekusi saat sedang
+// sebagai konsumen B (nomor revisi bisa kebetulan sama).
+export function approvalButtons(revisionNumber: number, tenantId?: string): ChannelButton[] {
+  const hint = tenantId ? { tenantHint: tenantHintOf(tenantId) } : {};
   return [
-    { label: '✅ Setuju & publish', action: encodeChannelAction({ kind: 'publish', revisionNumber }) },
-    { label: '✏️ Minta revisi', action: encodeChannelAction({ kind: 'revise', revisionNumber }) },
+    { label: '✅ Setuju & publish', action: encodeChannelAction({ kind: 'publish', revisionNumber, ...hint }) },
+    { label: '✏️ Minta revisi', action: encodeChannelAction({ kind: 'revise', revisionNumber, ...hint }) },
   ];
 }
 
@@ -331,7 +335,7 @@ export async function handleInboundMessage(
     conversationId,
     message,
     withPreview,
-    approvalButtons(after),
+    approvalButtons(after, String(tenantId)),
   );
   if (!res.ok) return res;
   return ok({ ...res.value, revisionNumber: after });
@@ -366,6 +370,15 @@ async function handleAction(
     const text = !deps.approval
       ? 'Maaf, tombol persetujuan lagi tidak aktif. Coba lagi nanti ya 🙏'
       : 'Aku nggak paham tombol itu. Coba ketik permintaanmu ya 🙂';
+    return replyAndPersist(deps, tenantId, conversationId, message, text, []);
+  }
+
+  // Sidik tenant tak cocok = tombol milik sesi konsumen LAIN (konsol admin berganti
+  // konsumen setelah tombol terkirim). Tolak dgn arahan, jangan tebak-tebak.
+  if (action.tenantHint && action.tenantHint !== tenantHintOf(String(tenantId))) {
+    const text =
+      'Tombol ini milik sesi konsumen lain. Pilih konsumen itu dulu (/konsumen daftar → ' +
+      '/konsumen pilih <slug>) lalu tekan lagi ya 🙏';
     return replyAndPersist(deps, tenantId, conversationId, message, text, []);
   }
 

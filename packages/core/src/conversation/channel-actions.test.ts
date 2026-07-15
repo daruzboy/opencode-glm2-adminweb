@@ -37,3 +37,19 @@ describe('parseChannelAction — input tak tepercaya', () => {
     expect(parseChannelAction(raw as string | undefined)).toBeNull();
   });
 });
+
+// Konsol admin (2026-07-15): sidik tenant di tombol — chat admin bisa berganti konsumen.
+describe('tenantHint di callback', () => {
+  it('encode/parse bolak-balik dgn hint; tombol lama TANPA hint tetap sah (kompat)', async () => {
+    const { encodeChannelAction, parseChannelAction, tenantHintOf } = await import('./channel-actions.js');
+    const hint = tenantHintOf('cmrh5bhhj0001pn0bqq2sk6jv');
+    const raw = encodeChannelAction({ kind: 'publish', revisionNumber: 3, tenantHint: hint });
+    expect(raw).toBe(`pub:3:${hint}`);
+    expect(raw.length).toBeLessThanOrEqual(64);
+    expect(parseChannelAction(raw)).toEqual({ kind: 'publish', revisionNumber: 3, tenantHint: hint });
+    // kompat lama
+    expect(parseChannelAction('pub:3')).toEqual({ kind: 'publish', revisionNumber: 3 });
+    // hint aneh ditolak (bukan dipaksa)
+    expect(parseChannelAction('pub:3:!!bad!!')).toBeNull();
+  });
+});

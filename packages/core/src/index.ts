@@ -34,6 +34,15 @@ export {
   parseBriefInput,
 } from './agent/build-site-tool.js';
 
+// Konsol admin via chat (PO 2026-07-15): /konsumen — kelola banyak konsumen dari chat admin.
+export {
+  handleAdminCommand,
+  isAdminCommand,
+  type AdminCommandOutcome,
+  type AdminCommandRequest,
+  type AdminConsoleDeps,
+} from './admin/admin-console.js';
+
 // Memori per tenant (PO 2026-07-15): tool agent mencatat nama/preferensi pelanggan.
 export { createRememberCustomerTool, type RememberResult } from './agent/remember-tool.js';
 export { renderProfileContext } from './conversation/replier.js';

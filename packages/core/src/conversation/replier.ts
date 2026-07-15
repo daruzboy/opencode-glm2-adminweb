@@ -142,7 +142,10 @@ export interface AgentReplierDeps {
   // dibaca ulang saat berubah — tanpa deploy) yang ditambahkan ke SEMUA persona. Isinya
   // urutan melayani pelanggan: kenalan/tanya nama dulu, ekspektasi durasi build, dst.
   // null/error → bot jalan dengan persona bawaan (SOP pemanis, bukan dependensi keras).
-  readonly sop?: () => Promise<string | null>;
+  // ctx (2026-07-15, dua SOP): provider boleh memilih dokumen berdasarkan percakapan —
+  // chat ADMIN memakai SOP admin, pelanggan memakai SOP konsumen. Provider tanpa argumen
+  // tetap sah (kompat).
+  readonly sop?: (ctx: SopContext) => Promise<string | null>;
   // Memori per tenant (PO 2026-07-15): nama pelanggan + brief terakhir + catatan —
   // disuntikkan sbg "KONTEKS PELANGGAN" tiap giliran (riwayat 20 pesan saja tak cukup
   // utk sesi edit berminggu-minggu kemudian). Fail-soft: gagal baca ≠ bot mati.
@@ -165,6 +168,11 @@ export function renderProfileContext(profile: TenantProfileEntity | null): strin
     '## KONTEKS PELANGGAN (memori dari sesi sebelumnya — pakai, jangan tanya ulang)\n' +
     lines.join('\n')
   );
+}
+
+export interface SopContext {
+  readonly tenantId: TenantId;
+  readonly conversationId: string;
 }
 
 // Gabungkan persona + SOP. SOP menang untuk GAYA & URUTAN layanan; batasan teknis
@@ -214,7 +222,11 @@ export function createAgentReplier(deps: AgentReplierDeps): ConversationReplier 
       const history = await loadHistory(deps, req);
 
       // 3b) SOP layanan PO + memori tenant (best-effort — gagal baca ≠ bot mati).
-      const sop = deps.sop ? await deps.sop().catch(() => null) : null;
+      const sop = deps.sop
+        ? await deps
+            .sop({ tenantId: req.tenantId, conversationId: req.conversationId })
+            .catch(() => null)
+        : null;
       const profileRes = deps.profile
         ? await deps.profile.get(req.tenantId).catch(() => null)
         : null;
