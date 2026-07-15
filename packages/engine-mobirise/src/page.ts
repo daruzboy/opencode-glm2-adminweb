@@ -61,6 +61,14 @@ export interface PageRenderInput {
    * untuk situsnya sendiri, seperti Mobirise/WordPress. Hanya `lang` yang divalidasi.
    */
   readonly globalInsert?: GlobalInsert;
+  /**
+   * URL endpoint penerima kiriman form (mis. https://api.example.com/f/<projectId>).
+   * Bila diisi, runtime form disuntik sebelum </body>: submit form.mbr-form dicegat,
+   * isian dikirim sebagai JSON ke endpoint ini, lalu alert sukses/gagal bawaan blok
+   * (data-form-alert / data-form-alert-danger) ditampilkan. Tanpa ini form Mobirise
+   * mati total (action kosong; formoid.js hanya menempel pada data-form-type="formoid").
+   */
+  readonly formsEndpoint?: string;
 }
 
 export interface GlobalInsert {
@@ -155,6 +163,36 @@ export function sanitizeLang(v: string | undefined | null): string | null {
   return LANG_RE.test(t) ? t : null;
 }
 
+/**
+ * Runtime pengiriman form (vanilla, tanpa dependensi) sebagai tag <script>.
+ * Endpoint disanitasi (buang karakter yang bisa keluar dari string/tag) karena
+ * dirangkai ke dalam kode. Menempel pada SEMUA form.mbr-form; tombol submit
+ * dinonaktifkan selama pengiriman; sukses → reset + alert hijau, gagal → alert merah.
+ */
+export function formsRuntime(endpoint: string): string {
+  const ep = endpoint.replace(/[<>"'\\`]/g, '');
+  if (!ep) return '';
+  return (
+    `<script>(function(){var EP='${ep}';function init(){` +
+    `document.querySelectorAll('form.mbr-form').forEach(function(f){` +
+    `f.addEventListener('submit',function(ev){ev.preventDefault();ev.stopImmediatePropagation();` +
+    `var ok=f.querySelector('[data-form-alert]'),bad=f.querySelector('[data-form-alert-danger]');` +
+    `if(ok)ok.setAttribute('hidden','');if(bad)bad.setAttribute('hidden','');` +
+    `var fields={};f.querySelectorAll('input[name],textarea[name],select[name]').forEach(function(el){` +
+    `if((el.type==='checkbox'||el.type==='radio')&&!el.checked)return;fields[el.name]=el.value;});` +
+    `var btn=f.querySelector('[type="submit"]');if(btn)btn.setAttribute('disabled','');` +
+    `fetch(EP,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({` +
+    `form:f.getAttribute('name')||f.getAttribute('data-form-title')||'Form',` +
+    `page:location.pathname,fields:fields})})` +
+    `.then(function(r){if(!r.ok)throw new Error('http '+r.status);` +
+    `if(ok)ok.removeAttribute('hidden');f.reset();})` +
+    `.catch(function(){if(bad)bad.removeAttribute('hidden');})` +
+    `.finally(function(){if(btn)btn.removeAttribute('disabled');});},true);});}` +
+    `if(document.readyState!=='loading')init();else document.addEventListener('DOMContentLoaded',init);` +
+    `})();</script>`
+  );
+}
+
 export interface PageRenderResult {
   readonly html: string;
   readonly blockCss: string;
@@ -204,6 +242,8 @@ export function renderPage(input: PageRenderInput): PageRenderResult {
     .join('\n');
   const bodyStart = bodyStartParts ? `${bodyStartParts}\n` : '';
   const bodyEnd = gi?.beforeBodyEnd?.trim() ? `\n${gi.beforeBodyEnd}` : '';
+  // Runtime form ditempatkan setelah skrip tema (menempel saat DOMContentLoaded).
+  const formsTag = input.formsEndpoint ? `\n${formsRuntime(input.formsEndpoint)}` : '';
 
   const html = `${preDoctype}<!doctype html>
 <html lang="${lang}">
@@ -220,7 +260,7 @@ ${generatedCss}
 ${headExtra}</head>
 <body>
 ${bodyStart}${bodies.join('\n')}
-${scripts}${bodyEnd}
+${scripts}${formsTag}${bodyEnd}
 </body>
 </html>`;
 

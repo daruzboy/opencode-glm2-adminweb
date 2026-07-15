@@ -302,6 +302,33 @@ test('renderPage: globalInsert menyisipkan kode di 5 posisi + lang', () => {
   assert.match(html, /<script>window\.chat=1<\/script>\s*<\/body>/); // sebelum </body>
 });
 
+test('renderPage: formsEndpoint menyuntik runtime form sebelum </body>', () => {
+  const block: BlockInstance = {
+    _cid: 'F1',
+    _customHTML:
+      '<section><form class="mbr-form" name="Kontak"><input name="email"></form></section>',
+    _params: {},
+  };
+  const base = {
+    components: [block],
+    styling: {} as never,
+    siteFonts: [],
+    paths: { themePath: 't', projectPath: 'p' },
+    baseStylesheets: [],
+    themeCss: '',
+  };
+  const { html } = renderPage({ ...base, formsEndpoint: 'https://api.example.com/f/abc123' });
+  assert.match(html, /var EP='https:\/\/api\.example\.com\/f\/abc123'/);
+  assert.match(html, /form\.mbr-form/);
+  assert.match(html, /data-form-alert/);
+  // Tanpa endpoint → tak ada runtime sama sekali.
+  const plain = renderPage(base).html;
+  assert.ok(!plain.includes('var EP='), 'tanpa formsEndpoint tidak menyuntik runtime');
+  // Endpoint berkarakter berbahaya → karakter pembobol string/tag dibuang.
+  const dirty = renderPage({ ...base, formsEndpoint: "x'</script><script>alert(1)" }).html;
+  assert.ok(!dirty.includes('</script><script>alert(1)'), 'endpoint disanitasi');
+});
+
 test('renderPage: tracking ID → snippet gtag/GTM/Pixel digenerate + noscript GTM di body', () => {
   const block: BlockInstance = { _cid: 'T1', _customHTML: '<section>x</section>', _params: {} };
   const { html } = renderPage({
