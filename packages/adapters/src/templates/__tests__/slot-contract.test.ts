@@ -42,6 +42,25 @@ describe('extractPageContract', () => {
     const b = extractPageContract(PAGE);
     expect(a.slots.map((s) => s.editId)).toEqual(b.slots.map((s) => s.editId));
   });
+
+  // annotateEditable memberi id PER BLOK (tiap blok mulai dari e0) — alamat slot komposit
+  // b<idx>:<id> wajib unik se-halaman. Insiden E2E 2026-07-15: tanpa ini isian stock utk
+  // slot image ter-lookup ke slot text blok lain → dibuang sanitizer.
+  it('editId unik se-halaman meski blok-blok punya data-edit-id sama', () => {
+    const twoBlocks: SourcePage = {
+      slug: 'index',
+      title: 'Beranda',
+      components: [
+        { _cid: 'c1', _name: 'header2', _customHTML: BLOCK_HTML },
+        { _cid: 'c2', _name: 'gallery1', _customHTML: BLOCK_HTML },
+      ],
+    };
+    const c = extractPageContract(twoBlocks);
+    const ids = c.slots.map((s) => s.editId);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.some((id) => id.startsWith('b0:'))).toBe(true);
+    expect(ids.some((id) => id.startsWith('b1:'))).toBe(true);
+  });
 });
 
 describe('applyPageFills', () => {
@@ -85,11 +104,46 @@ describe('applyPageFills', () => {
   it("kind 'keep' & editId asing → tidak mengubah apa pun", () => {
     const out = applyPageFills(PAGE, {
       slug: 'index',
-      fills: { e0: { kind: 'keep' }, 'tak-ada': { kind: 'text', text: 'X' } },
+      fills: { 'b0:e0': { kind: 'keep' }, 'tak-ada': { kind: 'text', text: 'X' } },
     });
     const html = String(out.components[0]?._customHTML);
     expect(html).toContain('Judul Bawaan');
     expect(html).not.toContain('>X<');
+  });
+
+  // Regresi tabrakan id antar blok: isian beralamat b0:* TIDAK boleh menyentuh blok lain
+  // yang kebetulan punya data-edit-id sama.
+  it('alamat komposit mengunci isian ke SATU blok', () => {
+    const twoBlocks: SourcePage = {
+      slug: 'index',
+      title: 'Beranda',
+      components: [
+        { _cid: 'c1', _name: 'header2', _customHTML: BLOCK_HTML },
+        { _cid: 'c2', _name: 'gallery1', _customHTML: BLOCK_HTML },
+      ],
+    };
+    const c = extractPageContract(twoBlocks);
+    const judulB0 = c.slots.find((s) => s.current === 'Judul Bawaan' && s.blockIndex === 0);
+    const imgB1 = c.slots.find((s) => s.kind === 'image' && s.blockIndex === 1);
+
+    const out = applyPageFills(twoBlocks, {
+      slug: 'index',
+      fills: {
+        [judulB0?.editId ?? '']: { kind: 'text', text: 'Hanya Blok Nol' },
+        [imgB1?.editId ?? '']: { kind: 'image', url: 'https://digimaestro.id/media/t1/b1.webp', alt: 'foto b1' },
+      },
+    });
+
+    const html0 = String(out.components[0]?._customHTML);
+    const html1 = String(out.components[1]?._customHTML);
+    // Teks hanya di blok 0; blok 1 mempertahankan judul bawaan.
+    expect(html0).toContain('Hanya Blok Nol');
+    expect(html1).not.toContain('Hanya Blok Nol');
+    expect(html1).toContain('Judul Bawaan');
+    // Gambar hanya di blok 1; blok 0 tetap gambar bawaan.
+    expect(html1).toContain('https://digimaestro.id/media/t1/b1.webp');
+    expect(html0).not.toContain('https://digimaestro.id/media/t1/b1.webp');
+    expect(html0).toContain('assets/images/bawaan.jpg');
   });
 
   it('tanpa fills sama sekali → halaman apa adanya (ter-annotate)', () => {
