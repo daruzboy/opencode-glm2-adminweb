@@ -39,6 +39,7 @@ export * from './ports/admin-console.js';
 export * from './ports/agent-tool.js';
 export * from './ports/alert.js';
 export * from './ports/audit-log.js';
+export * from './ports/billing.js';
 export * from './ports/channel.js';
 export * from './ports/auth.js';
 export * from './ports/feedback.js';

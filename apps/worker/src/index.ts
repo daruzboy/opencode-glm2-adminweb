@@ -8,6 +8,7 @@ import type { Worker } from 'bullmq';
 import { createPublishDeps, createRedisConnection } from './composition.js';
 import {
   createAlert,
+  createBilling,
   createInboundDeps,
   createPublishNotifier,
   createAdminConsole,
@@ -52,9 +53,11 @@ export function startWorker(name: string = WORKER_NAME): WorkerHandle {
 export async function runWorker(): Promise<void> {
   const handle = startWorker();
   const connection = createRedisConnection();
+  // E1: billing Midtrans — link bayar setelah live + poller status (fail-soft tanpa env).
+  const billing = createBilling();
   // T-032tg: notifier mengabari pengguna di chat saat situsnya live / gagal terbit.
   // undefined tanpa TELEGRAM_BOT_TOKEN → publish tetap jalan, hanya tanpa kabar.
-  const notifier = createPublishNotifier();
+  const notifier = createPublishNotifier(process.env, billing);
   // T-070: alert operasional ke PO (job dead-letter, bot mati, pesan gagal diproses).
   const alert = createAlert();
   const workers: Worker[] = [
@@ -100,9 +103,19 @@ export async function runWorker(): Promise<void> {
     console.log(`[${handle.name}] TELEGRAM_BOT_TOKEN kosong — konsumen 'chat-inbound' dilewati.`);
   }
 
+  // E1: poller status pembayaran (webhook mustahil tanpa domain publik → tarik berkala).
+  let billingTimer: NodeJS.Timeout | undefined;
+  if (billing) {
+    billingTimer = setInterval(() => void billing.poll(), billing.intervalMs);
+    console.log(`[${handle.name}] billing Midtrans AKTIF (poll tiap ${billing.intervalMs / 1000}s).`);
+  } else {
+    console.log(`[${handle.name}] billing Midtrans tidak aktif (MIDTRANS_SERVER_KEY/SUBSCRIPTION_PRICE_IDR kosong).`);
+  }
+
   await new Promise<void>((resolve) => {
     const shutdown = (signal: NodeJS.Signals): void => {
       console.log(`[${handle.name}] ${signal} diterima — menutup worker...`);
+      if (billingTimer) clearInterval(billingTimer);
       poller?.stop();
       void Promise.all(workers.map((w) => w.close())).then(() => resolve());
     };

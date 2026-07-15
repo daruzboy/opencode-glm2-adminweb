@@ -891,6 +891,20 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   semua tiket urut TERLAMA + tombol selesai. Env baru: SOP_ADMIN_PATH (api),
   LLM_RUNTIME_CONFIG_PATH (api+worker).
 
+- ✅ **E1 Billing Midtrans** (**PR #98**, 2026-07-15; PO mengganti gateway dari rencana
+  Xendit → **Midtrans**): publish LIVE sukses → transaksi **Snap** (`redirect_url`) →
+  link bayar dikirim ke chat konsumen (setelah pesan "sudah LIVE"); **poller** worker
+  memeriksa Core API `/v2/{order_id}/status` tiap BILLING_POLL_MS (default 120 dtk —
+  webhook mustahil: VPS tanpa domain publik) → `settlement` → Invoice PAID + **Tenant
+  ACTIVE + serviceEndsAt** (perpanjangan berbasis sisa masa aktif) + notifikasi chat;
+  dashboard kolom "Layanan s.d." (berbayar/trial). Aturan anti-dobel: invoice PENDING
+  dipakai ulang; layanan masih aktif → tidak ditagih (publish revisi ≠ tagihan). Catatan
+  Midtrans: 404 di Core status = transaksi Snap belum dibuka pelanggan → PENDING, bukan
+  gagal; capture+fraud challenge = PENDING. Model `Invoice` + `Tenant.serviceEndsAt`
+  (migrasi 20260715050000). **Fail-soft**: tanpa `MIDTRANS_SERVER_KEY` +
+  `SUBSCRIPTION_PRICE_IDR` billing OFF (menunggu kredensial PO; `MIDTRANS_ENV`
+  sandbox|production, `SUBSCRIPTION_PERIOD_DAYS` default 30).
+
 ### Gerbang keluar Fase 0
 - ✅ **T-083 — DEMO E2E TERCAPAI** (2026-07-11, produksi nyata, tanpa intervensi manual):
   **chat Telegram → wawancara (agent ingat konteks) → agent bangun situs → tombol approval →
@@ -1023,7 +1037,7 @@ Rujukan arsitektur: `editor-web/docs/integrasi-glm2.md` + memory `production-gra
 | P6 | **Gambar stok Unsplash+Pexels** | `ImageSourcePort`; download→Sharp→rehost FTPS+atribusi (JANGAN hotlink); foto pelanggan selalu prioritas; gagal → slot `keep`. Kedua API key diberikan PO 2026-07-15 | ✅ **PR #86** (+**#87** fix alamat slot — temuan E2E) — E2E LULUS: 11 foto stok ter-rehost + atribusi. **LIVE** (cutover `SITE_ENGINE=mobirise-v1` 2026-07-15, opsi 2 PO) |
 | P7 | **Revisi PRD + ADR** | ADR: adopsi engine Mobirise, registry template, gerbang review & aturan SoT, vendoring, sumber gambar. PRD: F-11 via stok+rehost; F-14 sebagian via editor-web | 🔧 berjalan tiap PR |
 | — | **Cutover `SITE_ENGINE=mobirise-v1`** | Rollback = env; situs sections-v1 tetap ter-render | ✅ **LIVE 2026-07-15** (keputusan PO: opsi 2 — tanpa menunggu gerbang review) |
-| E1 | **Billing** — `Subscription`/`Invoice` + Xendit (T-072) | **EKOR (PO 2026-07-14).** Tanpa ini tak ada uang masuk — dikerjakan setelah produk inti matang | ⏳ |
+| E1 | **Billing** — `Invoice` + **Midtrans** (PO 2026-07-15 mengganti Xendit) | **Kode SELESAI (PR #98)** — nyala saat MIDTRANS_SERVER_KEY + SUBSCRIPTION_PRICE_IDR diisi | ✅ kode |
 | E2 | **WhatsApp/WABA** (T-001, T-030..033 WA) | **PALING TERAKHIR (keputusan PO tetap).** Adapter `ChannelPort` — core tak berubah | ⏳ |
 
 Butir lama yang terserap arah baru: **Admin UI** (#8 lama) → sebagian dipenuhi **editor-web**

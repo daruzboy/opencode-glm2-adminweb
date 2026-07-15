@@ -126,6 +126,9 @@ model Tenant {
   // Catatan bebas ADMIN tentang konsumen (dashboard 2026-07-15) — beda dari
   // TenantProfile.notes yang diisi bot dari percakapan pelanggan.
   adminNote      String?
+  // E1 billing (Midtrans): layanan berbayar aktif sampai tanggal ini (di-set poller
+  // saat invoice settlement; basis perpanjangan = nilai lama yang belum lewat).
+  serviceEndsAt  DateTime?
 
   users          User[]
   conversations  Conversation[]
@@ -140,6 +143,7 @@ model Tenant {
   adminActings  AdminActing[]
   tickets       Ticket[]
   feedbacks     Feedback[]
+  invoices      Invoice[]
 
   @@index([brandId])
 }
@@ -204,6 +208,28 @@ model Feedback {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+}
+
+// E1 billing (Midtrans, PO 2026-07-15): tagihan langganan setelah situs live.
+// status: PENDING | PAID | EXPIRED | FAILED (string longgar, alasan sama dgn Ticket).
+model Invoice {
+  id         String    @id @default(cuid())
+  tenantId   String
+  provider   String    @default("midtrans")
+  // order_id di gateway (unik; kunci pemeriksaan status poller).
+  orderId    String    @unique
+  amountIdr  Int
+  periodDays Int
+  paymentUrl String
+  status     String    @default("PENDING")
+  paidAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
 }
 
 model AdminActing {

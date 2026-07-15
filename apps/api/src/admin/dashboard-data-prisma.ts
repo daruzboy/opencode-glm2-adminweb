@@ -67,6 +67,7 @@ export function createDashboardData(opts: DashboardDataOptions): DashboardDataPo
       const rows = await db.$queryRawUnsafe<
         {
           id: string; name: string; slug: string; status: string; trialEndsAt: Date | null;
+          serviceEndsAt: Date | null;
           usedMessages: number; quotaMessages: number; adminNote: string | null;
           websiteId: string | null; websiteSlug: string | null;
           websiteStatus: string | null; lastInboundAt: Date | null; openTickets: bigint;
@@ -74,6 +75,7 @@ export function createDashboardData(opts: DashboardDataOptions): DashboardDataPo
         }[]
       >(
         `SELECT t."id", t."name", t."slug", t."status"::text AS "status", t."trialEndsAt",
+                t."serviceEndsAt",
                 t."usedMessages", t."quotaMessages", t."adminNote",
                 w."id"    AS "websiteId",
                 w."slug"  AS "websiteSlug",
@@ -94,6 +96,7 @@ export function createDashboardData(opts: DashboardDataOptions): DashboardDataPo
         slug: r.slug,
         status: r.status,
         trialEndsAt: r.trialEndsAt?.toISOString() ?? null,
+        serviceEndsAt: r.serviceEndsAt?.toISOString() ?? null,
         usedMessages: Number(r.usedMessages),
         quotaMessages: Number(r.quotaMessages),
         websiteSlug: r.websiteSlug,
