@@ -246,6 +246,79 @@ describe('buildSiteFromTemplateBrief', () => {
     );
     expect(!res.ok && res.error.message).toContain('templates:index');
   });
+
+  // P6: resolver di-inject → isian stock ditukar SEBELUM materialize; dokumen final
+  // tak pernah memuat `stock`.
+  it('resolveImages di-inject → stock ditukar jadi image sebelum materialize', async () => {
+    const catalog = fakeCatalog();
+    const { websites, revisions } = fakeRepos();
+    const llm = fakeLlm({
+      template_pick: { templateId: 'tpl-rental' },
+      slot_fill: { fills: { e1: { kind: 'stock', query: 'car rental fleet', alt: 'armada' } } },
+    });
+    const resolveImages = vi.fn(async (_t: unknown, pages: readonly { slug: string; fills: Record<string, unknown> }[]) =>
+      pages.map((p) => ({
+        ...p,
+        fills: { e1: { kind: 'image', url: 'https://digimaestro.id/media/t1/stok.webp', alt: 'armada' } },
+      })),
+    );
+
+    const res = await buildSiteFromTemplateBrief(
+      { llm, revisions, websites, catalog, mediaUrls: async () => [], resolveImages: resolveImages as never },
+      REQ,
+    );
+
+    expect(res.ok).toBe(true);
+    expect(resolveImages).toHaveBeenCalledOnce();
+    expect(catalog.materialize).toHaveBeenCalledWith('tpl-rental', [
+      { slug: 'index', fills: { e1: { kind: 'image', url: 'https://digimaestro.id/media/t1/stok.webp', alt: 'armada' } } },
+    ]);
+    // Prompt slot_fill menawarkan opsi stock hanya saat resolver ada.
+    const fillCall = llm.calls.find((c) => c.task === 'slot_fill');
+    expect(fillCall?.system).toContain('"stock"');
+  });
+
+  it('TANPA resolver → stock DITOLAK schema; kalaupun lolos, dropStockFills menjadikannya keep', async () => {
+    const catalog = fakeCatalog();
+    const { websites, revisions } = fakeRepos();
+    const llm = fakeLlm({
+      template_pick: { templateId: 'tpl-rental' },
+      // schema tanpa allowStock membuang isian stock → fills kosong.
+      slot_fill: { fills: { e1: { kind: 'stock', query: 'car', alt: 'a' } } },
+    });
+
+    const res = await buildSiteFromTemplateBrief(
+      { llm, revisions, websites, catalog, mediaUrls: async () => [] },
+      REQ,
+    );
+
+    expect(res.ok).toBe(true);
+    expect(catalog.materialize).toHaveBeenCalledWith('tpl-rental', [{ slug: 'index', fills: {} }]);
+    const fillCall = llm.calls.find((c) => c.task === 'slot_fill');
+    expect(fillCall?.system).not.toContain('"stock"');
+  });
+
+  it('resolver MELEMPAR → build tetap sukses, stock jatuh ke keep (fail-soft)', async () => {
+    const catalog = fakeCatalog();
+    const { websites, revisions } = fakeRepos();
+    const llm = fakeLlm({
+      template_pick: { templateId: 'tpl-rental' },
+      slot_fill: { fills: { e0: { kind: 'text', text: 'Halo' }, e1: { kind: 'stock', query: 'car', alt: 'a' } } },
+    });
+    const resolveImages = vi.fn(async () => {
+      throw new Error('provider meledak');
+    });
+
+    const res = await buildSiteFromTemplateBrief(
+      { llm, revisions, websites, catalog, mediaUrls: async () => [], resolveImages: resolveImages as never },
+      REQ,
+    );
+
+    expect(res.ok).toBe(true);
+    expect(catalog.materialize).toHaveBeenCalledWith('tpl-rental', [
+      { slug: 'index', fills: { e0: { kind: 'text', text: 'Halo' }, e1: { kind: 'keep' } } },
+    ]);
+  });
 });
 
 describe('fillSchema — sanitasi isian LLM', () => {
@@ -276,5 +349,23 @@ describe('fillSchema — sanitasi isian LLM', () => {
   it('bukan objek fills → gagal (biar adapter self-repair)', () => {
     const s = fillSchema(page, []);
     expect(s.safeParse({ judul: 'x' }).success).toBe(false);
+  });
+
+  // P6: opsi stock hanya sah bila resolver di-wire (allowStock) dan hanya utk slot image.
+  it('stock: diterima saat allowStock utk slot image; ditolak tanpa allowStock / slot text', () => {
+    const on = fillSchema(page, [], true);
+    const r1 = on.safeParse({
+      fills: {
+        e1: { kind: 'stock', query: '  car rental fleet ', alt: 'armada' },
+        e0: { kind: 'stock', query: 'x', alt: 'y' }, // slot text → dibuang
+      },
+    });
+    expect(r1.success && r1.data.fills).toEqual({
+      e1: { kind: 'stock', query: 'car rental fleet', alt: 'armada' },
+    });
+
+    const off = fillSchema(page, []);
+    const r2 = off.safeParse({ fills: { e1: { kind: 'stock', query: 'car', alt: 'a' } } });
+    expect(r2.success && r2.data.fills).toEqual({});
   });
 });

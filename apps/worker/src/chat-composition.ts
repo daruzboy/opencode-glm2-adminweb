@@ -41,8 +41,12 @@ import {
   DEFAULT_ALERT_COOLDOWN_MS,
   TelegramMediaDownload,
   createBasicFtpDeployClient,
+  ChainedImageSource,
+  PexelsImageSource,
+  UnsplashImageSource,
   createBullMqChatInboundQueue,
   createBullMqRedisClient,
+  createHttpImageDownload,
   createPreviewToken,
   createRedisInboundRateLimiter,
   createPrismaClient,
@@ -70,6 +74,8 @@ import {
   notifyPublishOutcome,
   registerFromInvite,
   registeredReply,
+  resolveSlotImages,
+  type ResolveSlotImagesDeps,
   type ApprovalDeps,
   type BuildDeps,
   type ConversationReplier,
@@ -94,9 +100,12 @@ import {
 import { parseTokenPrice } from '@digimaestro/shared';
 import type {
   AlertPort,
+  ImageSourcePort,
   InboundRateLimiterPort,
   LlmTokenPrice,
+  PageFills,
   QuotaPort,
+  TenantId,
 } from '@digimaestro/shared';
 import type { RegistrationHandler } from './chat-inbound-worker.js';
 import type { ChannelPort, ConversationRepository, LlmJsonPort } from '@digimaestro/shared';
@@ -134,6 +143,10 @@ export interface ChatWorkerEnv {
   // P4: 'mobirise-v1' + TEMPLATES_DIR → build dari template Mobirise; selain itu legacy.
   readonly SITE_ENGINE?: string;
   readonly TEMPLATES_DIR?: string;
+  // P6: gambar stok (download+rehost+atribusi). Tanpa key → slot gambar hanya foto
+  // pelanggan / bawaan template (alur P4).
+  readonly UNSPLASH_ACCESS_KEY?: string;
+  readonly PEXELS_API_KEY?: string;
   // P5: gerbang review PO (handoff ke editor-web).
   readonly REVIEW_GATE?: string;
   readonly EDITOR_WEB_API_URL?: string;
@@ -270,6 +283,9 @@ export function createChatReplier(
         })
       : undefined;
 
+  // P6: resolver gambar stok — hanya bila API key + kredensial hosting ada.
+  const resolveImages = createStockImageResolver(env, prisma);
+
   const buildTool = templateCatalog
     ? createTemplateBuildSiteTool({
         llm: jsonLlm,
@@ -277,6 +293,7 @@ export function createChatReplier(
         websites,
         catalog: templateCatalog,
         mediaUrls: buildDeps.mediaUrls as NonNullable<BuildDeps['mediaUrls']>,
+        ...(resolveImages ? { resolveImages } : {}),
         ...(handoff ? { handoff } : {}),
         ...(handoff ? { alert: createAlert(env) } : {}),
         ...(env.PUBLIC_API_URL ? { publicApiUrl: env.PUBLIC_API_URL } : {}),
@@ -496,15 +513,12 @@ function sectionCatalog(): Record<string, readonly string[]> {
 // T-033: terima foto pelanggan → unduh (Telegram) → optimasi (sharp: resize+WebP) →
 // simpan ke hosting (FTPS) → catat MediaAsset. Aktif hanya bila kredensial hosting +
 // token bot ada; tanpa itu foto ditolak sopan dan bot tetap jalan.
-export function createMediaDeps(env: ChatWorkerEnv = process.env): MediaDeps | undefined {
-  if (!env.TELEGRAM_BOT_TOKEN || !env.CPANEL_FTP_HOST || !env.CPANEL_FTP_USER) return undefined;
-
-  const prisma = createPrismaClient();
-  const media = new MediaRepositoryPrisma(prisma.mediaAsset as unknown as MediaDelegate);
-
-  // Koneksi FTP baru tiap simpan: unggahan media jarang & singkat, sedangkan koneksi
-  // menganggur akan diputus server (Pure-FTPd: idle 15 menit).
-  const store = new FtpsMediaStore(
+// Koneksi FTP baru tiap simpan: unggahan media jarang & singkat, sedangkan koneksi
+// menganggur akan diputus server (Pure-FTPd: idle 15 menit). Dipakai ingest foto chat
+// (T-033) dan rehost foto stok (P6).
+function createFtpsStore(env: ChatWorkerEnv): FtpsMediaStore | undefined {
+  if (!env.CPANEL_FTP_HOST || !env.CPANEL_FTP_USER) return undefined;
+  return new FtpsMediaStore(
     () =>
       createBasicFtpDeployClient({
         host: env.CPANEL_FTP_HOST as string,
@@ -518,6 +532,48 @@ export function createMediaDeps(env: ChatWorkerEnv = process.env): MediaDeps | u
       }),
     { baseDomain: env.PUBLISH_BASE_DOMAIN ?? 'digimaestro.id' },
   );
+}
+
+// P6: resolver isian slot `stock` → foto stok Unsplash/Pexels di-rehost ke hosting.
+// Butuh minimal satu API key + kredensial FTPS; tanpa itu → undefined (LLM tak akan
+// ditawari opsi stock — fillSchema menolaknya).
+function createStockImageResolver(
+  env: ChatWorkerEnv,
+  prisma: ReturnType<typeof createPrismaClient>,
+): ((tid: TenantId, pages: readonly PageFills[]) => Promise<readonly PageFills[]>) | undefined {
+  const store = createFtpsStore(env);
+  if (!store) return undefined;
+
+  const sources: ImageSourcePort[] = [];
+  if (env.UNSPLASH_ACCESS_KEY) {
+    sources.push(
+      new UnsplashImageSource({ accessKey: env.UNSPLASH_ACCESS_KEY, fetch: globalThis.fetch as never }),
+    );
+  }
+  if (env.PEXELS_API_KEY) {
+    sources.push(new PexelsImageSource({ apiKey: env.PEXELS_API_KEY, fetch: globalThis.fetch as never }));
+  }
+  if (sources.length === 0) return undefined;
+
+  const deps: ResolveSlotImagesDeps = {
+    source: sources.length === 1 ? (sources[0] as ImageSourcePort) : new ChainedImageSource(sources),
+    download: createHttpImageDownload({ fetch: globalThis.fetch as never }),
+    processor: new SharpMediaProcessor(),
+    store,
+    media: new MediaRepositoryPrisma(prisma.mediaAsset as unknown as MediaDelegate),
+    filename: mediaFilename,
+    logger: console,
+  };
+  return (tid, pages) => resolveSlotImages(deps, tid, pages);
+}
+
+export function createMediaDeps(env: ChatWorkerEnv = process.env): MediaDeps | undefined {
+  if (!env.TELEGRAM_BOT_TOKEN) return undefined;
+  const store = createFtpsStore(env);
+  if (!store) return undefined;
+
+  const prisma = createPrismaClient();
+  const media = new MediaRepositoryPrisma(prisma.mediaAsset as unknown as MediaDelegate);
 
   const deps = {
     download: new TelegramMediaDownload({

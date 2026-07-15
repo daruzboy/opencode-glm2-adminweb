@@ -49,10 +49,15 @@ export interface TemplateContract {
 
 // Nilai isian slot. `keep` eksplisit: slot yang tak diisi mempertahankan isi template —
 // pengisian parsial menghasilkan situs utuh, bukan situs bolong.
+//
+// `stock` (P6) = isian ANTARA: LLM menulis kueri pencarian, lalu resolveSlotImages
+// menukarnya jadi `image` (URL rehost) atau `keep` (gagal/kuota) SEBELUM materialize —
+// dokumen final tak pernah memuat `stock`.
 export type SlotFill =
   | { readonly kind: 'text'; readonly text: string }
   | { readonly kind: 'image'; readonly url: string; readonly alt: string }
   | { readonly kind: 'link'; readonly href: string; readonly label?: string }
+  | { readonly kind: 'stock'; readonly query: string; readonly alt: string }
   | { readonly kind: 'keep' };
 
 export interface PageFills {

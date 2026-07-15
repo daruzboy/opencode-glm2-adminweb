@@ -100,10 +100,12 @@ export function applyPageFills(
         out = setEditableText(out, editId, fill.text);
       } else if (fill.kind === 'image') {
         out = setEditableAttrs(out, editId, { src: fill.url, alt: fill.alt });
-      } else {
+      } else if (fill.kind === 'link') {
         out = setEditableAttrs(out, editId, { href: fill.href });
         if (fill.label) out = setEditableText(out, editId, fill.label);
       }
+      // kind lain (mis. 'stock' yang lolos tanpa resolver) diabaikan = keep — jangan
+      // pernah menulis href/src undefined ke HTML.
     }
     return { ...block, _customHTML: out };
   });

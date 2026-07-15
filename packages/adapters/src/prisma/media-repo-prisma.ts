@@ -30,6 +30,11 @@ export interface MediaDelegate {
       width: number;
       height: number;
       sizeBytes: number;
+      // P6: atribusi foto stok (Unsplash/Pexels) — absen utk foto pelanggan.
+      sourceProvider?: string;
+      sourceUrl?: string;
+      authorName?: string;
+      authorUrl?: string;
     };
   }): Promise<PrismaMediaAsset>;
 }
@@ -45,6 +50,11 @@ function toEntity(row: PrismaMediaAsset): MediaAssetEntity {
     width: row.width,
     height: row.height,
     sizeBytes: row.sizeBytes,
+    // P6: atribusi foto stok; klien lama (row tanpa kolom) terbaca null = foto pelanggan.
+    sourceProvider: row.sourceProvider ?? null,
+    sourceUrl: row.sourceUrl ?? null,
+    authorName: row.authorName ?? null,
+    authorUrl: row.authorUrl ?? null,
     createdAt: row.createdAt.toISOString(),
   };
 }
