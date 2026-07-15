@@ -39,8 +39,16 @@ export interface TemplateBuildDeps {
   readonly websites: WebsiteRepository;
   readonly catalog: TemplateCatalogPort;
   // Foto milik tenant — HANYA URL di sini yang boleh dipakai slot gambar (P4).
-  // Slot tanpa foto cocok → 'keep' (gambar bawaan template). Stok Unsplash/Pexels = P6.
+  // Slot tanpa foto cocok → 'keep' (gambar bawaan template), atau stok (P6) bila
+  // resolveImages di-inject.
   readonly mediaUrls?: (tenantId: TenantId) => Promise<readonly string[]>;
+  // P6 (gambar stok): tukar isian `stock` (kueri LLM) → `image` (URL rehost) / `keep`.
+  // Di-inject dari composition root (resolveSlotImages + adapter Unsplash/Pexels).
+  // Absen → LLM tak ditawari opsi stock sama sekali (fillSchema menolaknya).
+  readonly resolveImages?: (
+    tenantId: TenantId,
+    pages: readonly PageFills[],
+  ) => Promise<readonly PageFills[]>;
   // P5 (gerbang review PO): bila di-inject, revisi ber-template BARU untuk tenant ini
   // dibuat PENDING_ADMIN_REVIEW + dikirim ke editor-web + PO di-alert. Tanpa ini
   // (REVIEW_GATE off) → alur P4 murni.
@@ -92,6 +100,9 @@ function pickPrompt(summaries: readonly TemplateSummary[]): string {
 export function fillSchema(
   page: TemplatePageContract,
   allowedImageUrls: readonly string[],
+  // P6: terima isian `stock` (kueri foto stok) — hanya bila resolver di-wire; tanpa
+  // resolver isian stock akan lolos sampai materialize dan merusak dokumen.
+  allowStock = false,
 ): LlmJsonSchema<PageFills> {
   const byId = new Map(page.slots.map((s) => [s.editId, s]));
   return {
@@ -104,11 +115,23 @@ export function fillSchema(
       const fills: Record<string, SlotFill> = {};
       for (const [editId, raw] of Object.entries(v.fills as Record<string, unknown>)) {
         const slot = byId.get(editId);
-        const f = raw as { kind?: unknown; text?: unknown; url?: unknown; alt?: unknown; href?: unknown; label?: unknown };
+        const f = raw as { kind?: unknown; text?: unknown; url?: unknown; alt?: unknown; href?: unknown; label?: unknown; query?: unknown };
         if (!slot || typeof f !== 'object' || f === null) continue;
 
         if (f.kind === 'text' && slot.kind === 'text' && typeof f.text === 'string' && f.text.trim()) {
           fills[editId] = { kind: 'text', text: f.text.trim() };
+        } else if (
+          allowStock &&
+          f.kind === 'stock' &&
+          slot.kind === 'image' &&
+          typeof f.query === 'string' &&
+          f.query.trim()
+        ) {
+          fills[editId] = {
+            kind: 'stock',
+            query: f.query.trim(),
+            alt: typeof f.alt === 'string' && f.alt.trim() ? f.alt.trim() : 'foto usaha',
+          };
         } else if (
           f.kind === 'image' &&
           slot.kind === 'image' &&
@@ -147,7 +170,7 @@ function shorten(s: string, max = 90): string {
   return bersih.length <= max ? bersih : `${bersih.slice(0, max)}…`;
 }
 
-export function fillSystemPrompt(): string {
+export function fillSystemPrompt(allowStock = false): string {
   return [
     'Kamu copywriter website UMKM Indonesia. Isi SLOT konten sebuah halaman template.',
     'Aturan:',
@@ -156,6 +179,14 @@ export function fillSystemPrompt(): string {
     '- isian teks:   { "kind": "text", "text": string } — panjang senada isi bawaan slot.',
     '- isian gambar: { "kind": "image", "url": string, "alt": string } — url HANYA dari',
     '  daftar FOTO PELANGGAN yang diberikan. Tak ada yang cocok? JANGAN isi slot itu.',
+    ...(allowStock
+      ? [
+          '- isian foto stok: { "kind": "stock", "query": string, "alt": string } — untuk slot',
+          '  gambar TANPA foto pelanggan yang cocok. "query" = kueri pencarian foto dalam',
+          '  BAHASA INGGRIS, konkret & visual (mis. "motorcycle repair workshop", bukan',
+          '  "bengkel"); "alt" tetap bahasa Indonesia. Foto pelanggan SELALU diutamakan.',
+        ]
+      : []),
     '- isian tautan: { "kind": "link", "href": string, "label"?: string } — mis. wa.me/<nomor>.',
     '- Slot yang tak kamu isi otomatis memakai isi bawaan template — tak apa-apa.',
     '- JANGAN mengarang URL. JANGAN menulis HTML.',
@@ -166,14 +197,17 @@ function fillUserMessage(
   briefText: string,
   page: TemplatePageContract,
   mediaUrls: readonly string[],
+  allowStock = false,
 ): string {
   const slots = page.slots
     .map((s) => `- ${s.editId} [${s.kind}] ${s.hint} — bawaan: "${shorten(s.current)}"`)
     .join('\n');
   const media =
     mediaUrls.length > 0
-      ? `FOTO PELANGGAN (hanya ini yang boleh dipakai slot gambar):\n${mediaUrls.join('\n')}`
-      : 'FOTO PELANGGAN: (belum ada — jangan isi slot gambar sama sekali)';
+      ? `FOTO PELANGGAN (hanya ini yang boleh dipakai isian "image"):\n${mediaUrls.join('\n')}`
+      : allowStock
+        ? 'FOTO PELANGGAN: (belum ada — pakai isian "stock" untuk slot gambar yang penting)'
+        : 'FOTO PELANGGAN: (belum ada — jangan isi slot gambar sama sekali)';
   return [
     `BRIEF USAHA:\n${briefText}`,
     '',
@@ -238,8 +272,22 @@ export async function buildSiteFromTemplateBrief(
   const filled = await fillAllPages(deps, req, contract.value, briefText, media);
   if (!filled.ok) return filled;
 
+  // 4b. P6: isian `stock` → foto stok di-rehost (`image`) atau `keep`. Fail-soft total:
+  // resolver tak pernah menggagalkan build; error tak terduga → isian stock dibuang oleh
+  // materialize-guard (keep). Dokumen final TIDAK boleh memuat `stock`.
+  let pages = filled.value;
+  if (deps.resolveImages) {
+    try {
+      pages = [...(await deps.resolveImages(req.tenantId, pages))];
+    } catch {
+      pages = dropStockFills(pages);
+    }
+  } else {
+    pages = dropStockFills(pages);
+  }
+
   // 5. Materialize → dokumen MobiriseProject final.
-  const doc = await deps.catalog.materialize(templateId, filled.value);
+  const doc = await deps.catalog.materialize(templateId, pages);
   if (!doc.ok) return err({ code: 'LLM_FAILED', message: doc.error.message });
 
   // 6. Gerbang review PO (P5): template BARU untuk tenant ini → PENDING_ADMIN_REVIEW;
@@ -329,6 +377,17 @@ async function handoffForReview(
   }
 }
 
+// Jaring pengaman: isian `stock` yang lolos tanpa resolver → 'keep' (materialize hanya
+// mengenal text/image/link/keep).
+function dropStockFills(pages: readonly PageFills[]): PageFills[] {
+  return pages.map((page) => ({
+    ...page,
+    fills: Object.fromEntries(
+      Object.entries(page.fills).map(([id, f]) => [id, f.kind === 'stock' ? { kind: 'keep' as const } : f]),
+    ),
+  }));
+}
+
 async function fillAllPages(
   deps: TemplateBuildDeps,
   req: BuildRequest,
@@ -352,15 +411,16 @@ async function fillAllPages(
         title: page.title,
         slots: page.slots.slice(i, i + FILL_CHUNK_SIZE),
       };
+      const allowStock = Boolean(deps.resolveImages);
       const filled = await deps.llm.completeJson({
         tenantId: req.tenantId,
         ...(req.jobId ? { jobId: req.jobId } : {}),
         task: 'slot_fill',
-        system: fillSystemPrompt(),
+        system: fillSystemPrompt(allowStock),
         messages: [
-          { role: 'user', content: fillUserMessage(briefText, chunk, media) },
+          { role: 'user', content: fillUserMessage(briefText, chunk, media, allowStock) },
         ] as readonly LlmChatMessage[],
-        schema: fillSchema(chunk, media),
+        schema: fillSchema(chunk, media, allowStock),
         maxTokens: FILL_MAX_TOKENS,
         temperature: DEFAULT_TEMPERATURE_BY_TASK.slot_fill,
       });

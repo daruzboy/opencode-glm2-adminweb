@@ -90,6 +90,12 @@ export interface MediaAssetEntity {
   readonly width: number;
   readonly height: number;
   readonly sizeBytes: number;
+  // P6 (gambar stok): atribusi WAJIB tercatat saat foto berasal dari Unsplash/Pexels
+  // (syarat lisensi; foto di-rehost, bukan hotlink). Null/absen = foto kiriman pelanggan.
+  readonly sourceProvider?: string | null;
+  readonly sourceUrl?: string | null;
+  readonly authorName?: string | null;
+  readonly authorUrl?: string | null;
   readonly createdAt: string;
 }
 
@@ -101,6 +107,11 @@ export interface MediaAssetCreateInput {
   readonly width: number;
   readonly height: number;
   readonly sizeBytes: number;
+  // P6: atribusi foto stok (lihat MediaAssetEntity).
+  readonly sourceProvider?: string;
+  readonly sourceUrl?: string;
+  readonly authorName?: string;
+  readonly authorUrl?: string;
 }
 
 export interface MediaRepository {

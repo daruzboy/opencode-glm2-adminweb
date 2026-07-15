@@ -168,6 +168,14 @@ export {
   type IngestMediaResult,
 } from './media/ingest-media.js';
 
+// Gambar stok (P6): isian slot `stock` → foto Unsplash/Pexels di-rehost + atribusi.
+export {
+  DEFAULT_STOCK_MAX_PER_BUILD,
+  resolveSlotImages,
+  stockProviderFileId,
+  type ResolveSlotImagesDeps,
+} from './media/resolve-slot-images.js';
+
 // Laporan biaya AI (T-082).
 export {
   buildUsageReport,
