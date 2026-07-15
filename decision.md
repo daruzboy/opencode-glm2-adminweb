@@ -781,6 +781,26 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   Temuan: indeks kata kunci Indonesia SANGAT tipis ("bengkel motor" = 1 hasil Unsplash;
   "motorcycle repair workshop" = ratusan) → prompt mewajibkan kueri Inggris, alt tetap ID.
 
+- ✅ **fix INSIDEN alamat slot bertabrakan** (**PR #87**, 2026-07-15, temuan UJI NYATA lagi):
+  E2E P6 pertama = 0 foto stok padahal probe membuktikan LLM menulis isian stock dengan
+  benar. Akar: `annotateEditable` memberi `data-edit-id` PER BLOK (tiap blok mulai lagi
+  dari e0) → id bertabrakan antar blok; isian stock slot image ter-lookup ke slot text
+  blok lain (dibuang sanitizer), dan satu isian bisa tertulis ke SEMUA blok ber-id sama.
+  Fix: alamat komposit `b<blockIndex>:<editId>` (unik se-halaman) + applyPageFills
+  mengunci isian ke satu blok. E2E ulang: **11 foto stok** ter-rehost + atribusi + HTTP
+  200 publik. **Cutover `SITE_ENGINE=mobirise-v1` LIVE 2026-07-15 (opsi 2 PO).**
+
+- ✅ **P5 sisi editor-web** (repo editor-web, merge `feat/handoff-glm2` 2026-07-15):
+  `POST /internal/handoff` (service token timing-safe, fail-closed tanpa env; proyek
+  milik akun PO + korelasi `Project.handoff Json` + snapshot "versi asli AI") +
+  `POST /projects/:id/send-to-customer` (cookie-JWT; meneruskan dokumen HASIL EDIT ke
+  returnUrl glm2; alasan penolakan glm2 diteruskan) + tombol UI "Kirim ke pelanggan"
+  (hanya proyek handoff) + deep-link `?project=<id>` + 7 test integrasi. **E2E jalur
+  balik LULUS di VPS**: handoff → proyek → send-to-customer → glm2 membuat revisi
+  `admin-review` + set `approvedTemplateId`. SISA: (1) rule iptables
+  `172.19.0.0/16 → tcp 5181` (kontainer glm2 → API editor di host; INPUT DROP) —
+  butuh persetujuan PO; (2) `REVIEW_GATE=1` — keputusan PO kapan menyala.
+
 ### Gerbang keluar Fase 0
 - ✅ **T-083 — DEMO E2E TERCAPAI** (2026-07-11, produksi nyata, tanpa intervensi manual):
   **chat Telegram → wawancara (agent ingat konteks) → agent bangun situs → tombol approval →
@@ -909,10 +929,10 @@ Rujukan arsitektur: `editor-web/docs/integrasi-glm2.md` + memory `production-gra
 | P2 | **Fondasi engine Mobirise** | Vendor `block-engine` (`packages/engine-mobirise` + sync ber-SHA), `mobiriseProjectSchema` (bentuk BERSAMA dgn editor-web), migrasi dual-mode `Revision.renderEngine` (situs lama aman selamanya), publish mobirise via `exportSite`+aset template | ✅ **PR #78** — live |
 | P3 | **Registry template** | Folder (`TEMPLATES_DIR` = folder templates editor-web, mount ro) + `template.json` + indexer `pnpm templates:index` + `TemplateCatalogPort` (shortlist/kontrak slot/materialize) + `POST /api/admin/templates/reindex` | ✅ **PR #81** — live; 6 template terindeks |
 | P4 | **AI pilih template + isi slot** | shortlist top-12 → `template_pick` (enum ketat) → `slot_fill` per kelompok 25 slot (sanitasi: URL gambar liar dibuang) → Revision `mobirise-v1`. Di balik `SITE_ENGINE=mobirise-v1` (default masih legacy) | ✅ **PR #80** (+#82/#83 chunking & anggaran reasoning — dua-duanya temuan UJI NYATA) |
-| P5 | **Gerbang review PO + handoff editor-web** | Template BARU utk tenant → `PENDING_ADMIN_REVIEW` → Project di editor-web (service token) → PO edit → tombol "Kirim ke pelanggan" → dokumen EDITAN jadi revisi → preview+tombol pelanggan (2 gerbang; pelanggan tetap pemegang akhir). Perlu PR kecil di repo editor-web | ✅ sisi glm2 **PR #85** — merged, inert sampai `REVIEW_GATE=1`; ⏳ sisi editor-web (menunggu keputusan PO soal WIP di repo itu) |
-| P6 | **Gambar stok Unsplash+Pexels** | `ImageSourcePort`; download→Sharp→rehost FTPS+atribusi (JANGAN hotlink); foto pelanggan selalu prioritas; gagal → slot `keep`. Kedua API key diberikan PO 2026-07-15 | ✅ **PR #86** — LLM menulis kueri Inggris (`{kind:'stock',query,alt}`), resolver menukarnya jadi URL rehost SEBELUM materialize; pagar 12 foto/build + kuota media tenant |
+| P5 | **Gerbang review PO + handoff editor-web** | Template BARU utk tenant → `PENDING_ADMIN_REVIEW` → Project di editor-web (service token) → PO edit → tombol "Kirim ke pelanggan" → dokumen EDITAN jadi revisi → preview+tombol pelanggan (2 gerbang; pelanggan tetap pemegang akhir) | ✅ KEDUA sisi selesai (**PR #85** + merge editor-web 2026-07-15); E2E jalur balik LULUS. Sisa: rule iptables 172.19/16→5181 (izin PO) + `REVIEW_GATE=1` (keputusan PO) |
+| P6 | **Gambar stok Unsplash+Pexels** | `ImageSourcePort`; download→Sharp→rehost FTPS+atribusi (JANGAN hotlink); foto pelanggan selalu prioritas; gagal → slot `keep`. Kedua API key diberikan PO 2026-07-15 | ✅ **PR #86** (+**#87** fix alamat slot — temuan E2E) — E2E LULUS: 11 foto stok ter-rehost + atribusi. **LIVE** (cutover `SITE_ENGINE=mobirise-v1` 2026-07-15, opsi 2 PO) |
 | P7 | **Revisi PRD + ADR** | ADR: adopsi engine Mobirise, registry template, gerbang review & aturan SoT, vendoring, sumber gambar. PRD: F-11 via stok+rehost; F-14 sebagian via editor-web | 🔧 berjalan tiap PR |
-| — | **Cutover `SITE_ENGINE=mobirise-v1`** | Setelah P5 + uji E2E lulus. Rollback = env; situs sections-v1 tetap ter-render | ⏳ |
+| — | **Cutover `SITE_ENGINE=mobirise-v1`** | Rollback = env; situs sections-v1 tetap ter-render | ✅ **LIVE 2026-07-15** (keputusan PO: opsi 2 — tanpa menunggu gerbang review) |
 | E1 | **Billing** — `Subscription`/`Invoice` + Xendit (T-072) | **EKOR (PO 2026-07-14).** Tanpa ini tak ada uang masuk — dikerjakan setelah produk inti matang | ⏳ |
 | E2 | **WhatsApp/WABA** (T-001, T-030..033 WA) | **PALING TERAKHIR (keputusan PO tetap).** Adapter `ChannelPort` — core tak berubah | ⏳ |
 
