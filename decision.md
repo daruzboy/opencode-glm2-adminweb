@@ -873,6 +873,24 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   antrean BullMQ). Satu HTML self-contained tanpa CDN; lintas-tenant hanya raw query di
   balik gerbang token (pola T-082). Memenuhi sebagian besar F-14.
 
+- ✅ **Dashboard v2 "Simple-Web Admin"** (**PR #97**, 2026-07-15, batch permintaan PO):
+  (1) nama dashboard → Simple-Web Admin; (2) kategori konsumen bahasa PO —
+  **Prospek/Batal/Aktif/Nonaktif** (dropdown filter + aksi; dipetakan dari TenantStatus,
+  Batal otomatis bila prospek diam >2 minggu dari lastInboundAt); (3) tautan **🧠 memori**
+  per konsumen (TenantProfile: nama, brief, catatan bot); (4) kolom Situs ber-tautan
+  **pratinjau/live** (URL identik pipeline publish: publicSiteUrl + previewSlug + HMAC);
+  (5) kolom **catatan admin** (Tenant.adminNote, migrasi); (6) tab **SOP** — lihat+simpan
+  dua SOP dari dashboard (folder /runtime di-mount **rw di api, ro di worker**; file SOP
+  pindah ke /opt/containers/glm2/runtime/); (7) tab **Pengaturan** — ganti model
+  (flash/pro), API key, harga token TANPA restart: file llm-config.json (mtime-cache,
+  pola SOP) dibaca adapter LLM per panggilan via `overrides` (agent+json adapter);
+  API key tak pernah dikirim balik penuh; (8) **tiket per TOPIK**
+  (konten|tampilan|ganti-tema|fitur|akun|gangguan|teknis + priority normal|tinggi,
+  kolom baru di Ticket) — bot mengklasifikasikan permintaan pelanggan via tool
+  **create_ticket** (gangguan → prioritas tinggi + alert); UI tiket: daftar ⚡prioritas +
+  semua tiket urut TERLAMA + tombol selesai. Env baru: SOP_ADMIN_PATH (api),
+  LLM_RUNTIME_CONFIG_PATH (api+worker).
+
 ### Gerbang keluar Fase 0
 - ✅ **T-083 — DEMO E2E TERCAPAI** (2026-07-11, produksi nyata, tanpa intervensi manual):
   **chat Telegram → wawancara (agent ingat konteks) → agent bangun situs → tombol approval →

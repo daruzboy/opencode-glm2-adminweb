@@ -84,6 +84,7 @@ export * from './alert/throttled-alert.js';
 export * from './alert/webhook-alert.js';
 // Kanal Telegram (T-030tg) — rencana B; WABA menyusul saat verifikasi Meta tuntas.
 export * from './llm/sanitize-tool-markup.js';
+export * from './llm/runtime-llm-config.js';
 // Media dari kanal (T-033).
 export * from './media/telegram-media-download.js';
 export * from './media/sharp-media-processor.js';
@@ -97,6 +98,7 @@ export * from './prisma/media-repo-prisma.js';
 export * from './prisma/tenant-profile-prisma.js';
 export * from './prisma/admin-console-prisma.js';
 export * from './prisma/feedback-repo-prisma.js';
+export * from './prisma/ticket-repo-prisma.js';
 export * from './prisma/onboarding-prisma.js';
 export * from './telegram/normalize.js';
 export * from './telegram/allowlist.js';

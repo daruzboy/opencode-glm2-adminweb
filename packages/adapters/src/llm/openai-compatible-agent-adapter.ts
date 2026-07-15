@@ -11,6 +11,7 @@ import {
   type LlmAgentRequest,
   type LlmAgentResponse,
   type LlmError,
+  type LlmRuntimeOverrides,
   type LlmTokenPrice,
   type LlmUsageLoggerPort,
   type OpenAiFunctionToolCall,
@@ -33,6 +34,9 @@ export interface OpenAiCompatibleAgentAdapterConfig {
   readonly retryInitialDelayMs?: number;
   readonly retryMaxDelayMs?: number;
   readonly sleep?: (ms: number) => Promise<void>;
+  // Override runtime (dashboard admin): dibaca PER PANGGILAN — ganti model/API key/harga
+  // tanpa restart. Nilai yang tak di-set jatuh ke konfigurasi konstruksi.
+  readonly overrides?: () => LlmRuntimeOverrides;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -61,6 +65,7 @@ export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
   private readonly retryInitialDelayMs: number;
   private readonly retryMaxDelayMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly overridesFn?: () => LlmRuntimeOverrides;
 
   constructor(config: OpenAiCompatibleAgentAdapterConfig) {
     this.provider = config.provider;
@@ -75,14 +80,26 @@ export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
     this.retryInitialDelayMs = config.retryInitialDelayMs ?? DEFAULT_RETRY_INITIAL_DELAY_MS;
     this.retryMaxDelayMs = config.retryMaxDelayMs ?? DEFAULT_RETRY_MAX_DELAY_MS;
     this.sleep = config.sleep ?? defaultSleep;
+    this.overridesFn = config.overrides;
     this.name = `llm-agent:${config.provider}`;
   }
 
+  // Konfigurasi efektif SAAT INI (override runtime > konstruksi). Dievaluasi per panggilan.
+  private effective(): { model: string; apiKey: string; price: LlmTokenPrice } {
+    const o = this.overridesFn?.() ?? {};
+    return {
+      model: o.model || this.model,
+      apiKey: o.apiKey || this.apiKey,
+      price: o.price ?? this.price,
+    };
+  }
+
   async completeWithTools(request: LlmAgentRequest): Promise<Result<LlmAgentResponse, LlmError>> {
-    const body = this.buildRequestBody(request);
+    const eff = this.effective();
+    const body = this.buildRequestBody(request, eff.model);
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
-      const result = await this.callApi(body, request, attempt);
+      const result = await this.callApi(body, request, attempt, eff);
       if (result.ok) return result;
 
       if (!result.error.retryable || attempt >= this.maxAttempts) return result;
@@ -97,13 +114,13 @@ export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
     return err({ code: 'UNKNOWN', message: 'exhausted retries', retryable: false, attempt: this.maxAttempts });
   }
 
-  private buildRequestBody(request: LlmAgentRequest): Record<string, unknown> {
+  private buildRequestBody(request: LlmAgentRequest, model: string): Record<string, unknown> {
     const messages = [
       { role: 'system', content: request.system },
       ...request.messages.map((m) => this.mapMessage(m)),
     ];
     const body: Record<string, unknown> = {
-      model: this.model,
+      model,
       messages,
       max_tokens: request.maxTokens,
       temperature: request.temperature ?? 0.4,
@@ -126,6 +143,7 @@ export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
     body: Record<string, unknown>,
     request: LlmAgentRequest,
     attempt: number,
+    eff: { model: string; apiKey: string; price: LlmTokenPrice },
   ): Promise<Result<LlmAgentResponse, LlmError>> {
     const controller = this.timeoutMs > 0 ? new AbortController() : undefined;
     const timeoutId = controller ? setTimeout(() => controller.abort(), this.timeoutMs) : undefined;
@@ -137,7 +155,7 @@ export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.apiKey}`,
+            Authorization: `Bearer ${eff.apiKey}`,
           },
           body: JSON.stringify(body),
           signal: controller?.signal,
@@ -161,7 +179,7 @@ export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
           jobId: request.jobId,
           task: request.task,
           provider: this.provider,
-          model: this.model,
+          model: eff.model,
           promptTokens: data.usage.prompt_tokens ?? 0,
           completionTokens: data.usage.completion_tokens ?? 0,
           totalTokens: data.usage.total_tokens ?? 0,
@@ -169,7 +187,7 @@ export class OpenAiCompatibleAgentAdapter implements LlmAgentPort {
           estimatedCostUsd: estimateCostUsd(
             data.usage.prompt_tokens ?? 0,
             data.usage.completion_tokens ?? 0,
-            this.price,
+            eff.price,
           ),
           createdAt: new Date().toISOString(),
         });

@@ -21,9 +21,24 @@ export interface DashboardCustomer {
   readonly quotaMessages: number;
   readonly websiteSlug: string | null;
   readonly websiteStatus: string | null;
+  // Tautan situs konsumen: live (hanya bila PUBLISHED) dan pratinjau publik (folder
+  // deterministik — bisa 404 bila belum pernah ada pratinjau terunggah).
+  readonly liveUrl: string | null;
+  readonly previewUrl: string | null;
+  // Catatan bebas admin (Tenant.adminNote).
+  readonly adminNote: string | null;
   readonly lastInboundAt: string | null;
   readonly openTickets: number;
   readonly unresolvedFeedback: number;
+}
+
+// Memori/konteks per konsumen (TenantProfile — diisi bot: nama pelanggan, brief build
+// terakhir, catatan preferensi).
+export interface DashboardProfile {
+  readonly customerName: string | null;
+  readonly brief: unknown;
+  readonly notes: readonly string[];
+  readonly updatedAt: string | null;
 }
 
 export interface DashboardTicket {
@@ -31,6 +46,10 @@ export interface DashboardTicket {
   readonly tenantName: string;
   readonly subject: string;
   readonly body: string | null;
+  // Topik (konten|tampilan|ganti-tema|fitur|akun|gangguan|teknis) + prioritas
+  // (normal|tinggi) — diisi bot via create_ticket atau admin.
+  readonly topic: string | null;
+  readonly priority: string;
   readonly status: string;
   readonly createdAt: string;
 }
@@ -59,12 +78,18 @@ export interface DashboardSystem {
 
 export interface DashboardDataPort {
   customers(): Promise<readonly DashboardCustomer[]>;
+  profile(tenantId: string): Promise<DashboardProfile | null>;
+  setNote(tenantId: string, note: string | null): Promise<void>;
   extendTrial(tenantId: string, days: number): Promise<void>;
   setStatus(tenantId: string, status: string): Promise<void>;
   addQuotaMessages(tenantId: string, amount: number): Promise<void>;
   tickets(): Promise<readonly DashboardTicket[]>;
-  createTicket(tenantId: string, subject: string, body?: string): Promise<void>;
+  createTicket(
+    tenantId: string,
+    input: { subject: string; body?: string; topic?: string; priority?: string },
+  ): Promise<void>;
   setTicketStatus(id: string, status: string): Promise<void>;
+  setTicketPriority(id: string, priority: string): Promise<void>;
   feedback(): Promise<readonly DashboardFeedback[]>;
   resolveFeedback(id: string): Promise<void>;
   // Laporan token+biaya (T-082, lintas tenant) — bentuk longgar, langsung diteruskan.
@@ -72,15 +97,57 @@ export interface DashboardDataPort {
   system(): Promise<DashboardSystem>;
 }
 
+// SOP yang diikuti bot (dua berkas: konsumen & admin) — dilihat + disunting dari dashboard.
+export interface DashboardSopDoc {
+  readonly which: 'konsumen' | 'admin';
+  readonly title: string;
+  readonly path: string;
+  readonly text: string;
+}
+
+export interface DashboardSopPort {
+  list(): Promise<readonly DashboardSopDoc[]>;
+  save(which: 'konsumen' | 'admin', text: string): Promise<void>;
+}
+
+// Pengaturan LLM runtime (model/API key/harga) — override di atas env, berlaku tanpa restart.
+export interface DashboardSettingsView {
+  readonly model: string;
+  readonly modelOverridden: boolean;
+  // API key tak pernah dikirim penuh — hanya bentuk tersamar utk konfirmasi visual.
+  readonly apiKeyMasked: string | null;
+  readonly apiKeyOverridden: boolean;
+  readonly priceInputPer1M: number;
+  readonly priceOutputPer1M: number;
+  readonly priceOverridden: boolean;
+}
+
+export interface DashboardSettingsPatch {
+  readonly model?: string;
+  readonly apiKey?: string;
+  readonly priceInputPer1M?: number | string;
+  readonly priceOutputPer1M?: number | string;
+}
+
+export interface DashboardSettingsPort {
+  get(): Promise<DashboardSettingsView>;
+  save(patch: DashboardSettingsPatch): Promise<DashboardSettingsView>;
+}
+
 export interface DashboardDeps {
   readonly token: string;
   readonly data: DashboardDataPort;
   // Halaman HTML dashboard (string, self-contained).
   readonly page: string;
+  // Opsional (fail-soft): tanpa konfigurasi, endpoint terkait menjawab error yang jelas.
+  readonly sop?: DashboardSopPort;
+  readonly settings?: DashboardSettingsPort;
 }
 
 const TENANT_STATUSES = ['TRIALING', 'ACTIVE', 'PAST_DUE', 'SUSPENDED', 'CANCELED', 'ARCHIVED'];
 const TICKET_STATUSES = ['OPEN', 'IN_PROGRESS', 'DONE'];
+const TICKET_TOPICS = ['konten', 'tampilan', 'ganti-tema', 'fitur', 'akun', 'gangguan', 'teknis'];
+const TICKET_PRIORITIES = ['normal', 'tinggi'];
 
 function tokenMatches(provided: unknown, expected: string): boolean {
   if (typeof provided !== 'string' || !provided) return false;
@@ -111,6 +178,28 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: DashboardDep
     };
 
   app.get('/api/admin/dashboard/customers', route(async () => ({ customers: await deps.data.customers() })));
+
+  // Memori/konteks konsumen (TenantProfile) — tautan "Memori" di tabel konsumen.
+  app.get(
+    '/api/admin/dashboard/customers/:tenantId/profile',
+    route(async (req) => {
+      const { tenantId } = req.params as { tenantId: string };
+      return { profile: await deps.data.profile(tenantId) };
+    }),
+  );
+
+  // Catatan bebas admin per konsumen. Kosong = hapus.
+  app.post(
+    '/api/admin/dashboard/customers/:tenantId/note',
+    route(async (req) => {
+      const { tenantId } = req.params as { tenantId: string };
+      const raw = (req.body as { note?: unknown })?.note;
+      if (raw !== undefined && typeof raw !== 'string') throw new Error('note harus string');
+      const note = (raw ?? '').trim().slice(0, 2000);
+      await deps.data.setNote(tenantId, note.length ? note : null);
+      return { ok: true };
+    }),
+  );
 
   app.post(
     '/api/admin/dashboard/customers/:tenantId/trial',
@@ -150,11 +239,37 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: DashboardDep
   app.post(
     '/api/admin/dashboard/tickets',
     route(async (req) => {
-      const b = (req.body ?? {}) as { tenantId?: unknown; subject?: unknown; body?: unknown };
+      const b = (req.body ?? {}) as {
+        tenantId?: unknown; subject?: unknown; body?: unknown; topic?: unknown; priority?: unknown;
+      };
       if (typeof b.tenantId !== 'string' || typeof b.subject !== 'string' || !b.subject.trim()) {
         throw new Error('tenantId dan subject wajib');
       }
-      await deps.data.createTicket(b.tenantId, b.subject.trim(), typeof b.body === 'string' ? b.body : undefined);
+      if (b.topic !== undefined && !TICKET_TOPICS.includes(String(b.topic))) {
+        throw new Error(`topic harus salah satu: ${TICKET_TOPICS.join(', ')}`);
+      }
+      if (b.priority !== undefined && !TICKET_PRIORITIES.includes(String(b.priority))) {
+        throw new Error(`priority harus salah satu: ${TICKET_PRIORITIES.join(', ')}`);
+      }
+      await deps.data.createTicket(b.tenantId, {
+        subject: b.subject.trim(),
+        ...(typeof b.body === 'string' && b.body.trim() ? { body: b.body.trim() } : {}),
+        ...(b.topic !== undefined ? { topic: String(b.topic) } : {}),
+        ...(b.priority !== undefined ? { priority: String(b.priority) } : {}),
+      });
+      return { ok: true };
+    }),
+  );
+
+  app.post(
+    '/api/admin/dashboard/tickets/:id/priority',
+    route(async (req) => {
+      const { id } = req.params as { id: string };
+      const priority = String((req.body as { priority?: unknown })?.priority ?? '');
+      if (!TICKET_PRIORITIES.includes(priority)) {
+        throw new Error(`priority harus salah satu: ${TICKET_PRIORITIES.join(', ')}`);
+      }
+      await deps.data.setTicketPriority(id, priority);
       return { ok: true };
     }),
   );
@@ -190,4 +305,61 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: DashboardDep
   );
 
   app.get('/api/admin/dashboard/system', route(async () => deps.data.system()));
+
+  // ── SOP bot (konsumen + admin): lihat & simpan dari dashboard ──────────────
+  const SOP_WHICH = ['konsumen', 'admin'];
+  const SOP_MAX_CHARS = 20_000;
+
+  app.get(
+    '/api/admin/dashboard/sop',
+    route(async () => {
+      if (!deps.sop) throw new Error('SOP belum dikonfigurasi (env SOP_PATH / SOP_ADMIN_PATH)');
+      return { sop: await deps.sop.list() };
+    }),
+  );
+
+  app.put(
+    '/api/admin/dashboard/sop',
+    route(async (req) => {
+      if (!deps.sop) throw new Error('SOP belum dikonfigurasi (env SOP_PATH / SOP_ADMIN_PATH)');
+      const b = (req.body ?? {}) as { which?: unknown; text?: unknown };
+      if (typeof b.which !== 'string' || !SOP_WHICH.includes(b.which)) {
+        throw new Error(`which harus salah satu: ${SOP_WHICH.join(', ')}`);
+      }
+      if (typeof b.text !== 'string') throw new Error('text wajib string');
+      if (b.text.length > SOP_MAX_CHARS) throw new Error(`SOP terlalu panjang (maks ${SOP_MAX_CHARS} karakter)`);
+      await deps.sop.save(b.which as 'konsumen' | 'admin', b.text);
+      return { ok: true };
+    }),
+  );
+
+  // ── Pengaturan LLM runtime (model / API key / harga) ───────────────────────
+  app.get(
+    '/api/admin/dashboard/settings',
+    route(async () => {
+      if (!deps.settings) throw new Error('pengaturan LLM belum dikonfigurasi (env LLM_RUNTIME_CONFIG_PATH)');
+      return deps.settings.get();
+    }),
+  );
+
+  app.post(
+    '/api/admin/dashboard/settings',
+    route(async (req) => {
+      if (!deps.settings) throw new Error('pengaturan LLM belum dikonfigurasi (env LLM_RUNTIME_CONFIG_PATH)');
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const patch: Record<string, unknown> = {};
+      for (const k of ['model', 'apiKey'] as const) {
+        if (b[k] === undefined) continue;
+        if (typeof b[k] !== 'string') throw new Error(`${k} harus string`);
+        patch[k] = (b[k] as string).trim();
+      }
+      for (const k of ['priceInputPer1M', 'priceOutputPer1M'] as const) {
+        if (b[k] === undefined || b[k] === '') continue;
+        const n = Number(b[k]);
+        if (!Number.isFinite(n) || n < 0 || n > 1000) throw new Error(`${k} harus angka 0..1000`);
+        patch[k] = n;
+      }
+      return deps.settings.save(patch as DashboardSettingsPatch);
+    }),
+  );
 }
