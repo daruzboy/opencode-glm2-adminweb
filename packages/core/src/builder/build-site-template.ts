@@ -334,6 +334,7 @@ async function handoffForReview(
   const returnUrl = `${(deps.publicApiUrl ?? '').replace(/\/$/, '')}/api/internal/review/complete`;
   const sent = await handoff.createProject({
     name: `AI · ${req.brief.businessName} (${tenantSlug})`,
+    customerName: req.brief.businessName,
     templateId,
     document,
     source: { websiteId: req.websiteId, revisionId, returnUrl },
