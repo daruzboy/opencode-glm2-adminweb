@@ -269,3 +269,36 @@ describe('OpenAiCompatibleAgentAdapter — anggaran token habis di reasoning', (
     }
   });
 });
+
+describe('OpenAiCompatibleAgentAdapter — overrides runtime', () => {
+  it('model & API key dari overrides dipakai per panggilan (ganti tanpa rekonstruksi)', async () => {
+    const fetch = mockFetch({
+      ok: true,
+      status: 200,
+      json: {
+        choices: [{ message: { role: 'assistant', content: 'ok' } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      },
+    });
+    let current: { model?: string; apiKey?: string } = {};
+    const adapter = new OpenAiCompatibleAgentAdapter({
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      apiKey: 'env-key',
+      baseUrl: 'https://api.deepseek.com/v1',
+      fetch,
+      overrides: () => current,
+    });
+
+    await adapter.completeWithTools(baseRequest);
+    let init = fetch.mock.calls[0]![1] as { headers: Record<string, string>; body: string };
+    expect(init.headers.Authorization).toBe('Bearer env-key');
+    expect(JSON.parse(init.body).model).toBe('deepseek-v4-flash');
+
+    current = { model: 'deepseek-v4-pro', apiKey: 'dash-key' };
+    await adapter.completeWithTools(baseRequest);
+    init = fetch.mock.calls[1]![1] as { headers: Record<string, string>; body: string };
+    expect(init.headers.Authorization).toBe('Bearer dash-key');
+    expect(JSON.parse(init.body).model).toBe('deepseek-v4-pro');
+  });
+});

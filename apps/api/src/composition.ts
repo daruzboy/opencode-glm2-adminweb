@@ -11,6 +11,8 @@ import {
   type TenantProfileDelegate,
   FeedbackRepositoryPrisma,
   type FeedbackDelegate,
+  TicketRepositoryPrisma,
+  type TicketDelegate,
   OpenAiCompatibleAgentAdapter,
   RevisionRepositoryPrisma,
   SitebuilderToolAdapter,
@@ -24,6 +26,8 @@ import {
   createBullMqChatInboundQueue,
   createBullMqRedisClient,
   createPreviewToken,
+  createRuntimeLlmConfigStore,
+  type RuntimeLlmConfigStore,
   indexTemplates,
   EditorWebHandoff,
   TelegramChannel,
@@ -46,6 +50,7 @@ import {
   createAgentToolRegistry,
   createRecordFeedbackTool,
   createRememberCustomerTool,
+  createTicketTool,
   createSitebuilderApplyPatchTool,
   createSitebuilderBuildSiteTool,
   createSitebuilderGetSiteOutlineTool,
@@ -77,6 +82,7 @@ import type { TemplateAdminDeps } from './admin/template-routes.js';
 import type { ReviewRoutesDeps } from './review/routes.js';
 import type { DashboardDeps } from './admin/dashboard-routes.js';
 import { createDashboardData, type RawDb } from './admin/dashboard-data-prisma.js';
+import { createDashboardSettings, createDashboardSop } from './admin/dashboard-settings.js';
 import { DASHBOARD_PAGE } from './admin/dashboard-page.js';
 import type {
   AgentToolDefinition,
@@ -107,6 +113,19 @@ export interface LlmEnv {
   readonly LLM_PRICE_OUTPUT_PER_1M?: string;
   // SOP layanan PO (file markdown; dibaca ulang saat berubah).
   readonly SOP_PATH?: string;
+  readonly SOP_ADMIN_PATH?: string;
+  // Override LLM runtime (dashboard Pengaturan): model/API key/harga tanpa restart.
+  readonly LLM_RUNTIME_CONFIG_PATH?: string;
+}
+
+// Store config LLM runtime dari env — dipakai adapter LLM (overrides per panggilan)
+// dan dashboard (baca+tulis). Tiap instance ber-cache mtime sendiri; aman dibuat per call.
+function createLlmRuntimeStore(env: {
+  LLM_RUNTIME_CONFIG_PATH?: string;
+}): RuntimeLlmConfigStore | undefined {
+  return env.LLM_RUNTIME_CONFIG_PATH
+    ? createRuntimeLlmConfigStore({ path: env.LLM_RUNTIME_CONFIG_PATH, logger: console })
+    : undefined;
 }
 
 export interface CreateLlmJsonPortOptions {
@@ -307,6 +326,7 @@ function createProductionAgentReplier(
   // T-082 (BUG): agent adapter TIDAK PERNAH disuntik usageLogger → seluruh percakapan chat
   // (mayoritas pemakaian!) tak tercatat di LlmUsage. Terbukti di produksi: hanya task
   // `site_plan` yang punya baris; chat/interview NOL.
+  const runtimeStore = createLlmRuntimeStore(env);
   const agentLlm = new OpenAiCompatibleAgentAdapter({
     usageLogger: new LlmUsageLoggerPrisma(prisma.llmUsage as unknown as LlmUsageDelegate),
     price: tokenPrice(env),
@@ -314,6 +334,7 @@ function createProductionAgentReplier(
     model,
     apiKey,
     baseUrl,
+    ...(runtimeStore ? { overrides: () => runtimeStore.overrides() } : {}),
   });
 
   const websites = new WebsiteRepositoryPrisma(prisma.website as unknown as WebsiteDelegate);
@@ -370,6 +391,8 @@ function createProductionAgentReplier(
         createRecordFeedbackTool(
           new FeedbackRepositoryPrisma(prisma.feedback as unknown as FeedbackDelegate),
         ),
+        // Klasifikasi permintaan pelanggan per topik → daftar tiket dashboard.
+        createTicketTool(new TicketRepositoryPrisma(prisma.ticket as unknown as TicketDelegate)),
       ]),
     },
   });
@@ -379,6 +402,8 @@ export function createLlmJsonPort(options: CreateLlmJsonPortOptions = {}): LlmJs
   const env = options.env ?? process.env;
   const provider = parseLlmProvider(env.DIGIMAESTRO_LLM_PROVIDER);
   const usageLogger = options.usageLogger ?? createPrismaLlmUsageLogger();
+  const runtimeStore = createLlmRuntimeStore(env);
+  const overrides = runtimeStore ? { overrides: () => runtimeStore.overrides() } : {};
 
   if (provider === 'glm') {
     return createGlmJsonAdapter({
@@ -390,6 +415,7 @@ export function createLlmJsonPort(options: CreateLlmJsonPortOptions = {}): LlmJs
       // Tanpa price, cost tercatat $0 padahal token terbakar (T-082).
       price: tokenPrice(env),
       timeoutMs: BUILD_LLM_TIMEOUT_MS,
+      ...overrides,
     });
   }
 
@@ -401,6 +427,7 @@ export function createLlmJsonPort(options: CreateLlmJsonPortOptions = {}): LlmJs
     usageLogger,
     price: tokenPrice(env),
     timeoutMs: BUILD_LLM_TIMEOUT_MS,
+    ...overrides,
   });
 }
 
@@ -462,6 +489,27 @@ export function createDashboardDeps(env: NodeJS.ProcessEnv = process.env): Dashb
     });
   }
 
+  // Tautan situs di kolom Situs — pembentukan URL sama persis dgn pipeline publish/preview.
+  const previewSecret = env.PREVIEW_TOKEN_SECRET;
+  const site = {
+    rootDomain: env.PUBLISH_BASE_DOMAIN ?? 'digimaestro.id',
+    urlMode: parsePublishUrlMode(env.PUBLISH_URL_MODE),
+    ...(previewSecret
+      ? {
+          previewToken: (websiteId: string) =>
+            createHmac('sha256', previewSecret).update(`preview:${websiteId}`).digest('hex').slice(0, 12),
+        }
+      : {}),
+  };
+
+  const runtimeStore = createLlmRuntimeStore(env);
+  const sop = createDashboardSop({
+    ...(env.SOP_PATH ? { customerPath: env.SOP_PATH } : {}),
+    ...(env.SOP_ADMIN_PATH ? { adminPath: env.SOP_ADMIN_PATH } : {}),
+  });
+  const envApiKey =
+    env.DIGIMAESTRO_LLM_PROVIDER === 'glm' ? (env.GLM_API_KEY ?? '') : (env.DEEPSEEK_API_KEY ?? '');
+
   return {
     token: env.ADMIN_DASHBOARD_TOKEN,
     page: DASHBOARD_PAGE,
@@ -471,7 +519,20 @@ export function createDashboardDeps(env: NodeJS.ProcessEnv = process.env): Dashb
       ...(queueCounts ? { queueCounts } : {}),
       model,
       pricePer1M: { input: price.inputPer1M, output: price.outputPer1M },
+      site,
+      ...(runtimeStore ? { runtimeConfig: () => runtimeStore.get() } : {}),
     }),
+    ...(sop ? { sop } : {}),
+    ...(runtimeStore
+      ? {
+          settings: createDashboardSettings({
+            store: runtimeStore,
+            envModel: model,
+            envApiKey,
+            envPrice: price,
+          }),
+        }
+      : {}),
   };
 }
 

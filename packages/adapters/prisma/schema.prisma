@@ -123,6 +123,9 @@ model Tenant {
   quotaWebsites  Int       @default(1)
   trialEndsAt    DateTime?
   inviteCodeId   String?
+  // Catatan bebas ADMIN tentang konsumen (dashboard 2026-07-15) — beda dari
+  // TenantProfile.notes yang diisi bot dari percakapan pelanggan.
+  adminNote      String?
 
   users          User[]
   conversations  Conversation[]
@@ -171,6 +174,12 @@ model Ticket {
   tenantId  String
   subject   String
   body      String?
+  // Topik (PO 2026-07-15): konten|tampilan|ganti-tema|fitur|akun|gangguan|teknis —
+  // diklasifikasikan bot (tool create_ticket) atau dipilih admin. String longgar
+  // (bukan enum DB) agar menambah topik tak butuh migrasi.
+  topic     String?
+  // normal|tinggi — daftar "segera dikerjakan" di dashboard.
+  priority  String   @default("normal")
   status    String   @default("OPEN")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

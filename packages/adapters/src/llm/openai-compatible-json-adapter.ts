@@ -9,6 +9,7 @@ import {
   type LlmError,
   type LlmJsonPort,
   type LlmJsonRequest,
+  type LlmRuntimeOverrides,
   type LlmTokenPrice,
   type LlmUsageLoggerPort,
   type LlmUsageRecord,
@@ -35,6 +36,9 @@ export interface OpenAiCompatibleJsonAdapterConfig {
   readonly retryMaxDelayMs?: number;
   // Injectable untuk test agar backoff tidak benar-benar menunggu. Default setTimeout.
   readonly sleep?: (ms: number) => Promise<void>;
+  // Override runtime (dashboard admin): dibaca PER PANGGILAN — ganti model/API key/harga
+  // tanpa restart. Nilai yang tak di-set jatuh ke konfigurasi konstruksi.
+  readonly overrides?: () => LlmRuntimeOverrides;
 }
 
 export interface RuntimeResponse {
@@ -98,8 +102,21 @@ export class OpenAiCompatibleJsonAdapter implements LlmJsonPort {
     this.sleep = config.sleep ?? defaultSleep;
   }
 
+  // Konfigurasi efektif SAAT INI (override runtime > konstruksi). Dievaluasi per panggilan.
+  private effective(): { model: string; apiKey: string; inputPer1M: number; outputPer1M: number } {
+    const o = this.config.overrides?.() ?? {};
+    return {
+      model: o.model || this.config.model,
+      apiKey: o.apiKey || this.config.apiKey,
+      inputPer1M:
+        o.price?.inputPer1M ?? this.config.inputTokenCostPer1M ?? this.config.price?.inputPer1M ?? 0,
+      outputPer1M:
+        o.price?.outputPer1M ?? this.config.outputTokenCostPer1M ?? this.config.price?.outputPer1M ?? 0,
+    };
+  }
+
   async completeJson<T>(request: LlmJsonRequest<T>): Promise<Result<T, LlmError>> {
-    if (this.config.apiKey.length === 0) {
+    if (this.effective().apiKey.length === 0) {
       return err(makeError('CONFIG', 'API key LLM belum dikonfigurasi', false, 0));
     }
 
@@ -142,17 +159,17 @@ export class OpenAiCompatibleJsonAdapter implements LlmJsonPort {
     const response = await this.fetchCompletion(request, repairHints, attempt);
     if (!response.ok) return response;
 
+    const eff = this.effective();
     const usageRecord = toUsageRecord({
       request,
       usage: response.value.usage,
       latencyMs: Date.now() - startedAt,
       provider: this.config.provider,
-      model: this.config.model,
-      // T-082: harga dari config (env). Sebelumnya `?? 0` diam-diam membuat SELURUH biaya
-      // tercatat $0.0000 meski ratusan ribu token terbakar.
-      inputTokenCostPer1M: this.config.inputTokenCostPer1M ?? this.config.price?.inputPer1M ?? 0,
-      outputTokenCostPer1M:
-        this.config.outputTokenCostPer1M ?? this.config.price?.outputPer1M ?? 0,
+      model: eff.model,
+      // T-082: harga dari config (env/override runtime). Sebelumnya `?? 0` diam-diam membuat
+      // SELURUH biaya tercatat $0.0000 meski ratusan ribu token terbakar.
+      inputTokenCostPer1M: eff.inputPer1M,
+      outputTokenCostPer1M: eff.outputPer1M,
     });
 
     const logged = await this.config.usageLogger?.recordUsage(usageRecord);
@@ -170,15 +187,16 @@ export class OpenAiCompatibleJsonAdapter implements LlmJsonPort {
   ): Promise<Result<ProviderCompletion, LlmError>> {
     const controller = this.timeoutMs > 0 ? new AbortController() : undefined;
     const timer = controller ? setTimeout(() => controller.abort(), this.timeoutMs) : undefined;
+    const eff = this.effective();
     try {
       const response = await this.fetch(`${normalizeBaseUrl(this.config.baseUrl)}/chat/completions`, {
         method: 'POST',
         headers: {
-          authorization: `Bearer ${this.config.apiKey}`,
+          authorization: `Bearer ${eff.apiKey}`,
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          model: this.config.model,
+          model: eff.model,
           messages: [
             { role: 'system', content: request.system },
             ...request.messages,

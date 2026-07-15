@@ -55,4 +55,5 @@ export * from './ports/publish-queue.js';
 export * from './ports/publish-source.js';
 export * from './ports/repository.js';
 export * from './ports/template.js';
+export * from './ports/ticket.js';
 export * from './ports/editor-handoff.js';

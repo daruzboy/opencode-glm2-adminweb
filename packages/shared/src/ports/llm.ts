@@ -156,3 +156,12 @@ export function estimateCostUsd(
 export function isPriceConfigured(price: LlmTokenPrice): boolean {
   return price.inputPer1M > 0 || price.outputPer1M > 0;
 }
+
+// Override runtime (dashboard admin 2026-07-15): PO bisa mengganti model/API key/harga
+// dari dashboard TANPA restart. Adapter membaca getter ini per panggilan; nilai kosong
+// berarti "pakai konfigurasi konstruksi (env)".
+export interface LlmRuntimeOverrides {
+  readonly model?: string;
+  readonly apiKey?: string;
+  readonly price?: LlmTokenPrice;
+}

@@ -36,6 +36,8 @@ import {
   type TenantProfileDelegate,
   FeedbackRepositoryPrisma,
   type FeedbackDelegate,
+  TicketRepositoryPrisma,
+  type TicketDelegate,
   ActingStorePrisma,
   AdminDirectoryPrisma,
   type AdminConsoleClient,
@@ -55,6 +57,7 @@ import {
   createBullMqChatInboundQueue,
   createBullMqRedisClient,
   createFileSopProvider,
+  createRuntimeLlmConfigStore,
   createHttpImageDownload,
   createPreviewToken,
   createRedisInboundRateLimiter,
@@ -73,6 +76,7 @@ import {
   createAgentReplier,
   createAgentToolRegistry,
   createRecordFeedbackTool,
+  createTicketTool,
   createRememberCustomerTool,
   createSitebuilderApplyPatchTool,
   handleAdminCommand,
@@ -121,7 +125,7 @@ import type {
   TenantId,
 } from '@digimaestro/shared';
 import type { RegistrationHandler } from './chat-inbound-worker.js';
-import type { ChannelPort, ConversationRepository, LlmJsonPort } from '@digimaestro/shared';
+import type { ChannelPort, ConversationRepository, LlmJsonPort, LlmRuntimeOverrides } from '@digimaestro/shared';
 import type { PublishNotifier } from './publish-worker.js';
 import type { PollerHandle } from '@digimaestro/adapters';
 
@@ -164,6 +168,8 @@ export interface ChatWorkerEnv {
   readonly SOP_PATH?: string;
   // Dua SOP (2026-07-15): SOP khusus percakapan chat ADMIN (konsol multi-konsumen).
   readonly SOP_ADMIN_PATH?: string;
+  // Override LLM runtime (ditulis dashboard admin di kontainer api; worker baca ro).
+  readonly LLM_RUNTIME_CONFIG_PATH?: string;
   // Konsol admin /konsumen — default: chat alert PO. HANYA chat ini yang bisa memakainya.
   readonly ADMIN_TELEGRAM_CHAT_ID?: string;
   // P5: gerbang review PO (handoff ke editor-web).
@@ -195,6 +201,16 @@ export function createTelegramChannel(env: ChatWorkerEnv = process.env): Channel
   return new TelegramChannel({ botToken, fetch: globalThis.fetch as never });
 }
 
+// Override LLM runtime (dashboard Pengaturan di api): worker membaca file yang sama
+// (mount ro) → ganti model/API key/harga berlaku di bot tanpa restart.
+function llmRuntimeOverrides(
+  env: ChatWorkerEnv,
+): { overrides?: () => LlmRuntimeOverrides } {
+  if (!env.LLM_RUNTIME_CONFIG_PATH) return {};
+  const store = createRuntimeLlmConfigStore({ path: env.LLM_RUNTIME_CONFIG_PATH, logger: console });
+  return { overrides: () => store.overrides() };
+}
+
 function createLlmJsonPort(
   env: ChatWorkerEnv,
   prisma: ReturnType<typeof createPrismaClient>,
@@ -212,6 +228,7 @@ function createLlmJsonPort(
         // site_plan 3×4096 token out, cost 0.000000) — dashboard T-082 jadi bohong kecil.
         price: tokenPrice(env),
         timeoutMs: BUILD_LLM_TIMEOUT_MS,
+        ...llmRuntimeOverrides(env),
       })
     : createDeepSeekJsonAdapter({
         model: env.DEEPSEEK_MODEL ?? DEFAULT_DEEPSEEK_MODEL,
@@ -222,6 +239,7 @@ function createLlmJsonPort(
         // Build situs = JSON besar & penalaran berat → 30 dtk default tak cukup (timeout
         // konsisten di uji nyata).
         timeoutMs: BUILD_LLM_TIMEOUT_MS,
+        ...llmRuntimeOverrides(env),
       });
 }
 
@@ -245,6 +263,7 @@ export function createChatReplier(
     baseUrl: isGlm
       ? (env.GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/paas/v4')
       : (env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1'),
+    ...llmRuntimeOverrides(env),
   });
 
   const websites = new WebsiteRepositoryPrisma(prisma.website as unknown as WebsiteDelegate);
@@ -345,6 +364,11 @@ export function createChatReplier(
         createRememberCustomerTool(profile),
         createRecordFeedbackTool(
           new FeedbackRepositoryPrisma(prisma.feedback as unknown as FeedbackDelegate),
+          createAlert(env),
+        ),
+        // Klasifikasi permintaan pelanggan per topik → daftar tiket dashboard.
+        createTicketTool(
+          new TicketRepositoryPrisma(prisma.ticket as unknown as TicketDelegate),
           createAlert(env),
         ),
       ]),

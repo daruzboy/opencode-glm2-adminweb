@@ -6,11 +6,14 @@
 
 import { loadavg, totalmem, freemem, cpus, uptime } from 'node:os';
 import { statfs } from 'node:fs/promises';
-import { buildUsageReport, type UsageReportDeps } from '@digimaestro/core';
+import { buildUsageReport, previewSlug, type UsageReportDeps } from '@digimaestro/core';
+import { publicSiteUrl, type PublishUrlMode } from '@digimaestro/shared';
+import type { RuntimeLlmConfig } from '@digimaestro/adapters';
 import type {
   DashboardCustomer,
   DashboardDataPort,
   DashboardFeedback,
+  DashboardProfile,
   DashboardSystem,
   DashboardTicket,
 } from './dashboard-routes.js';
@@ -32,22 +35,47 @@ export interface DashboardDataOptions {
   readonly pricePer1M: { input: number; output: number };
   // Path utk ukuran disk (root container ≈ disk VPS pada setup satu-disk ini).
   readonly diskPath?: string;
+  // Tautan situs konsumen di kolom Situs (URL sama dengan yang dijanjikan pipeline publish).
+  readonly site?: {
+    readonly rootDomain: string;
+    readonly urlMode: PublishUrlMode;
+    readonly previewToken?: (websiteId: string) => string;
+  };
+  // Override runtime (dashboard Pengaturan): model & harga efektif utk laporan biaya/sistem.
+  readonly runtimeConfig?: () => RuntimeLlmConfig;
 }
 
 export function createDashboardData(opts: DashboardDataOptions): DashboardDataPort {
   const { db } = opts;
+
+  const siteUrls = (
+    websiteId: string | null,
+    websiteSlug: string | null,
+    websiteStatus: string | null,
+  ): { liveUrl: string | null; previewUrl: string | null } => {
+    if (!opts.site || !websiteId || !websiteSlug) return { liveUrl: null, previewUrl: null };
+    const { rootDomain, urlMode, previewToken } = opts.site;
+    return {
+      liveUrl: websiteStatus === 'PUBLISHED' ? publicSiteUrl(websiteSlug, rootDomain, urlMode) : null,
+      // Pratinjau selalu path-mode (sama dengan requestPreview).
+      previewUrl: publicSiteUrl(previewSlug(websiteSlug, websiteId, previewToken), rootDomain, 'path'),
+    };
+  };
+
   return {
     async customers(): Promise<readonly DashboardCustomer[]> {
       const rows = await db.$queryRawUnsafe<
         {
           id: string; name: string; slug: string; status: string; trialEndsAt: Date | null;
-          usedMessages: number; quotaMessages: number; websiteSlug: string | null;
+          usedMessages: number; quotaMessages: number; adminNote: string | null;
+          websiteId: string | null; websiteSlug: string | null;
           websiteStatus: string | null; lastInboundAt: Date | null; openTickets: bigint;
           unresolvedFeedback: bigint;
         }[]
       >(
         `SELECT t."id", t."name", t."slug", t."status"::text AS "status", t."trialEndsAt",
-                t."usedMessages", t."quotaMessages",
+                t."usedMessages", t."quotaMessages", t."adminNote",
+                w."id"    AS "websiteId",
                 w."slug"  AS "websiteSlug",
                 w."status"::text AS "websiteStatus",
                 (SELECT MAX(m."createdAt") FROM "Message" m
@@ -70,10 +98,38 @@ export function createDashboardData(opts: DashboardDataOptions): DashboardDataPo
         quotaMessages: Number(r.quotaMessages),
         websiteSlug: r.websiteSlug,
         websiteStatus: r.websiteStatus,
+        ...siteUrls(r.websiteId, r.websiteSlug, r.websiteStatus),
+        adminNote: r.adminNote,
         lastInboundAt: r.lastInboundAt?.toISOString() ?? null,
         openTickets: Number(r.openTickets),
         unresolvedFeedback: Number(r.unresolvedFeedback),
       }));
+    },
+
+    async profile(tenantId): Promise<DashboardProfile | null> {
+      const rows = await db.$queryRawUnsafe<
+        { customerName: string | null; brief: unknown; notes: string[]; updatedAt: Date }[]
+      >(
+        `SELECT p."customerName", p."brief", p."notes", p."updatedAt"
+           FROM "TenantProfile" p WHERE p."tenantId" = $1`,
+        tenantId,
+      );
+      const r = rows[0];
+      if (!r) return null;
+      return {
+        customerName: r.customerName,
+        brief: r.brief,
+        notes: r.notes ?? [],
+        updatedAt: r.updatedAt?.toISOString() ?? null,
+      };
+    },
+
+    async setNote(tenantId, note) {
+      await db.$executeRawUnsafe(
+        `UPDATE "Tenant" SET "adminNote" = $2, "updatedAt" = NOW() WHERE "id" = $1`,
+        tenantId,
+        note,
+      );
     },
 
     async extendTrial(tenantId, days) {
@@ -105,23 +161,31 @@ export function createDashboardData(opts: DashboardDataOptions): DashboardDataPo
     },
 
     async tickets(): Promise<readonly DashboardTicket[]> {
+      // Urutan: yang paling LAMA duluan (permintaan PO) — pemisahan "prioritas dulu"
+      // dilakukan UI dari kolom priority.
       const rows = await db.$queryRawUnsafe<
-        { id: string; tenantName: string; subject: string; body: string | null; status: string; createdAt: Date }[]
+        {
+          id: string; tenantName: string; subject: string; body: string | null;
+          topic: string | null; priority: string; status: string; createdAt: Date;
+        }[]
       >(
-        `SELECT k."id", t."name" AS "tenantName", k."subject", k."body", k."status", k."createdAt"
+        `SELECT k."id", t."name" AS "tenantName", k."subject", k."body", k."topic",
+                k."priority", k."status", k."createdAt"
            FROM "Ticket" k JOIN "Tenant" t ON t."id" = k."tenantId"
-          ORDER BY (k."status" = 'DONE') ASC, k."createdAt" DESC LIMIT 200`,
+          ORDER BY k."createdAt" ASC LIMIT 300`,
       );
       return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
     },
 
-    async createTicket(tenantId, subject, body) {
+    async createTicket(tenantId, input) {
       await db.$executeRawUnsafe(
-        `INSERT INTO "Ticket" ("id", "tenantId", "subject", "body", "updatedAt")
-         VALUES ('tkt' || md5(random()::text || clock_timestamp()::text), $1, $2, $3, NOW())`,
+        `INSERT INTO "Ticket" ("id", "tenantId", "subject", "body", "topic", "priority", "updatedAt")
+         VALUES ('tkt' || md5(random()::text || clock_timestamp()::text), $1, $2, $3, $4, $5, NOW())`,
         tenantId,
-        subject,
-        body ?? null,
+        input.subject,
+        input.body ?? null,
+        input.topic ?? null,
+        input.priority ?? 'normal',
       );
     },
 
@@ -130,6 +194,14 @@ export function createDashboardData(opts: DashboardDataOptions): DashboardDataPo
         `UPDATE "Ticket" SET "status" = $2, "updatedAt" = NOW() WHERE "id" = $1`,
         id,
         status,
+      );
+    },
+
+    async setTicketPriority(id, priority) {
+      await db.$executeRawUnsafe(
+        `UPDATE "Ticket" SET "priority" = $2, "updatedAt" = NOW() WHERE "id" = $1`,
+        id,
+        priority,
       );
     },
 
@@ -153,7 +225,13 @@ export function createDashboardData(opts: DashboardDataOptions): DashboardDataPo
     },
 
     async usage(since, until) {
-      const report = await buildUsageReport(opts.usageDeps, {
+      // Harga efektif = override runtime (dashboard Pengaturan) > env.
+      const rc = opts.runtimeConfig?.() ?? {};
+      const price =
+        rc.priceInputPer1M !== undefined && rc.priceOutputPer1M !== undefined
+          ? { inputPer1M: rc.priceInputPer1M, outputPer1M: rc.priceOutputPer1M }
+          : opts.usageDeps.price;
+      const report = await buildUsageReport({ ...opts.usageDeps, price }, {
         ...(since ? { since } : {}),
         ...(until ? { until } : {}),
       });
@@ -171,6 +249,7 @@ export function createDashboardData(opts: DashboardDataOptions): DashboardDataPo
           queues[name] = await opts.queueCounts(name).catch(() => ({ waiting: -1, active: -1, failed: -1 }));
         }
       }
+      const rc = opts.runtimeConfig?.() ?? {};
       return {
         load1: Math.round(loadavg()[0]! * 100) / 100,
         cpuCount: cpus().length,
@@ -179,8 +258,11 @@ export function createDashboardData(opts: DashboardDataOptions): DashboardDataPo
         diskUsedGb: fs ? Math.round(((fs.blocks - fs.bfree) * blk) / 1073741824) : -1,
         diskTotalGb: fs ? Math.round((fs.blocks * blk) / 1073741824) : -1,
         queues,
-        model: opts.model,
-        pricePer1M: opts.pricePer1M,
+        model: rc.model ?? opts.model,
+        pricePer1M:
+          rc.priceInputPer1M !== undefined && rc.priceOutputPer1M !== undefined
+            ? { input: rc.priceInputPer1M, output: rc.priceOutputPer1M }
+            : opts.pricePer1M,
         uptimeHours: Math.round((uptime() / 3600) * 10) / 10,
       };
     },
