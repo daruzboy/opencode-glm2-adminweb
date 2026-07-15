@@ -226,6 +226,7 @@ export {
 // E1 billing langganan (Midtrans) — dipakai worker publish + poller status.
 export {
   createSubscriptionInvoice,
+  paymentExpiredMessage,
   paymentPaidMessage,
   paymentRequestMessage,
   pollPendingInvoices,

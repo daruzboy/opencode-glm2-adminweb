@@ -26,8 +26,9 @@ export interface MidtransGatewayConfig {
   // sandbox (default, uji) | production.
   readonly environment?: 'sandbox' | 'production';
   readonly fetch?: MidtransFetch;
-  // Masa berlaku link bayar (hari). Default 2.
-  readonly expiryDays?: number;
+  // Masa berlaku link bayar (jam). Default 24 — kebijakan PO: bayar <24 jam setelah
+  // publish, selebihnya situs ditahan.
+  readonly expiryHours?: number;
 }
 
 const STATUS_MAP: Record<string, PaymentStatus> = {
@@ -49,7 +50,7 @@ export class MidtransGateway implements PaymentGatewayPort {
   private readonly snapBase: string;
   private readonly coreBase: string;
   private readonly fetchFn: MidtransFetch;
-  private readonly expiryDays: number;
+  private readonly expiryHours: number;
 
   constructor(config: MidtransGatewayConfig) {
     const prod = config.environment === 'production';
@@ -57,7 +58,7 @@ export class MidtransGateway implements PaymentGatewayPort {
     this.snapBase = prod ? 'https://app.midtrans.com/snap/v1' : 'https://app.sandbox.midtrans.com/snap/v1';
     this.coreBase = prod ? 'https://api.midtrans.com/v2' : 'https://api.sandbox.midtrans.com/v2';
     this.fetchFn = config.fetch ?? (globalThis.fetch as unknown as MidtransFetch);
-    this.expiryDays = config.expiryDays ?? 2;
+    this.expiryHours = config.expiryHours ?? 24;
   }
 
   async createPaymentLink(input: {
@@ -76,7 +77,7 @@ export class MidtransGateway implements PaymentGatewayPort {
           ...(input.description
             ? { item_details: [{ id: 'langganan', name: input.description.slice(0, 50), price: input.amountIdr, quantity: 1 }] }
             : {}),
-          expiry: { unit: 'days', duration: this.expiryDays },
+          expiry: { unit: 'hours', duration: this.expiryHours },
         }),
       });
       if (res.status === 401) return err({ code: 'AUTH', message: 'server key Midtrans ditolak (401)' });

@@ -216,9 +216,28 @@ async function setelan(){
   '<input id="key" type="password" placeholder="isi hanya bila ingin mengganti" style="width:min(360px,100%)" autocomplete="off">'+
   '<h3>Harga token (USD per 1 juta)</h3>'+
   '<div class="row">Input <input id="pin" type="number" step="0.01" min="0" value="'+s.priceInputPer1M+'" style="width:110px"> Output <input id="pout" type="number" step="0.01" min="0" value="'+s.priceOutputPer1M+'" style="width:110px">'+(s.priceOverridden?'<span class="dim">(override dashboard)</span>':'<span class="dim">(dari env)</span>')+'</div>'+
-  '<br><button class="act" onclick="setelanSimpan()">Simpan pengaturan</button> <span id="setmsg" class="dim"></span></div>';
+  '<br><button class="act" onclick="setelanSimpan()">Simpan pengaturan</button> <span id="setmsg" class="dim"></span></div>'+
+  (s.subscription?hargaCard(s.subscription):'');
   document.getElementById('mdl').onchange=e=>{document.getElementById('mdlx').style.display=e.target.value==='__lain'?'':'none'};
 }
+const rp=n=>n==null?'—':'Rp'+Number(n).toLocaleString('id-ID');
+function hargaCard(sub){
+  return '<div class="card"><h3>💰 Harga langganan</h3>'+
+  '<p class="dim">Yang DITAGIHKAN ke konsumen setelah situs tayang = harga promo bila diisi, selain itu harga normal. Kosongkan promo untuk mengakhiri diskon. Link bayar berlaku 24 jam; lewat itu situs ditahan.</p>'+
+  '<div class="row">Harga normal (Rp) <input id="subp" type="number" step="1000" min="1000" value="'+(sub.priceIdr??'')+'" style="width:130px">'+
+  ' Harga promo (Rp) <input id="subd" type="number" step="1000" min="1000" value="'+(sub.discountIdr??'')+'" placeholder="tanpa promo" style="width:130px">'+
+  ' Periode (hari) <input id="subper" type="number" min="1" max="365" value="'+sub.periodDays+'" style="width:80px"></div>'+
+  '<p>Ditagihkan sekarang: <b>'+rp(sub.effectiveIdr)+'</b>'+(sub.discountIdr?' <span class="dim">(promo — normal '+rp(sub.priceIdr)+')</span>':'')+' <span class="dim">/ '+sub.periodDays+' hari · sumber: '+sub.source+'</span></p>'+
+  '<button class="act" onclick="hargaSimpan()">Simpan harga</button> <span id="submsg" class="dim"></span></div>';
+}
+window.hargaSimpan=async()=>{
+  const v=id=>document.getElementById(id).value.trim();
+  const p={subscriptionPriceIdr:v('subp')===''?'':Number(v('subp')),
+           subscriptionDiscountIdr:v('subd')===''?'':Number(v('subd')),
+           subscriptionPeriodDays:v('subper')===''?'':Number(v('subper'))};
+  await api('/settings',{method:'POST',body:JSON.stringify(p)});
+  document.getElementById('submsg').textContent='✓ tersimpan';setTimeout(render,700);
+};
 window.setPatch=async p=>{await api('/settings',{method:'POST',body:JSON.stringify(p)});render()};
 window.setelanSimpan=async()=>{
   const sel=document.getElementById('mdl').value;

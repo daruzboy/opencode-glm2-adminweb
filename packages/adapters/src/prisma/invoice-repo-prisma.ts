@@ -117,7 +117,7 @@ export interface BillingTenantDelegate {
   }): Promise<{ status: string; serviceEndsAt: Date | null } | null>;
   update(args: {
     where: { id: string };
-    data: { status: 'ACTIVE'; serviceEndsAt: Date };
+    data: { status: 'ACTIVE'; serviceEndsAt: Date } | { status: 'SUSPENDED' };
   }): Promise<unknown>;
 }
 
@@ -147,6 +147,15 @@ export class BillingTenantPrisma implements BillingTenantPort {
         where: { id: tenantId },
         data: { status: 'ACTIVE', serviceEndsAt: new Date(serviceEndsAt) },
       });
+      return ok(undefined);
+    } catch (e) {
+      return err({ code: 'UNKNOWN', message: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async hold(tenantId: TenantId): Promise<Result<void, RepositoryError>> {
+    try {
+      await this.delegate.update({ where: { id: tenantId }, data: { status: 'SUSPENDED' } });
       return ok(undefined);
     } catch (e) {
       return err({ code: 'UNKNOWN', message: e instanceof Error ? e.message : String(e) });

@@ -39,6 +39,7 @@ function tenants(serviceEndsAt: string | null = null): BillingTenantPort & Recor
     name: 'BillingTenant',
     getService: vi.fn(async () => ok({ status: 'TRIALING', serviceEndsAt })),
     activate: vi.fn(async () => ok(undefined)),
+    hold: vi.fn(async () => ok(undefined)),
   } as never;
 }
 
@@ -113,16 +114,29 @@ describe('pollPendingInvoices', () => {
     expect(t.activate).toHaveBeenCalledWith(T1, new Date(new Date(lama).getTime() + 30 * 86_400_000).toISOString());
   });
 
-  it('expire → ditandai EXPIRED tanpa aktivasi; pending dibiarkan', async () => {
+  it('expire → EXPIRED + situs DITAHAN (hold) + pelanggan dikabari; pending dibiarkan', async () => {
     const repo = invoices(null, [inv({ id: 'a' }), inv({ id: 'b', orderId: 'dm-x-2' })]);
     const g = gateway();
     g.getStatus = vi.fn()
       .mockResolvedValueOnce(ok('EXPIRED'))
       .mockResolvedValueOnce(ok('PENDING'));
     const t = tenants();
-    const r = await pollPendingInvoices({ gateway: g, invoices: repo, tenants: t, notify: vi.fn(async () => undefined), now: () => NOW });
+    const notify = vi.fn(async () => undefined);
+    const r = await pollPendingInvoices({ gateway: g, invoices: repo, tenants: t, notify, now: () => NOW });
     expect(r.ok && r.value).toEqual({ checked: 2, paid: 0, expired: 1 });
     expect(repo.markStatus).toHaveBeenCalledWith('a', 'EXPIRED');
+    expect(t.hold).toHaveBeenCalledWith(T1);
+    expect(notify).toHaveBeenCalledTimes(1);
     expect(t.activate).not.toHaveBeenCalled();
+  });
+
+  it('invoice basi kedaluwarsa saat layanan MASIH berjalan → tidak ditahan', async () => {
+    const t = tenants('2026-08-01T00:00:00Z');
+    const notify = vi.fn(async () => undefined);
+    await pollPendingInvoices({
+      gateway: gateway('EXPIRED'), invoices: invoices(null, [inv()]), tenants: t, notify, now: () => NOW,
+    });
+    expect(t.hold).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
   });
 });

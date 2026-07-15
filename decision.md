@@ -905,6 +905,18 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `SUBSCRIPTION_PRICE_IDR` billing OFF (menunggu kredensial PO; `MIDTRANS_ENV`
   sandbox|production, `SUBSCRIPTION_PERIOD_DAYS` default 30).
 
+- ✅ **Harga langganan dari dashboard + kebijakan bayar <24 jam** (**PR #99**, 2026-07-15):
+  keputusan PO — harga **Rp89.000/bulan**; isian **harga awal + harga promo/diskon** di tab
+  Pengaturan (file `/runtime/billing-config.json`, pola runtime-llm-config; efektif =
+  diskon ?? normal ?? env `SUBSCRIPTION_PRICE_IDR`; diskon wajib < normal; berlaku tanpa
+  restart — worker baca per pembuatan invoice; pesan tagihan menampilkan harga coret saat
+  promo). Kebijakan pembayaran PO: **tak ada jatuh tempo** — link Snap berlaku **24 jam**
+  (expiry hours, dulu 2 hari); lewat itu poller menandai EXPIRED → **situs DITAHAN**
+  (`BillingTenantPort.hold` → Tenant SUSPENDED, kecuali layanan masih berjalan) +
+  pemberitahuan sopan ke pelanggan. Env: `BILLING_RUNTIME_CONFIG_PATH`. Utang kecil:
+  "hold" = status+pesan; berkas situs di hosting TIDAK diturunkan otomatis (tindakan
+  manual PO bila perlu) — kandidat lanjutan `send_payment_link` tool + takedown job.
+
 ### Gerbang keluar Fase 0
 - ✅ **T-083 — DEMO E2E TERCAPAI** (2026-07-11, produksi nyata, tanpa intervensi manual):
   **chat Telegram → wawancara (agent ingat konteks) → agent bangun situs → tombol approval →
