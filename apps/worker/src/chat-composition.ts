@@ -33,6 +33,7 @@ import {
   MediaRepositoryPrisma,
   MultiAlert,
   MidtransGateway,
+  createRuntimeBillingConfigStore,
   InvoiceRepositoryPrisma,
   type InvoiceDelegate,
   BillingTenantPrisma,
@@ -198,12 +199,14 @@ export interface ChatWorkerEnv {
   readonly GLM_BASE_URL?: string;
   readonly LLM_PRICE_INPUT_PER_1M?: string;
   readonly LLM_PRICE_OUTPUT_PER_1M?: string;
-  // E1 billing Midtrans: tanpa MIDTRANS_SERVER_KEY + SUBSCRIPTION_PRICE_IDR → billing off.
+  // E1 billing Midtrans: tanpa MIDTRANS_SERVER_KEY + harga → billing off.
   readonly MIDTRANS_SERVER_KEY?: string;
   readonly MIDTRANS_ENV?: string;
   readonly SUBSCRIPTION_PRICE_IDR?: string;
   readonly SUBSCRIPTION_PERIOD_DAYS?: string;
   readonly BILLING_POLL_MS?: string;
+  // Harga awal + diskon dari dashboard (file /runtime; menimpa env tanpa restart).
+  readonly BILLING_RUNTIME_CONFIG_PATH?: string;
 }
 
 // Token bot = kredensial (siapa pun yang memegangnya bisa menyamar jadi bot ini) → hanya
@@ -527,13 +530,27 @@ export interface BillingHandle {
 
 export function createBilling(env: ChatWorkerEnv = process.env): BillingHandle | undefined {
   const serverKey = env.MIDTRANS_SERVER_KEY;
-  const priceIdr = Number(env.SUBSCRIPTION_PRICE_IDR);
   if (!serverKey || !env.TELEGRAM_BOT_TOKEN) return undefined;
-  if (!Number.isFinite(priceIdr) || priceIdr < 1000) {
-    console.warn('[billing] MIDTRANS_SERVER_KEY ada tapi SUBSCRIPTION_PRICE_IDR tidak valid — billing OFF');
+
+  // Harga dibaca PER pembuatan invoice: dashboard (harga awal + diskon, file /runtime)
+  // menimpa env — PO menyetel promo tanpa restart. Efektif = diskon ?? normal ?? env.
+  const priceStore = env.BILLING_RUNTIME_CONFIG_PATH
+    ? createRuntimeBillingConfigStore({ path: env.BILLING_RUNTIME_CONFIG_PATH, logger: console })
+    : undefined;
+  const envPrice = Number(env.SUBSCRIPTION_PRICE_IDR);
+  const pricing = (): { amountIdr: number; normalIdr?: number; periodDays: number } | null => {
+    const c = priceStore?.get() ?? {};
+    const normal = c.priceIdr ?? (Number.isInteger(envPrice) && envPrice >= 1000 ? envPrice : undefined);
+    const amount = c.discountIdr ?? normal;
+    if (!amount) return null;
+    const periodDays =
+      c.periodDays ?? (Number(env.SUBSCRIPTION_PERIOD_DAYS) > 0 ? Number(env.SUBSCRIPTION_PERIOD_DAYS) : 30);
+    return { amountIdr: amount, ...(normal && normal > amount ? { normalIdr: normal } : {}), periodDays };
+  };
+  if (!pricing() && !priceStore) {
+    console.warn('[billing] MIDTRANS_SERVER_KEY ada tapi harga tidak dikonfigurasi — billing OFF');
     return undefined;
   }
-  const periodDays = Number(env.SUBSCRIPTION_PERIOD_DAYS) > 0 ? Number(env.SUBSCRIPTION_PERIOD_DAYS) : 30;
 
   const prisma = createPrismaClient();
   const gateway = new MidtransGateway({
@@ -552,13 +569,20 @@ export function createBilling(env: ChatWorkerEnv = process.env): BillingHandle |
     messages: new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate),
     channel: rateLimited(createTelegramChannel(env), env),
   };
-  const config = { priceIdr, periodDays };
 
   return {
     intervalMs: Number(env.BILLING_POLL_MS) > 0 ? Number(env.BILLING_POLL_MS) : 120_000,
     async onPublishSucceeded(tenantIdRaw: string): Promise<void> {
+      const p = pricing();
+      if (!p) {
+        console.warn('[billing] harga belum disetel (dashboard Pengaturan / env) — invoice dilewati');
+        return;
+      }
       const tid = tenantId(tenantIdRaw);
-      const r = await createSubscriptionInvoice({ gateway, invoices, tenants, config }, { tenantId: tid });
+      const r = await createSubscriptionInvoice(
+        { gateway, invoices, tenants, config: { priceIdr: p.amountIdr, periodDays: p.periodDays } },
+        { tenantId: tid },
+      );
       if (!r.ok) {
         console.warn(`[billing] gagal membuat invoice tenant ${tenantIdRaw}: ${r.error.message}`);
         return;
@@ -567,7 +591,7 @@ export function createBilling(env: ChatWorkerEnv = process.env): BillingHandle |
       await notifyTenantText(
         notifyDeps,
         tid,
-        paymentRequestMessage(r.value.paymentUrl, r.value.amountIdr, periodDays),
+        paymentRequestMessage(r.value.paymentUrl, r.value.amountIdr, p.periodDays, p.normalIdr),
       );
     },
     async poll(): Promise<void> {

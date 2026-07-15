@@ -122,6 +122,15 @@ export interface DashboardSettingsView {
   readonly priceInputPer1M: number;
   readonly priceOutputPer1M: number;
   readonly priceOverridden: boolean;
+  // Harga langganan (E1): harga awal + diskon yang disetel PO dari dashboard.
+  // effectiveIdr = yang benar-benar ditagihkan (diskon ?? normal ?? env); null = belum disetel.
+  readonly subscription?: {
+    readonly priceIdr: number | null;
+    readonly discountIdr: number | null;
+    readonly periodDays: number;
+    readonly effectiveIdr: number | null;
+    readonly source: 'dashboard' | 'env';
+  };
 }
 
 export interface DashboardSettingsPatch {
@@ -129,6 +138,10 @@ export interface DashboardSettingsPatch {
   readonly apiKey?: string;
   readonly priceInputPer1M?: number | string;
   readonly priceOutputPer1M?: number | string;
+  // '' = hapus (kembali ke env / tanpa diskon).
+  readonly subscriptionPriceIdr?: number | string;
+  readonly subscriptionDiscountIdr?: number | string;
+  readonly subscriptionPeriodDays?: number | string;
 }
 
 export interface DashboardSettingsPort {
@@ -359,6 +372,18 @@ export function registerDashboardRoutes(app: FastifyInstance, deps: DashboardDep
         if (b[k] === undefined || b[k] === '') continue;
         const n = Number(b[k]);
         if (!Number.isFinite(n) || n < 0 || n > 1000) throw new Error(`${k} harus angka 0..1000`);
+        patch[k] = n;
+      }
+      // Harga langganan: '' = hapus; selain itu wajib bilangan bulat pada rentang wajar.
+      for (const k of ['subscriptionPriceIdr', 'subscriptionDiscountIdr', 'subscriptionPeriodDays'] as const) {
+        if (b[k] === undefined) continue;
+        if (b[k] === '' || b[k] === null) {
+          patch[k] = '';
+          continue;
+        }
+        const n = Number(b[k]);
+        const [min, max] = k === 'subscriptionPeriodDays' ? [1, 365] : [1000, 100_000_000];
+        if (!Number.isInteger(n) || n < min || n > max) throw new Error(`${k} harus bilangan bulat ${min}..${max}`);
         patch[k] = n;
       }
       return deps.settings.save(patch as DashboardSettingsPatch);

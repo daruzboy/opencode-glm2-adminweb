@@ -27,6 +27,7 @@ import {
   createBullMqRedisClient,
   createPreviewToken,
   createRuntimeLlmConfigStore,
+  createRuntimeBillingConfigStore,
   type RuntimeLlmConfigStore,
   indexTemplates,
   EditorWebHandoff,
@@ -530,6 +531,23 @@ export function createDashboardDeps(env: NodeJS.ProcessEnv = process.env): Dashb
             envModel: model,
             envApiKey,
             envPrice: price,
+            // Harga langganan (isian harga awal + diskon PO) — seksi tampil hanya
+            // bila file config billing dikonfigurasi.
+            ...(env.BILLING_RUNTIME_CONFIG_PATH
+              ? {
+                  billing: {
+                    store: createRuntimeBillingConfigStore({
+                      path: env.BILLING_RUNTIME_CONFIG_PATH,
+                      logger: console,
+                    }),
+                    ...(Number(env.SUBSCRIPTION_PRICE_IDR) >= 1000
+                      ? { envPriceIdr: Number(env.SUBSCRIPTION_PRICE_IDR) }
+                      : {}),
+                    envPeriodDays:
+                      Number(env.SUBSCRIPTION_PERIOD_DAYS) > 0 ? Number(env.SUBSCRIPTION_PERIOD_DAYS) : 30,
+                  },
+                }
+              : {}),
           }),
         }
       : {}),

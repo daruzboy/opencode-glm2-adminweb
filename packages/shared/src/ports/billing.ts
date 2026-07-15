@@ -65,11 +65,13 @@ export interface InvoiceRepository extends Port {
   ): Promise<Result<void, RepositoryError>>;
 }
 
-// Status layanan tenant utk billing (aktivasi + basis perpanjangan).
+// Status layanan tenant utk billing (aktivasi + basis perpanjangan + hold).
 export interface BillingTenantPort extends Port {
   readonly name: 'BillingTenant';
   getService(
     tenantId: TenantId,
   ): Promise<Result<{ status: string; serviceEndsAt: string | null }, RepositoryError>>;
   activate(tenantId: TenantId, serviceEndsAt: string): Promise<Result<void, RepositoryError>>;
+  // Kebijakan PO 2026-07-15: publish tanpa bayar <24 jam → situs DITAHAN (SUSPENDED).
+  hold(tenantId: TenantId): Promise<Result<void, RepositoryError>>;
 }

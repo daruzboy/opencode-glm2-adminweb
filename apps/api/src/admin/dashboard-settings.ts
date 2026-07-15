@@ -10,7 +10,7 @@
 
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import type { LlmTokenPrice } from '@digimaestro/shared';
-import type { RuntimeLlmConfigStore } from '@digimaestro/adapters';
+import type { RuntimeBillingConfigStore, RuntimeLlmConfigStore } from '@digimaestro/adapters';
 import type {
   DashboardSettingsPort,
   DashboardSettingsView,
@@ -73,6 +73,12 @@ export interface DashboardSettingsOptions {
   readonly envModel: string;
   readonly envApiKey: string;
   readonly envPrice: LlmTokenPrice;
+  // Harga langganan (E1): isian harga awal + diskon PO. Absen → seksi tak tampil.
+  readonly billing?: {
+    readonly store: RuntimeBillingConfigStore;
+    readonly envPriceIdr?: number;
+    readonly envPeriodDays: number;
+  };
 }
 
 function maskKey(key: string): string | null {
@@ -81,6 +87,19 @@ function maskKey(key: string): string | null {
 }
 
 export function createDashboardSettings(opts: DashboardSettingsOptions): DashboardSettingsPort {
+  const subscriptionView = (): DashboardSettingsView['subscription'] => {
+    if (!opts.billing) return undefined;
+    const c = opts.billing.store.get();
+    const normal = c.priceIdr ?? opts.billing.envPriceIdr ?? null;
+    return {
+      priceIdr: normal,
+      discountIdr: c.discountIdr ?? null,
+      periodDays: c.periodDays ?? opts.billing.envPeriodDays,
+      effectiveIdr: c.discountIdr ?? normal,
+      source: c.priceIdr !== undefined || c.discountIdr !== undefined ? 'dashboard' : 'env',
+    };
+  };
+
   const view = (): DashboardSettingsView => {
     const c = opts.store.get();
     const priceOverridden = c.priceInputPer1M !== undefined && c.priceOutputPer1M !== undefined;
@@ -92,6 +111,7 @@ export function createDashboardSettings(opts: DashboardSettingsOptions): Dashboa
       priceInputPer1M: priceOverridden ? c.priceInputPer1M! : opts.envPrice.inputPer1M,
       priceOutputPer1M: priceOverridden ? c.priceOutputPer1M! : opts.envPrice.outputPer1M,
       priceOverridden,
+      ...(opts.billing ? { subscription: subscriptionView() } : {}),
     };
   };
 
@@ -100,7 +120,18 @@ export function createDashboardSettings(opts: DashboardSettingsOptions): Dashboa
       return view();
     },
     async save(patch) {
-      await opts.store.save(patch);
+      const { subscriptionPriceIdr, subscriptionDiscountIdr, subscriptionPeriodDays, ...llmPatch } = patch;
+      if (Object.keys(llmPatch).length > 0) await opts.store.save(llmPatch);
+
+      const subPatch: Record<string, unknown> = {
+        ...(subscriptionPriceIdr !== undefined ? { priceIdr: subscriptionPriceIdr } : {}),
+        ...(subscriptionDiscountIdr !== undefined ? { discountIdr: subscriptionDiscountIdr } : {}),
+        ...(subscriptionPeriodDays !== undefined ? { periodDays: subscriptionPeriodDays } : {}),
+      };
+      if (Object.keys(subPatch).length > 0) {
+        if (!opts.billing) throw new Error('harga langganan belum dikonfigurasi (env BILLING_RUNTIME_CONFIG_PATH)');
+        await opts.billing.store.save(subPatch);
+      }
       return view();
     },
   };
