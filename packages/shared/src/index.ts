@@ -41,6 +41,7 @@ export * from './ports/alert.js';
 export * from './ports/audit-log.js';
 export * from './ports/channel.js';
 export * from './ports/auth.js';
+export * from './ports/feedback.js';
 export * from './ports/image-source.js';
 export * from './ports/llm.js';
 export * from './ports/llm-usage-query.js';

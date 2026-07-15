@@ -135,6 +135,8 @@ model Tenant {
   llmUsages     LlmUsage[]
   profile       TenantProfile?
   adminActings  AdminActing[]
+  tickets       Ticket[]
+  feedbacks     Feedback[]
 
   @@index([brandId])
 }
@@ -161,6 +163,40 @@ model TenantProfile {
 // Konsol admin via chat (PO 2026-07-15): chat Telegram ADMIN bisa "bertindak sebagai"
 // satu konsumen (tenant) — build/review/preview/publish berjalan atas nama tenant itu,
 // semua notifikasi mendarat di chat admin. Satu baris per chat admin (praktis: satu).
+// Tiketing sederhana (dashboard admin, PO 2026-07-15): pekerjaan per konsumen yang
+// perlu ditindaklanjuti manusia. Status string longgar (OPEN|IN_PROGRESS|DONE) — enum
+// DB dihindari agar menambah status tak butuh migrasi.
+model Ticket {
+  id        String   @id @default(cuid())
+  tenantId  String
+  subject   String
+  body      String?
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+// Keluhan & saran (dashboard admin): dicatat bot via tool record_feedback saat pelanggan
+// menyampaikan keluhan/saran di chat, atau manual dari dashboard.
+model Feedback {
+  id         String    @id @default(cuid())
+  tenantId   String
+  // 'keluhan' | 'saran' (string longgar, alasan sama dgn Ticket.status).
+  kind       String
+  text       String
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
 model AdminActing {
   chatId    String   @id
   tenantId  String
