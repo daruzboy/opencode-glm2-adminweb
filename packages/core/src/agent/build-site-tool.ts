@@ -18,6 +18,7 @@ import type {
   AgentToolError,
   RepositoryError,
   Result,
+  TenantProfileRepository,
   WebsiteRepository,
 } from '@digimaestro/shared';
 
@@ -51,7 +52,7 @@ type BuildRunner = (req: BuildRequest) => Promise<Result<BuildResult, BuildError
 // Factory tool build-site (jalur legacy sections-v1). Website tenant diambil via repo
 // (tenantId @unique → 0/1 website).
 export function createSitebuilderBuildSiteTool(deps: BuildDeps): AgentToolDefinition<unknown, BuildResult> {
-  return buildSiteTool(deps.websites, (req) => buildSiteFromBrief(deps, req));
+  return buildSiteTool(deps.websites, (req) => buildSiteFromBrief(deps, req), deps.profile);
 }
 
 // P4: tool yang SAMA (nama/deskripsi/skema input identik — agent tak perlu tahu bedanya)
@@ -59,12 +60,13 @@ export function createSitebuilderBuildSiteTool(deps: BuildDeps): AgentToolDefini
 export function createTemplateBuildSiteTool(
   deps: TemplateBuildDeps,
 ): AgentToolDefinition<unknown, BuildResult> {
-  return buildSiteTool(deps.websites, (req) => buildSiteFromTemplateBrief(deps, req));
+  return buildSiteTool(deps.websites, (req) => buildSiteFromTemplateBrief(deps, req), deps.profile);
 }
 
 function buildSiteTool(
   websites: WebsiteRepository,
   run: BuildRunner,
+  profile?: TenantProfileRepository,
 ): AgentToolDefinition<unknown, BuildResult> {
   return {
     name: 'sitebuilder_build_site',
@@ -115,6 +117,15 @@ function buildSiteTool(
         const code: AgentToolError['code'] = built.error.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'UNKNOWN';
         return err({ code, message: built.error.message });
       }
+
+      // Memori tenant (PO 2026-07-15): brief yang BERHASIL di-build = konteks paling
+      // berharga utk sesi edit berikutnya. Auto-capture, best-effort (gagal ≠ build gagal).
+      if (profile) {
+        await profile
+          .upsert(context.tenantId, { brief: brief.value })
+          .catch(() => undefined);
+      }
+
       return ok(built.value);
     },
   };

@@ -9,7 +9,12 @@
 //   4. Persist sebagai Revision (status DRAFT) → return revisionId + number.
 //   5. Update website status → DRAFTING.
 
-import type { LlmJsonSchema, LlmJsonPort, LlmTask } from '@digimaestro/shared';
+import type {
+  LlmJsonPort,
+  LlmJsonSchema,
+  LlmTask,
+  TenantProfileRepository,
+} from '@digimaestro/shared';
 import type { LlmChatMessage } from '@digimaestro/shared';
 import { DEFAULT_TEMPERATURE_BY_TASK } from '@digimaestro/shared';
 import { err, ok } from '@digimaestro/shared';
@@ -52,6 +57,9 @@ export interface BuildDeps {
   readonly llm: LlmJsonPort;
   readonly revisions: RevisionRepository;
   readonly websites: WebsiteRepository;
+  // Memori tenant (PO 2026-07-15): brief yang berhasil di-build di-auto-capture oleh
+  // shell tool (build-site-tool) — konteks sesi edit berikutnya.
+  readonly profile?: TenantProfileRepository;
   // T-053g: schema DRAFT (title/themeId/pages) — bagian yang boleh dikarang LLM.
   // BUKAN Site Document utuh: websiteId & design token diisi kode (lihat assembleDoc).
   // Sebelumnya schema utuh dipakai sebagai target LLM → validasi selalu gagal (LLM tak
