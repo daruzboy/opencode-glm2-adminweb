@@ -10,6 +10,7 @@ import {
   createAlert,
   createInboundDeps,
   createPublishNotifier,
+  createAdminConsole,
   createRegistrationHandler,
   selfServeEnabled,
   startPoller,
@@ -71,11 +72,15 @@ export async function runWorker(): Promise<void> {
   if (process.env.TELEGRAM_BOT_TOKEN) {
     // Self-serve (#6): chat tak dikenal → jalur kode undangan (tanpa LLM).
     const registration = createRegistrationHandler();
+    // Konsol admin (PO 2026-07-15): /konsumen — kelola banyak konsumen dari chat admin.
+    const adminConsole = createAdminConsole();
+    if (adminConsole) console.log(`[${handle.name}] konsol admin /konsumen AKTIF.`);
     workers.push(
       startChatInboundWorker(createInboundDeps(), {
         connection,
         ...(alert ? { alert } : {}),
         ...(registration ? { registration } : {}),
+        ...(adminConsole ? { adminConsole } : {}),
         // P0: hang senyap → kegagalan terlihat (retry + alert), worker tak pernah beku.
         ...(process.env.CHAT_JOB_TIMEOUT_MS
           ? { jobTimeoutMs: Number(process.env.CHAT_JOB_TIMEOUT_MS) }

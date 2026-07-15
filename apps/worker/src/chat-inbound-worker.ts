@@ -24,6 +24,8 @@ export interface ChatInboundWorkerOptions {
   // Self-serve (#6): chat yang BELUM dikenal → jalur pendaftaran (kode undangan).
   // TANPA memanggil LLM — jalur ini terbuka bagi siapa pun yang menemukan bot.
   readonly registration?: RegistrationHandler;
+  // Konsol admin via chat (PO 2026-07-15).
+  readonly adminConsole?: AdminConsoleHandler;
   // P0 (insiden 2026-07-12): batas waktu SATU job. Tanpa ini, satu `await` yang tak pernah
   // selesai (Redis mengantre perintah tanpa reject) membuat job macet di 'active' selamanya —
   // dua job macet = worker (concurrency 2) beku total, dan TIDAK ADA alert karena job tak
@@ -39,6 +41,13 @@ export const DEFAULT_CHAT_JOB_TIMEOUT_MS = 300_000;
 // Menangani chat tak dikenal. Dipisah dari InboundDeps karena ia bekerja SEBELUM tenant ada.
 export interface RegistrationHandler {
   handle(message: InboundChannelMessage): Promise<void>;
+}
+
+// Konsol admin (/konsumen …): perintah deterministik dari chat ADMIN — dieksekusi
+// SEBELUM handleInboundMessage & TANPA LLM. null = bukan perintah konsol.
+export interface AdminConsoleHandler {
+  handle(chatId: string, text: string): Promise<{ readonly reply: string } | null>;
+  sendReply(chatId: string, text: string): Promise<void>;
 }
 
 // Batas waktu keras untuk satu promise job. Setelah lewat, job dianggap GAGAL walau
@@ -77,6 +86,15 @@ export function startChatInboundWorker(
       }
       await options.registration.handle(message);
       return { conversationId: '', duplicate: false };
+    }
+
+    // Konsol admin: /konsumen … dari chat admin → jawab deterministik, LLM tak disentuh.
+    if (options.adminConsole && message.type === 'TEXT' && message.text) {
+      const admin = await options.adminConsole.handle(message.externalId, message.text);
+      if (admin) {
+        await options.adminConsole.sendReply(message.externalId, admin.reply);
+        return { conversationId: '', duplicate: false };
+      }
     }
 
     const result = await handleInboundMessage(deps, {

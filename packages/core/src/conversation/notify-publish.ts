@@ -90,7 +90,7 @@ export async function notifyPublishOutcome(
       ? await deps.channel.sendButtons(
           target.externalId,
           text,
-          approvalButtons(req.notice.revisionNumber),
+          approvalButtons(req.notice.revisionNumber, String(req.tenantId)),
         )
       : await deps.channel.sendText(target.externalId, text);
   const status: MessageStatus = sent.ok ? 'SENT' : 'FAILED';

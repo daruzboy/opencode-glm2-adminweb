@@ -34,6 +34,9 @@ import {
   MultiAlert,
   TenantProfileRepositoryPrisma,
   type TenantProfileDelegate,
+  ActingStorePrisma,
+  AdminDirectoryPrisma,
+  type AdminConsoleClient,
   QuotaPrisma,
   TenantProvisionPrisma,
   type OnboardingClient,
@@ -69,6 +72,8 @@ import {
   createAgentToolRegistry,
   createRememberCustomerTool,
   createSitebuilderApplyPatchTool,
+  handleAdminCommand,
+  isAdminCommand,
   createSitebuilderBuildSiteTool,
   createSitebuilderGetSiteOutlineTool,
   createTemplateBuildSiteTool,
@@ -154,6 +159,10 @@ export interface ChatWorkerEnv {
   readonly PEXELS_API_KEY?: string;
   // SOP layanan PO (file markdown di host, dibaca ulang saat berubah — tanpa restart).
   readonly SOP_PATH?: string;
+  // Dua SOP (2026-07-15): SOP khusus percakapan chat ADMIN (konsol multi-konsumen).
+  readonly SOP_ADMIN_PATH?: string;
+  // Konsol admin /konsumen — default: chat alert PO. HANYA chat ini yang bisa memakainya.
+  readonly ADMIN_TELEGRAM_CHAT_ID?: string;
   // P5: gerbang review PO (handoff ke editor-web).
   readonly REVIEW_GATE?: string;
   readonly EDITOR_WEB_API_URL?: string;
@@ -322,7 +331,7 @@ export function createChatReplier(
     router: { conversations },
     // T-053f: riwayat percakapan → agent ingat konteks (tanpa ini: amnesia tiap pesan).
     messages: new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate),
-    ...(env.SOP_PATH ? { sop: createFileSopProvider({ path: env.SOP_PATH, logger: console }) } : {}),
+    ...(createSopSelector(env, prisma, conversations) ?? {}),
     profile,
     loop: {
       llm: agentLlm,
@@ -737,7 +746,16 @@ export function createTenantResolver(
   const prisma = createPrismaClient();
   const bindings = new ChannelBindingPrisma(prisma as unknown as OnboardingClient);
 
+  // Konsol admin: bila chat ADMIN sedang "bertindak sebagai" konsumen → tenant efektif =
+  // konsumen itu (menimpa binding). Chat lain tak pernah menyentuh jalur acting.
+  const adminChatId = adminChatIdOf(env);
+  const acting = new ActingStorePrisma(prisma as unknown as AdminConsoleClient);
+
   return async (externalId: string) => {
+    if (adminChatId && externalId === adminChatId) {
+      const target = await acting.get(externalId);
+      if (target) return target;
+    }
     const r = await bindings.resolve('TELEGRAM', externalId);
     return r.ok ? r.value : null;
   };
@@ -792,6 +810,83 @@ export function createRegistrationHandler(
             : needsCodeReply();
 
       await channel.sendText(message.externalId, teks);
+    },
+  };
+}
+
+
+// ── Konsol admin via chat (PO 2026-07-15) ─────────────────────────────────────
+
+export function adminChatIdOf(env: ChatWorkerEnv): string | undefined {
+  return env.ADMIN_TELEGRAM_CHAT_ID ?? env.ALERT_TELEGRAM_CHAT_ID;
+}
+
+// Dua SOP: percakapan chat ADMIN memakai SOP admin (plus baris konsumen aktif), pelanggan
+// memakai SOP konsumen. Tanpa satu pun path → tanpa SOP (persona bawaan).
+function createSopSelector(
+  env: ChatWorkerEnv,
+  prisma: ReturnType<typeof createPrismaClient>,
+  conversations: ConversationRepository,
+): { sop: (ctx: { tenantId: TenantId; conversationId: string }) => Promise<string | null> } | undefined {
+  const customerSop = env.SOP_PATH
+    ? createFileSopProvider({ path: env.SOP_PATH, logger: console })
+    : undefined;
+  const adminSop = env.SOP_ADMIN_PATH
+    ? createFileSopProvider({ path: env.SOP_ADMIN_PATH, logger: console })
+    : undefined;
+  if (!customerSop && !adminSop) return undefined;
+
+  const adminChatId = adminChatIdOf(env);
+  const acting = new ActingStorePrisma(prisma as unknown as AdminConsoleClient);
+  const directory = new AdminDirectoryPrisma(prisma as unknown as AdminConsoleClient, deriveSlug);
+
+  return {
+    sop: async (ctx) => {
+      if (adminSop && adminChatId) {
+        const conv = await conversations.findById(ctx.tenantId, ctx.conversationId);
+        if (conv.ok && conv.value?.externalId === adminChatId) {
+          const base = (await adminSop()) ?? '';
+          // Baris konteks dinamis: sedang bertindak sebagai konsumen mana.
+          const target = await acting.get(adminChatId);
+          let status = 'Konsumen aktif: (tidak ada — pesan diproses sbg akun admin sendiri).';
+          if (target) {
+            const list = await directory.list();
+            const found = list.ok ? list.value.find((c) => c.tenantId === target) : undefined;
+            status = found
+              ? `Konsumen aktif SEKARANG: ${found.name} (slug: ${found.slug}).`
+              : 'Konsumen aktif tidak dikenal — sarankan /konsumen selesai.';
+          }
+          return `${base}\n\n${status}`.trim() || null;
+        }
+      }
+      return customerSop ? customerSop() : null;
+    },
+  };
+}
+
+// Handler /konsumen utk worker (dieksekusi SEBELUM LLM). undefined bila tak dikonfigurasi.
+export function createAdminConsole(
+  env: ChatWorkerEnv = process.env,
+): { handle(chatId: string, text: string): Promise<{ reply: string } | null>; sendReply(chatId: string, text: string): Promise<void> } | undefined {
+  const adminChatId = adminChatIdOf(env);
+  if (!adminChatId || !env.DATABASE_URL || !env.TELEGRAM_BOT_TOKEN) return undefined;
+
+  const prisma = createPrismaClient();
+  const deps = {
+    directory: new AdminDirectoryPrisma(prisma as unknown as AdminConsoleClient, deriveSlug),
+    acting: new ActingStorePrisma(prisma as unknown as AdminConsoleClient),
+    adminChatId,
+  };
+  const channel = rateLimited(createTelegramChannel(env), env);
+
+  return {
+    async handle(chatId, text) {
+      if (chatId !== adminChatId || !isAdminCommand(text)) return null;
+      const res = await handleAdminCommand(deps, { chatId, text });
+      return res.ok ? res.value : null;
+    },
+    async sendReply(chatId, text) {
+      await channel.sendText(chatId, text);
     },
   };
 }

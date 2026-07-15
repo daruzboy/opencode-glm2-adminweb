@@ -167,7 +167,7 @@ async function notifyCustomer(
   if (!conv?.externalId) return false;
 
   const text = reviewedReadyMessage(deps.previewUrl?.(revisionId));
-  const sent = await deps.channel.sendButtons(conv.externalId, text, approvalButtons(revisionNumber));
+  const sent = await deps.channel.sendButtons(conv.externalId, text, approvalButtons(revisionNumber, String(tenantId)));
   if (!sent.ok) {
     deps.logger?.error(`[review] gagal kirim notifikasi review-selesai: ${sent.error.message}`);
     return false;

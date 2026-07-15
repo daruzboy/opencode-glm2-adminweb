@@ -126,7 +126,8 @@ describe('tombol approval muncul setelah revisi baru dibangun', () => {
     if (res.ok) expect(res.value.revisionNumber).toBe(1);
     expect(sendButtons).toHaveBeenCalledTimes(1);
     const [, , buttons] = sendButtons.mock.calls[0] as [string, string, { action: string }[]];
-    expect(buttons.map((b) => b.action)).toEqual(['pub:1', 'rev:1']);
+    // Sidik tenant (konsol admin 2026-07-15) ikut di callback.
+    expect(buttons.map((b) => b.action)).toEqual(['pub:1:t1', 'rev:1:t1']);
   });
 
   it('tautan preview disisipkan bila dikonfigurasi', async () => {
