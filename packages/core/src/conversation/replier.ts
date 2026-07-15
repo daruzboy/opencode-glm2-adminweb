@@ -136,6 +136,25 @@ export interface AgentReplierDeps {
   // Ditemukan saat uji bot NYATA; fake di unit test tak pernah menangkapnya karena
   // tiap tes hanya mengirim satu pesan.
   readonly messages?: MessageRepository;
+  // SOP layanan milik PO (permintaan 2026-07-15): dokumen SUNTING-SENDIRI (file di host,
+  // dibaca ulang saat berubah — tanpa deploy) yang ditambahkan ke SEMUA persona. Isinya
+  // urutan melayani pelanggan: kenalan/tanya nama dulu, ekspektasi durasi build, dst.
+  // null/error → bot jalan dengan persona bawaan (SOP pemanis, bukan dependensi keras).
+  readonly sop?: () => Promise<string | null>;
+}
+
+// Gabungkan persona + SOP. SOP menang untuk GAYA & URUTAN layanan; batasan teknis
+// (kapan memanggil tool, approval-first) tetap dari persona.
+export function withSop(system: string, sop: string | null | undefined): string {
+  const isi = sop?.trim();
+  if (!isi) return system;
+  return (
+    `${system}\n\n` +
+    '## SOP LAYANAN (ditulis pemilik layanan — WAJIB diikuti)\n' +
+    'Ikuti urutan & gaya di SOP ini. Bila SOP bertentangan dengan instruksi teknis di atas ' +
+    '(kapan memanggil tool, persetujuan sebelum publish), instruksi teknis tetap menang.\n\n' +
+    isi
+  );
 }
 
 // Berapa pesan terakhir yang dibawa ke LLM. Cukup untuk wawancara 5 slot, tapi tak
@@ -170,13 +189,16 @@ export function createAgentReplier(deps: AgentReplierDeps): ConversationReplier 
       //    kegagalan memuat riwayat tak boleh mematikan balasan).
       const history = await loadHistory(deps, req);
 
+      // 3b) SOP layanan PO (best-effort — gagal baca ≠ bot mati).
+      const sop = deps.sop ? await deps.sop().catch(() => null) : null;
+
       // 4) Agent loop.
       const loopResult = await runAgentLoop(deps.loop, {
         tenantId: req.tenantId,
         actor: 'chatbot',
         scopes: plan.scopes,
         task: plan.task,
-        system: plan.system,
+        system: withSop(plan.system, sop),
         userMessage: req.text,
         ...(history.length > 0 ? { history } : {}),
         jobId: req.jobId,
