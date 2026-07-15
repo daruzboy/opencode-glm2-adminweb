@@ -837,6 +837,28 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   `172.19.0.0/16 → tcp 5181` (kontainer glm2 → API editor di host; INPUT DROP) —
   butuh persetujuan PO; (2) `REVIEW_GATE=1` — keputusan PO kapan menyala.
 
+- ✅ **SOP pelayanan + kabar "mulai kubangun"** (**PR #90**, 2026-07-15, permintaan PO):
+  bot memegang dokumen SOP (markdown) — tanya nama pelanggan dulu, urutan wawancara, gaya
+  bahasa, batasan janji. PO menyunting `/opt/containers/glm2/sop-pelayanan.md` → bot
+  mengikutinya di pesan berikutnya TANPA restart (cache ber-mtime). Plus: worker mengirim
+  "situsnya mulai kubangun, 5–10 menit" TEPAT sebelum build (temuan uji nyata: build
+  6–12 mnt + balasan di akhir turn = keheningan panjang; PO sendiri mengira bot mati).
+
+- ✅ **Preview PUBLIK** (**PR #91**, 2026-07-15, laporan PO dari uji nyata): tautan preview
+  lama menunjuk API VPS ber-IP tailnet — pelanggan tanpa VPN menatap timeout; dan endpoint
+  itu tak punya renderer mobirise. Kini pratinjau = bundel situs utuh diunggah via pipeline
+  publish (mode 'preview') ke `https://digimaestro.id/preview/<slug>-<hmac12>/` — noindex,
+  artifact rollback TIDAK ditimpa, satu folder per website (pratinjau baru menimpa lama).
+  Tombol approval dikirim SETELAH pratinjau tayang (worker `previewReady`) — pelanggan
+  menyetujui yang benar-benar ia lihat. Terverifikasi E2E: HTTP 200 publik ±10 dtk.
+
+- ✅ **Memori per tenant** (**PR #92**, 2026-07-15, permintaan PO): model `TenantProfile`
+  (nama panggilan pelanggan + brief terakhir + catatan preferensi, maks 20). Ditulis dua
+  arah: tool agent `remember_customer` + auto-capture brief saat build sukses. Dibaca tiap
+  giliran sbg "KONTEKS PELANGGAN" di system prompt — sesi edit berminggu-minggu kemudian
+  tak mulai dari nol (riwayat chat hanya 20 pesan). Model produksi pindah ke
+  **deepseek-v4-flash** (keputusan PO; harga $0.14/$0.28 per 1 jt token in/out).
+
 ### Gerbang keluar Fase 0
 - ✅ **T-083 — DEMO E2E TERCAPAI** (2026-07-11, produksi nyata, tanpa intervensi manual):
   **chat Telegram → wawancara (agent ingat konteks) → agent bangun situs → tombol approval →
