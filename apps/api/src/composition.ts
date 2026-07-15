@@ -1,5 +1,6 @@
 import {
   ConversationRepositoryPrisma,
+  createFileSopProvider,
   JwtAuthPort,
   LlmUsageLoggerPrisma,
   LlmUsageQueryPrisma,
@@ -93,6 +94,8 @@ export interface LlmEnv {
   readonly GLM_BASE_URL?: string;
   readonly LLM_PRICE_INPUT_PER_1M?: string;
   readonly LLM_PRICE_OUTPUT_PER_1M?: string;
+  // SOP layanan PO (file markdown; dibaca ulang saat berubah).
+  readonly SOP_PATH?: string;
 }
 
 export interface CreateLlmJsonPortOptions {
@@ -340,6 +343,8 @@ function createProductionAgentReplier(
     router: { conversations },
     // T-053f: riwayat percakapan → agent ingat konteks (tanpa ini: amnesia tiap pesan).
     messages: new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate),
+    // SOP layanan PO — dokumen sunting-sendiri, sama dgn worker Telegram.
+    ...(env.SOP_PATH ? { sop: createFileSopProvider({ path: env.SOP_PATH, logger: console }) } : {}),
     loop: {
       llm: agentLlm,
       tools: createSitebuilderToolRegistry(sitebuilder, [buildTool]),

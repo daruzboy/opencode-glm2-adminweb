@@ -300,3 +300,55 @@ describe('anggaran token — cukup untuk model reasoning', () => {
     expect(plan.maxTokens).toBeGreaterThanOrEqual(1536);
   });
 });
+
+// SOP layanan PO (2026-07-15): dokumen sunting-sendiri disuntikkan ke system prompt
+// SEMUA persona — fail-soft (SOP hilang/error ≠ bot mati).
+describe('SOP layanan', () => {
+  function capturingAgent(): LlmAgentPort & { lastSystem: () => string } {
+    let system = '';
+    return {
+      name: 'llm-agent:fake',
+      async completeWithTools(req: { system: string }) {
+        system = req.system;
+        return ok({ kind: 'text', content: 'Halo kak!' } as LlmAgentResponse);
+      },
+      lastSystem: () => system,
+    } as unknown as LlmAgentPort & { lastSystem: () => string };
+  }
+
+  it('provider ada → SOP menempel di system prompt (persona tetap ikut)', async () => {
+    const llm = capturingAgent();
+    const replier = createAgentReplier({
+      router: { conversations: fakeConversationRepo() },
+      loop: { llm, tools: createAgentToolRegistry([]) },
+      sop: async () => '## 1. Pembukaan\nTanyakan nama pelanggan dulu.',
+    });
+
+    const r = await replier.reply({ tenantId: tenant, conversationId: 'c1', text: 'mau buat website' });
+    expect(r.ok).toBe(true);
+    expect(llm.lastSystem()).toContain('Tanyakan nama pelanggan dulu');
+    expect(llm.lastSystem()).toContain('SOP LAYANAN');
+    expect(llm.lastSystem()).toContain(AGENT_SYSTEM_PROMPTS.interview.slice(0, 40));
+  });
+
+  it('provider null / MELEMPAR → balasan tetap keluar dengan persona bawaan', async () => {
+    for (const sop of [async () => null, async () => { throw new Error('disk terbakar'); }]) {
+      const llm = capturingAgent();
+      const replier = createAgentReplier({
+        router: { conversations: fakeConversationRepo() },
+        loop: { llm, tools: createAgentToolRegistry([]) },
+        sop: sop as () => Promise<string | null>,
+      });
+      const r = await replier.reply({ tenantId: tenant, conversationId: 'c1', text: 'mau buat website' });
+      expect(r.ok).toBe(true);
+      expect(llm.lastSystem()).not.toContain('SOP LAYANAN');
+    }
+  });
+
+  it('withSop: SOP kosong/spasi → prompt tak berubah', async () => {
+    const { withSop } = await import('./replier.js');
+    expect(withSop('persona', '')).toBe('persona');
+    expect(withSop('persona', '   ')).toBe('persona');
+    expect(withSop('persona', null)).toBe('persona');
+  });
+});

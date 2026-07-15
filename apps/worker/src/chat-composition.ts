@@ -46,6 +46,7 @@ import {
   UnsplashImageSource,
   createBullMqChatInboundQueue,
   createBullMqRedisClient,
+  createFileSopProvider,
   createHttpImageDownload,
   createPreviewToken,
   createRedisInboundRateLimiter,
@@ -147,6 +148,8 @@ export interface ChatWorkerEnv {
   // pelanggan / bawaan template (alur P4).
   readonly UNSPLASH_ACCESS_KEY?: string;
   readonly PEXELS_API_KEY?: string;
+  // SOP layanan PO (file markdown di host, dibaca ulang saat berubah — tanpa restart).
+  readonly SOP_PATH?: string;
   // P5: gerbang review PO (handoff ke editor-web).
   readonly REVIEW_GATE?: string;
   readonly EDITOR_WEB_API_URL?: string;
@@ -286,7 +289,7 @@ export function createChatReplier(
   // P6: resolver gambar stok — hanya bila API key + kredensial hosting ada.
   const resolveImages = createStockImageResolver(env, prisma);
 
-  const buildTool = templateCatalog
+  const buildToolBase = templateCatalog
     ? createTemplateBuildSiteTool({
         llm: jsonLlm,
         revisions,
@@ -300,10 +303,16 @@ export function createChatReplier(
       })
     : createSitebuilderBuildSiteTool(buildDeps);
 
+  // UX (temuan uji nyata 2026-07-15): build makan 5–12 menit dan balasan chat baru keluar
+  // SETELAH turn agent selesai → pelanggan menatap keheningan panjang ("chatbot belum
+  // kirim balasan?"). Kabari SEBELUM build mulai — best-effort, tak menahan build.
+  const buildTool = withBuildStartAck(buildToolBase, conversations, env);
+
   return createAgentReplier({
     router: { conversations },
     // T-053f: riwayat percakapan → agent ingat konteks (tanpa ini: amnesia tiap pesan).
     messages: new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate),
+    ...(env.SOP_PATH ? { sop: createFileSopProvider({ path: env.SOP_PATH, logger: console }) } : {}),
     loop: {
       llm: agentLlm,
       tools: createAgentToolRegistry([
@@ -313,6 +322,32 @@ export function createChatReplier(
       ]),
     },
   });
+}
+
+export const BUILD_START_ACK =
+  '🛠️ Oke, websitenya mulai kubangun sekarang! Biasanya butuh 5–10 menit ya — nanti langsung kukabari di sini begitu ada perkembangan 🙏';
+
+// Kirim kabar "mulai dibangun" ke chat Telegram tenant TEPAT sebelum build berjalan.
+// Best-effort: kegagalan kirim tak boleh menggagalkan build; tanpa token bot → tool asli.
+function withBuildStartAck(
+  tool: ReturnType<typeof createSitebuilderBuildSiteTool>,
+  conversations: ConversationRepository,
+  env: ChatWorkerEnv,
+): ReturnType<typeof createSitebuilderBuildSiteTool> {
+  if (!env.TELEGRAM_BOT_TOKEN) return tool;
+  const channel = rateLimited(createTelegramChannel(env), env);
+
+  return {
+    ...tool,
+    async execute(input, ctx) {
+      void (async () => {
+        const found = await conversations.findMany(ctx.tenantId, { channel: 'TELEGRAM' });
+        const ext = found.ok ? found.value.find((c) => c.externalId)?.externalId : null;
+        if (ext) await channel.sendText(ext, BUILD_START_ACK);
+      })().catch(() => undefined);
+      return tool.execute(input, ctx);
+    },
+  };
 }
 
 // T-031tg: approval lewat chat (tombol "Setuju & publish" → antrean publish, BRU-02).

@@ -87,6 +87,7 @@ export * from './llm/sanitize-tool-markup.js';
 export * from './media/telegram-media-download.js';
 export * from './media/sharp-media-processor.js';
 export * from './media/ftps-media-store.js';
+export * from './sop/file-sop-provider.js';
 export * from './images/unsplash-image-source.js';
 export * from './images/pexels-image-source.js';
 export * from './images/chained-image-source.js';
