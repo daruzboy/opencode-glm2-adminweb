@@ -99,6 +99,9 @@ export * from './prisma/tenant-profile-prisma.js';
 export * from './prisma/admin-console-prisma.js';
 export * from './prisma/feedback-repo-prisma.js';
 export * from './prisma/ticket-repo-prisma.js';
+export * from './prisma/invoice-repo-prisma.js';
+// E1 billing (Midtrans).
+export * from './billing/midtrans-gateway.js';
 export * from './prisma/onboarding-prisma.js';
 export * from './telegram/normalize.js';
 export * from './telegram/allowlist.js';

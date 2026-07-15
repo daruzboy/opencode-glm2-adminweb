@@ -83,10 +83,10 @@ function drawKonsumen(){
   M.innerHTML='<div class="row"><label class="dim">Kategori:</label><select onchange="setKat(this.value)">'+
   ['Semua',...KATS].map(k=>'<option value="'+k+'"'+(k===KATF?' selected':'')+'>'+k+' ('+(k==='Semua'?CUST.length:n(k))+')</option>').join('')+
   '</select><span class="dim">Prospek = belum berlangganan · Batal = prospek diam &gt;2 minggu · Aktif = berlangganan · Nonaktif = berhenti</span></div>'+
-  '<div class="card"><table><tr><th>Konsumen</th><th>Status</th><th>Trial s.d.</th><th>Pesan</th><th>Situs</th><th>Catatan admin</th><th>Chat terakhir</th><th>Tiket/Masukan</th><th>Aksi</th></tr>'+
+  '<div class="card"><table><tr><th>Konsumen</th><th>Status</th><th>Layanan s.d.</th><th>Pesan</th><th>Situs</th><th>Catatan admin</th><th>Chat terakhir</th><th>Tiket/Masukan</th><th>Aksi</th></tr>'+
   (rows.length?rows.map(c=>{const k=kat(c);return '<tr><td><b>'+esc(c.name)+'</b><br><span class="dim">'+esc(c.slug)+'</span><br><a href="#" onclick="lihatMemori(\\''+c.tenantId+'\\');return false">🧠 memori</a></td>'+
   '<td><span class="b '+(badge[k]||'')+'">'+k+'</span><br><span class="dim" style="font-size:11px">'+esc(c.status)+'</span></td>'+
-  '<td>'+tgl(c.trialEndsAt)+'</td><td>'+c.usedMessages+'/'+c.quotaMessages+'</td>'+
+  '<td>'+(c.serviceEndsAt?tgl(c.serviceEndsAt)+'<br><span class="dim" style="font-size:11px">berbayar</span>':tgl(c.trialEndsAt)+(c.trialEndsAt?'<br><span class="dim" style="font-size:11px">trial</span>':''))+'</td><td>'+c.usedMessages+'/'+c.quotaMessages+'</td>'+
   '<td>'+(c.websiteSlug?esc(c.websiteSlug)+' <span class="dim">'+esc(c.websiteStatus||'')+'</span><br>'+
     (c.previewUrl?'<a href="'+esc(c.previewUrl)+'" target="_blank" rel="noopener">pratinjau ↗</a>':'')+
     (c.liveUrl?(c.previewUrl?' · ':'')+'<a href="'+esc(c.liveUrl)+'" target="_blank" rel="noopener">live ↗</a>':''):'—')+'</td>'+

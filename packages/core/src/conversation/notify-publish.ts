@@ -62,6 +62,33 @@ export function failedPublishMessage(reason: string): string {
   );
 }
 
+// Kirim TEKS bebas ke chat tenant (dipakai billing E1: link bayar + konfirmasi lunas).
+// Mekanika sama dgn notifikasi publish: cari percakapan ber-externalId, kirim, catat OUT.
+export async function notifyTenantText(
+  deps: NotifyDeps,
+  tenantId: TenantId,
+  text: string,
+): Promise<Result<NotifyResult, RepositoryError>> {
+  const convs = await deps.conversations.findMany(tenantId, { channel: deps.channel.channel });
+  if (!convs.ok) return err(convs.error);
+  const target = convs.value.find((c) => c.externalId !== null);
+  if (!target?.externalId) return ok({ notified: false });
+
+  const sent = await deps.channel.sendText(target.externalId, text);
+  const outgoing = await deps.messages.create(tenantId, {
+    conversationId: target.id,
+    direction: 'OUT',
+    type: 'TEXT',
+    text,
+    providerMsgId: sent.ok
+      ? sent.value.providerMsgId
+      : `${deps.channel.channel.toLowerCase()}-notify-failed-${target.id}-${Date.now()}`,
+    status: sent.ok ? 'SENT' : 'FAILED',
+  });
+  if (!outgoing.ok) return err(outgoing.error);
+  return ok({ notified: true, conversationId: target.id, sent: sent.ok });
+}
+
 export async function notifyPublishOutcome(
   deps: NotifyDeps,
   req: NotifyRequest,

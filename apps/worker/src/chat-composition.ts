@@ -32,6 +32,11 @@ import {
   InviteCodePrisma,
   MediaRepositoryPrisma,
   MultiAlert,
+  MidtransGateway,
+  InvoiceRepositoryPrisma,
+  type InvoiceDelegate,
+  BillingTenantPrisma,
+  type BillingTenantDelegate,
   TenantProfileRepositoryPrisma,
   type TenantProfileDelegate,
   FeedbackRepositoryPrisma,
@@ -89,6 +94,10 @@ import {
   invalidCodeReply,
   needsCodeReply,
   notifyPublishOutcome,
+  notifyTenantText,
+  createSubscriptionInvoice,
+  pollPendingInvoices,
+  paymentRequestMessage,
   registerFromInvite,
   registeredReply,
   resolveSlotImages,
@@ -189,6 +198,12 @@ export interface ChatWorkerEnv {
   readonly GLM_BASE_URL?: string;
   readonly LLM_PRICE_INPUT_PER_1M?: string;
   readonly LLM_PRICE_OUTPUT_PER_1M?: string;
+  // E1 billing Midtrans: tanpa MIDTRANS_SERVER_KEY + SUBSCRIPTION_PRICE_IDR → billing off.
+  readonly MIDTRANS_SERVER_KEY?: string;
+  readonly MIDTRANS_ENV?: string;
+  readonly SUBSCRIPTION_PRICE_IDR?: string;
+  readonly SUBSCRIPTION_PERIOD_DAYS?: string;
+  readonly BILLING_POLL_MS?: string;
 }
 
 // Token bot = kredensial (siapa pun yang memegangnya bisa menyamar jadi bot ini) → hanya
@@ -461,7 +476,10 @@ function previewDirToken(env: ChatWorkerEnv): (websiteId: string) => string {
 // T-032tg: pengabar hasil publish → chat. Dipakai worker publish (bukan chat-inbound):
 // job publish selesai/dead-letter → pengguna dikabari di percakapan Telegram-nya.
 // Tanpa TELEGRAM_BOT_TOKEN → undefined (publish tetap jalan, hanya senyap).
-export function createPublishNotifier(env: ChatWorkerEnv = process.env): PublishNotifier | undefined {
+export function createPublishNotifier(
+  env: ChatWorkerEnv = process.env,
+  billing?: BillingHandle,
+): PublishNotifier | undefined {
   if (!env.TELEGRAM_BOT_TOKEN) return undefined;
 
   const prisma = createPrismaClient();
@@ -477,6 +495,9 @@ export function createPublishNotifier(env: ChatWorkerEnv = process.env): Publish
   return {
     async publishSucceeded(tid: string, url: string): Promise<void> {
       await notifyPublishOutcome(deps, { tenantId: tenantId(tid), notice: { kind: 'live', url } });
+      // E1: situs live → tagihan langganan (link bayar menyusul pesan "sudah LIVE").
+      // Best-effort — kegagalan billing tak boleh menggagalkan notifikasi publish.
+      if (billing) await billing.onPublishSucceeded(tid).catch(() => undefined);
     },
     // Pratinjau publik siap → pesan + tombol approval (pelanggan pemegang akhir, BRU-02).
     async previewReady(tid: string, url: string, revisionNumber: number): Promise<void> {
@@ -490,6 +511,78 @@ export function createPublishNotifier(env: ChatWorkerEnv = process.env): Publish
         tenantId: tenantId(tid),
         notice: { kind: 'failed', reason },
       });
+    },
+  };
+}
+
+// ── E1 Billing Midtrans (PO 2026-07-15, menggantikan rencana Xendit) ──────────
+// Publish live sukses → invoice Snap + link bayar ke chat; poller memeriksa status
+// (webhook mustahil: VPS tanpa domain publik) → settlement → ACTIVE + serviceEndsAt.
+// Fail-soft: tanpa MIDTRANS_SERVER_KEY / harga → undefined (publish jalan tanpa tagihan).
+export interface BillingHandle {
+  onPublishSucceeded(tenantIdRaw: string): Promise<void>;
+  poll(): Promise<void>;
+  readonly intervalMs: number;
+}
+
+export function createBilling(env: ChatWorkerEnv = process.env): BillingHandle | undefined {
+  const serverKey = env.MIDTRANS_SERVER_KEY;
+  const priceIdr = Number(env.SUBSCRIPTION_PRICE_IDR);
+  if (!serverKey || !env.TELEGRAM_BOT_TOKEN) return undefined;
+  if (!Number.isFinite(priceIdr) || priceIdr < 1000) {
+    console.warn('[billing] MIDTRANS_SERVER_KEY ada tapi SUBSCRIPTION_PRICE_IDR tidak valid — billing OFF');
+    return undefined;
+  }
+  const periodDays = Number(env.SUBSCRIPTION_PERIOD_DAYS) > 0 ? Number(env.SUBSCRIPTION_PERIOD_DAYS) : 30;
+
+  const prisma = createPrismaClient();
+  const gateway = new MidtransGateway({
+    serverKey,
+    environment: env.MIDTRANS_ENV === 'production' ? 'production' : 'sandbox',
+  });
+  const invoices = new InvoiceRepositoryPrisma(
+    prisma.invoice as unknown as InvoiceDelegate,
+    prisma as unknown as { $queryRawUnsafe<T>(q: string, ...v: unknown[]): Promise<T> },
+  );
+  const tenants = new BillingTenantPrisma(prisma.tenant as unknown as BillingTenantDelegate);
+  const notifyDeps: NotifyDeps = {
+    conversations: new ConversationRepositoryPrisma(
+      prisma.conversation as unknown as ConversationDelegate,
+    ),
+    messages: new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate),
+    channel: rateLimited(createTelegramChannel(env), env),
+  };
+  const config = { priceIdr, periodDays };
+
+  return {
+    intervalMs: Number(env.BILLING_POLL_MS) > 0 ? Number(env.BILLING_POLL_MS) : 120_000,
+    async onPublishSucceeded(tenantIdRaw: string): Promise<void> {
+      const tid = tenantId(tenantIdRaw);
+      const r = await createSubscriptionInvoice({ gateway, invoices, tenants, config }, { tenantId: tid });
+      if (!r.ok) {
+        console.warn(`[billing] gagal membuat invoice tenant ${tenantIdRaw}: ${r.error.message}`);
+        return;
+      }
+      if (r.value.kind === 'skipped') return;
+      await notifyTenantText(
+        notifyDeps,
+        tid,
+        paymentRequestMessage(r.value.paymentUrl, r.value.amountIdr, periodDays),
+      );
+    },
+    async poll(): Promise<void> {
+      const r = await pollPendingInvoices({
+        gateway,
+        invoices,
+        tenants,
+        notify: async (tid, text) => {
+          await notifyTenantText(notifyDeps, tid, text);
+        },
+      });
+      if (!r.ok) console.warn(`[billing] poll gagal: ${r.error.message}`);
+      else if (r.value.paid || r.value.expired) {
+        console.log(`[billing] poll: ${r.value.checked} dicek, ${r.value.paid} lunas, ${r.value.expired} hangus`);
+      }
     },
   };
 }

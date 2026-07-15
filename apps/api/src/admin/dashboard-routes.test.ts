@@ -9,6 +9,7 @@ function fakeData(): DashboardDataPort & Record<string, ReturnType<typeof vi.fn>
     customers: vi.fn(async () => [
       {
         tenantId: 't1', name: 'Kopi', slug: 'kopi', status: 'TRIALING', trialEndsAt: null,
+        serviceEndsAt: null,
         usedMessages: 3, quotaMessages: 100, websiteSlug: null, websiteStatus: null,
         liveUrl: null, previewUrl: null, adminNote: null,
         lastInboundAt: null, openTickets: 0, unresolvedFeedback: 1,

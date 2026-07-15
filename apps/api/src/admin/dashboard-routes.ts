@@ -17,6 +17,8 @@ export interface DashboardCustomer {
   readonly slug: string;
   readonly status: string;
   readonly trialEndsAt: string | null;
+  // E1 billing: layanan berbayar aktif s.d. tanggal ini (null = belum pernah bayar).
+  readonly serviceEndsAt: string | null;
   readonly usedMessages: number;
   readonly quotaMessages: number;
   readonly websiteSlug: string | null;

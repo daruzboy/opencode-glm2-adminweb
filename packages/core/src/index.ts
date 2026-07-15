@@ -215,12 +215,27 @@ export {
   failedPublishMessage,
   livePublishMessage,
   notifyPublishOutcome,
+  notifyTenantText,
   previewReadyMessage,
   type NotifyDeps,
   type NotifyRequest,
   type NotifyResult,
   type PublishOutcomeNotice,
 } from './conversation/notify-publish.js';
+
+// E1 billing langganan (Midtrans) — dipakai worker publish + poller status.
+export {
+  createSubscriptionInvoice,
+  paymentPaidMessage,
+  paymentRequestMessage,
+  pollPendingInvoices,
+  subscriptionOrderId,
+  type CreateInvoiceDeps,
+  type CreateInvoiceOutcome,
+  type PollDeps,
+  type PollResult,
+  type SubscriptionConfig,
+} from './billing/subscription.js';
 
 // Pesan masuk kanal eksternal (T-030tg, FR-CHN-001/004/005) — dipakai worker.
 export {
