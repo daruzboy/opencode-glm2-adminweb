@@ -45,6 +45,7 @@ export {
 
 // Memori per tenant (PO 2026-07-15): tool agent mencatat nama/preferensi pelanggan.
 export { createRememberCustomerTool, type RememberResult } from './agent/remember-tool.js';
+export { createRecordFeedbackTool, type RecordFeedbackResult } from './agent/feedback-tool.js';
 export { renderProfileContext } from './conversation/replier.js';
 
 // P4: build dari template Mobirise (pengganti jalur "LLM mengarang seluruh dokumen").

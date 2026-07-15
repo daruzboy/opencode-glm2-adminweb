@@ -4,8 +4,8 @@ Paket ini adalah **salinan verbatim** dari `editor-web/packages/block-engine/src
 (repo `/opt/dig/projects/editor-web`, milik PO). Sumber kebenaran pengembangan engine
 tetap di editor-web; glm2 hanya KONSUMEN.
 
-- **Sumber:** editor-web commit `4eabc2552bd7bf5e9f2253bdeb3c08aaa50b950d`
-- **Disinkron:** 2026-07-14
+- **Sumber:** editor-web commit `32e7e3c98932293106811eb5493a2538b764ce43`
+- **Disinkron:** 2026-07-15
 - **Cara update:** jalankan `ops/sync-block-engine.sh` (menyalin src, menstempel SHA baru
   di file ini, lalu build + test). JANGAN menyunting `src/` di sini — perubahan akan
   tertimpa sync berikutnya; perbaiki di editor-web lalu sync.

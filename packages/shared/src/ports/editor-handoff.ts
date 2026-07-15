@@ -14,6 +14,8 @@ import type { Result } from '../index.js';
 export interface HandoffInput {
   // Nama proyek di editor (konvensi: "AI · <namaUsaha> (<tenantSlug>)").
   readonly name: string;
+  // Nama pelanggan/usaha — editor memakainya utk label tombol "Kirim ke \"X\"".
+  readonly customerName?: string;
   readonly templateId: string;
   // MobiriseProject (bentuk BERSAMA — tanpa konversi).
   readonly document: unknown;

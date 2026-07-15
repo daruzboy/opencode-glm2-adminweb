@@ -34,6 +34,8 @@ import {
   MultiAlert,
   TenantProfileRepositoryPrisma,
   type TenantProfileDelegate,
+  FeedbackRepositoryPrisma,
+  type FeedbackDelegate,
   ActingStorePrisma,
   AdminDirectoryPrisma,
   type AdminConsoleClient,
@@ -70,6 +72,7 @@ import {
 import {
   createAgentReplier,
   createAgentToolRegistry,
+  createRecordFeedbackTool,
   createRememberCustomerTool,
   createSitebuilderApplyPatchTool,
   handleAdminCommand,
@@ -340,6 +343,10 @@ export function createChatReplier(
         createSitebuilderApplyPatchTool(sitebuilder),
         buildTool,
         createRememberCustomerTool(profile),
+        createRecordFeedbackTool(
+          new FeedbackRepositoryPrisma(prisma.feedback as unknown as FeedbackDelegate),
+          createAlert(env),
+        ),
       ]),
     },
   });

@@ -9,6 +9,8 @@ import {
   MessageRepositoryPrisma,
   TenantProfileRepositoryPrisma,
   type TenantProfileDelegate,
+  FeedbackRepositoryPrisma,
+  type FeedbackDelegate,
   OpenAiCompatibleAgentAdapter,
   RevisionRepositoryPrisma,
   SitebuilderToolAdapter,
@@ -18,6 +20,7 @@ import {
   createGlmJsonAdapter,
   createPrismaClient,
   createBullMqPublishQueue,
+  createQueueCounter,
   createBullMqChatInboundQueue,
   createBullMqRedisClient,
   createPreviewToken,
@@ -41,6 +44,7 @@ import {
 import {
   createAgentReplier,
   createAgentToolRegistry,
+  createRecordFeedbackTool,
   createRememberCustomerTool,
   createSitebuilderApplyPatchTool,
   createSitebuilderBuildSiteTool,
@@ -71,6 +75,9 @@ import type { ReviewCompleteDeps } from '@digimaestro/core';
 import type { ReadinessDeps } from './readiness.js';
 import type { TemplateAdminDeps } from './admin/template-routes.js';
 import type { ReviewRoutesDeps } from './review/routes.js';
+import type { DashboardDeps } from './admin/dashboard-routes.js';
+import { createDashboardData, type RawDb } from './admin/dashboard-data-prisma.js';
+import { DASHBOARD_PAGE } from './admin/dashboard-page.js';
 import type {
   AgentToolDefinition,
   AuthPort,
@@ -357,7 +364,13 @@ function createProductionAgentReplier(
     profile,
     loop: {
       llm: agentLlm,
-      tools: createSitebuilderToolRegistry(sitebuilder, [buildTool, createRememberCustomerTool(profile)]),
+      tools: createSitebuilderToolRegistry(sitebuilder, [
+        buildTool,
+        createRememberCustomerTool(profile),
+        createRecordFeedbackTool(
+          new FeedbackRepositoryPrisma(prisma.feedback as unknown as FeedbackDelegate),
+        ),
+      ]),
     },
   });
 }
@@ -425,6 +438,41 @@ function sectionCatalog(): Record<string, readonly string[]> {
   return Object.fromEntries(
     Object.entries(SECTION_REGISTRY).map(([type, def]) => [type, def.variants]),
   );
+}
+
+// Dashboard admin (PO 2026-07-15): fail-closed tanpa ADMIN_DASHBOARD_TOKEN.
+export function createDashboardDeps(env: NodeJS.ProcessEnv = process.env): DashboardDeps | undefined {
+  if (!env.ADMIN_DASHBOARD_TOKEN || !env.DATABASE_URL) return undefined;
+  const prisma = createPrismaClient();
+  const price = parseTokenPrice(env.LLM_PRICE_INPUT_PER_1M, env.LLM_PRICE_OUTPUT_PER_1M);
+  const model =
+    env.DIGIMAESTRO_LLM_PROVIDER === 'glm'
+      ? (env.GLM_MODEL ?? 'glm-4.5')
+      : (env.DEEPSEEK_MODEL ?? DEFAULT_DEEPSEEK_MODEL);
+
+  let queueCounts;
+  if (env.REDIS_URL) {
+    const url = new URL(env.REDIS_URL);
+    queueCounts = createQueueCounter({
+      host: url.hostname,
+      port: url.port ? Number(url.port) : 6379,
+      username: url.username || undefined,
+      password: url.password || undefined,
+      maxRetriesPerRequest: null,
+    });
+  }
+
+  return {
+    token: env.ADMIN_DASHBOARD_TOKEN,
+    page: DASHBOARD_PAGE,
+    data: createDashboardData({
+      db: prisma as unknown as RawDb,
+      usageDeps: { usage: new LlmUsageQueryPrisma(prisma as unknown as RawQueryClient), price },
+      ...(queueCounts ? { queueCounts } : {}),
+      model,
+      pricePer1M: { input: price.inputPer1M, output: price.outputPer1M },
+    }),
+  };
 }
 
 // T-082: harga token dari env (satu sumber kebenaran). 0 = belum dikonfigurasi → laporan
