@@ -859,6 +859,20 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   tak mulai dari nol (riwayat chat hanya 20 pesan). Model produksi pindah ke
   **deepseek-v4-flash** (keputusan PO; harga $0.14/$0.28 per 1 jt token in/out).
 
+- ✅ **Konsol admin /konsumen** (**PR #94**, 2026-07-15): chat admin mengelola BANYAK
+  konsumen — daftar/baru/pilih/siapa/selesai (deterministik tanpa LLM, hanya chat_id
+  admin), acting-as menimpa resolver tenant (seluruh mesin bekerja atas tenant konsumen,
+  notifikasi ke chat admin), tombol approval ber-sidik tenant 8-char (ganti konsumen ≠
+  salah menerbitkan situs), DUA SOP (SOP_ADMIN_PATH + baris "Konsumen aktif SEKARANG").
+
+- ✅ **Dashboard admin /admin** (**PR #95**, 2026-07-15): http://<ip-vps>:3000/admin
+  (tailnet) + ADMIN_DASHBOARD_TOKEN (timing-safe; fail-closed). 5 tab: Konsumen
+  (trial/kuota/status + billing-lite — Xendit tetap E1), Tiket (model Ticket), Keluhan &
+  Saran (model Feedback + tool agent record_feedback: bot mencatat dari chat, keluhan
+  memicu alert), Token & Biaya (T-082), Sistem (load/mem/disk host via /proc, model+harga,
+  antrean BullMQ). Satu HTML self-contained tanpa CDN; lintas-tenant hanya raw query di
+  balik gerbang token (pola T-082). Memenuhi sebagian besar F-14.
+
 ### Gerbang keluar Fase 0
 - ✅ **T-083 — DEMO E2E TERCAPAI** (2026-07-11, produksi nyata, tanpa intervensi manual):
   **chat Telegram → wawancara (agent ingat konteks) → agent bangun situs → tombol approval →
