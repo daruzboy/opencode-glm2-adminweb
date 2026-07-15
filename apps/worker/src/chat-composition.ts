@@ -32,6 +32,8 @@ import {
   InviteCodePrisma,
   MediaRepositoryPrisma,
   MultiAlert,
+  TenantProfileRepositoryPrisma,
+  type TenantProfileDelegate,
   QuotaPrisma,
   TenantProvisionPrisma,
   type OnboardingClient,
@@ -65,6 +67,7 @@ import {
 import {
   createAgentReplier,
   createAgentToolRegistry,
+  createRememberCustomerTool,
   createSitebuilderApplyPatchTool,
   createSitebuilderBuildSiteTool,
   createSitebuilderGetSiteOutlineTool,
@@ -248,6 +251,10 @@ export function createChatReplier(
   // T-033: foto pelanggan yang sudah masuk → disisipkan ke prompt build supaya galeri
   // memakai URL NYATA (tanpa ini LLM mengarang URL dan galeri jadi gambar rusak).
   const mediaRepo = new MediaRepositoryPrisma(prisma.mediaAsset as unknown as MediaDelegate);
+  // Memori per tenant (PO 2026-07-15): nama pelanggan + brief + catatan → prompt agent.
+  const profile = new TenantProfileRepositoryPrisma(
+    prisma.tenantProfile as unknown as TenantProfileDelegate,
+  );
   const buildDeps: BuildDeps = {
     llm: jsonLlm,
     revisions,
@@ -263,6 +270,7 @@ export function createChatReplier(
       const all = await mediaRepo.findMany(tid);
       return all.ok ? all.value.map((m) => m.url) : [];
     },
+    profile,
   };
 
   // P4: SITE_ENGINE=mobirise-v1 + TEMPLATES_DIR → build dari template Mobirise (AI memilih
@@ -296,6 +304,7 @@ export function createChatReplier(
         revisions,
         websites,
         catalog: templateCatalog,
+        profile,
         mediaUrls: buildDeps.mediaUrls as NonNullable<BuildDeps['mediaUrls']>,
         ...(resolveImages ? { resolveImages } : {}),
         ...(handoff ? { handoff } : {}),
@@ -314,12 +323,14 @@ export function createChatReplier(
     // T-053f: riwayat percakapan → agent ingat konteks (tanpa ini: amnesia tiap pesan).
     messages: new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate),
     ...(env.SOP_PATH ? { sop: createFileSopProvider({ path: env.SOP_PATH, logger: console }) } : {}),
+    profile,
     loop: {
       llm: agentLlm,
       tools: createAgentToolRegistry([
         createSitebuilderGetSiteOutlineTool(sitebuilder),
         createSitebuilderApplyPatchTool(sitebuilder),
         buildTool,
+        createRememberCustomerTool(profile),
       ]),
     },
   });

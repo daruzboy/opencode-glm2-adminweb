@@ -16,6 +16,8 @@ import type {
   MessageRepository,
   Result,
   TenantId,
+  TenantProfileEntity,
+  TenantProfileRepository,
 } from '@digimaestro/shared';
 import { runAgentLoop, type AgentLoopDeps, type AgentLoopRequest } from '../agent/agent-loop.js';
 import {
@@ -141,6 +143,28 @@ export interface AgentReplierDeps {
   // urutan melayani pelanggan: kenalan/tanya nama dulu, ekspektasi durasi build, dst.
   // null/error → bot jalan dengan persona bawaan (SOP pemanis, bukan dependensi keras).
   readonly sop?: () => Promise<string | null>;
+  // Memori per tenant (PO 2026-07-15): nama pelanggan + brief terakhir + catatan —
+  // disuntikkan sbg "KONTEKS PELANGGAN" tiap giliran (riwayat 20 pesan saja tak cukup
+  // utk sesi edit berminggu-minggu kemudian). Fail-soft: gagal baca ≠ bot mati.
+  readonly profile?: TenantProfileRepository;
+}
+
+// Render profil → bagian prompt. Kosong semua → null (tak menambah token percuma).
+export function renderProfileContext(profile: TenantProfileEntity | null): string | null {
+  if (!profile) return null;
+  const lines: string[] = [];
+  if (profile.customerName) lines.push(`- Nama panggilan pelanggan: ${profile.customerName}`);
+  const brief = profile.brief as { businessName?: string; businessType?: string } | null;
+  if (brief && typeof brief === 'object') {
+    if (typeof brief.businessName === 'string') lines.push(`- Nama usaha: ${brief.businessName}`);
+    if (typeof brief.businessType === 'string') lines.push(`- Jenis usaha: ${brief.businessType}`);
+  }
+  for (const note of profile.notes) lines.push(`- Catatan: ${note}`);
+  if (lines.length === 0) return null;
+  return (
+    '## KONTEKS PELANGGAN (memori dari sesi sebelumnya — pakai, jangan tanya ulang)\n' +
+    lines.join('\n')
+  );
 }
 
 // Gabungkan persona + SOP. SOP menang untuk GAYA & URUTAN layanan; batasan teknis
@@ -189,8 +213,15 @@ export function createAgentReplier(deps: AgentReplierDeps): ConversationReplier 
       //    kegagalan memuat riwayat tak boleh mematikan balasan).
       const history = await loadHistory(deps, req);
 
-      // 3b) SOP layanan PO (best-effort — gagal baca ≠ bot mati).
+      // 3b) SOP layanan PO + memori tenant (best-effort — gagal baca ≠ bot mati).
       const sop = deps.sop ? await deps.sop().catch(() => null) : null;
+      const profileRes = deps.profile
+        ? await deps.profile.get(req.tenantId).catch(() => null)
+        : null;
+      const konteks = renderProfileContext(profileRes?.ok ? profileRes.value : null);
+      const system = konteks
+        ? `${withSop(plan.system, sop)}\n\n${konteks}`
+        : withSop(plan.system, sop);
 
       // 4) Agent loop.
       const loopResult = await runAgentLoop(deps.loop, {
@@ -198,7 +229,7 @@ export function createAgentReplier(deps: AgentReplierDeps): ConversationReplier 
         actor: 'chatbot',
         scopes: plan.scopes,
         task: plan.task,
-        system: withSop(plan.system, sop),
+        system,
         userMessage: req.text,
         ...(history.length > 0 ? { history } : {}),
         jobId: req.jobId,

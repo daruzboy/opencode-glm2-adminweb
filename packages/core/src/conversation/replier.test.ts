@@ -352,3 +352,64 @@ describe('SOP layanan', () => {
     expect(withSop('persona', null)).toBe('persona');
   });
 });
+
+// Memori per tenant (PO 2026-07-15): profil disuntikkan sbg "KONTEKS PELANGGAN".
+describe('memori tenant di prompt', () => {
+  function capturing(): LlmAgentPort & { lastSystem: () => string } {
+    let system = '';
+    return {
+      name: 'llm-agent:fake',
+      async completeWithTools(req: { system: string }) {
+        system = req.system;
+        return ok({ kind: 'text', content: 'Siap kak!' } as LlmAgentResponse);
+      },
+      lastSystem: () => system,
+    } as unknown as LlmAgentPort & { lastSystem: () => string };
+  }
+
+  it('profil ada → nama, usaha, dan catatan masuk system prompt', async () => {
+    const llm = capturing();
+    const replier = createAgentReplier({
+      router: { conversations: fakeConversationRepo() },
+      loop: { llm, tools: createAgentToolRegistry([]) },
+      profile: {
+        name: 'TenantProfileRepository',
+        get: vi.fn(async () =>
+          ok({
+            tenantId: 'tA',
+            customerName: 'Kak Mayang',
+            brief: { businessName: 'Barber Bro', businessType: 'barbershop' },
+            notes: ['suka warna abu-abu'],
+            updatedAt: '',
+          }),
+        ),
+        upsert: vi.fn(),
+      } as never,
+    });
+
+    await replier.reply({ tenantId: tenant, conversationId: 'c1', text: 'mau buat website' });
+    const sys = llm.lastSystem();
+    expect(sys).toContain('KONTEKS PELANGGAN');
+    expect(sys).toContain('Kak Mayang');
+    expect(sys).toContain('Barber Bro');
+    expect(sys).toContain('abu-abu');
+  });
+
+  it('profil kosong / repo error → prompt tanpa bagian konteks (fail-soft)', async () => {
+    for (const get of [
+      vi.fn(async () => ok(null)),
+      vi.fn(async () => ({ ok: false as const, error: { code: 'UNKNOWN' as const, message: 'db' } })),
+      vi.fn(async () => { throw new Error('meledak'); }),
+    ]) {
+      const llm = capturing();
+      const replier = createAgentReplier({
+        router: { conversations: fakeConversationRepo() },
+        loop: { llm, tools: createAgentToolRegistry([]) },
+        profile: { name: 'TenantProfileRepository', get, upsert: vi.fn() } as never,
+      });
+      const r = await replier.reply({ tenantId: tenant, conversationId: 'c1', text: 'halo' });
+      expect(r.ok).toBe(true);
+      expect(llm.lastSystem()).not.toContain('KONTEKS PELANGGAN');
+    }
+  });
+});

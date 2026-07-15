@@ -7,6 +7,8 @@ import {
   LlmUsageQueryPrisma,
   MediaRepositoryPrisma,
   MessageRepositoryPrisma,
+  TenantProfileRepositoryPrisma,
+  type TenantProfileDelegate,
   OpenAiCompatibleAgentAdapter,
   RevisionRepositoryPrisma,
   SitebuilderToolAdapter,
@@ -39,6 +41,7 @@ import {
 import {
   createAgentReplier,
   createAgentToolRegistry,
+  createRememberCustomerTool,
   createSitebuilderApplyPatchTool,
   createSitebuilderBuildSiteTool,
   createSitebuilderGetSiteOutlineTool,
@@ -321,6 +324,10 @@ function createProductionAgentReplier(
 
   // T-053e: tool build situs baru dari brief (buildSiteFromBrief) → menutup jalur situs baru.
   const mediaRepo = new MediaRepositoryPrisma(prisma.mediaAsset as unknown as MediaDelegate);
+  // Memori per tenant (PO 2026-07-15) — sama dgn worker Telegram.
+  const profile = new TenantProfileRepositoryPrisma(
+    prisma.tenantProfile as unknown as TenantProfileDelegate,
+  );
   const buildDeps: BuildDeps = {
     llm: jsonLlm,
     revisions,
@@ -337,6 +344,7 @@ function createProductionAgentReplier(
       const all = await mediaRepo.findMany(tid);
       return all.ok ? all.value.map((m) => m.url) : [];
     },
+    profile,
   };
   const buildTool = createSitebuilderBuildSiteTool(buildDeps);
 
@@ -346,9 +354,10 @@ function createProductionAgentReplier(
     messages: new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate),
     // SOP layanan PO — dokumen sunting-sendiri, sama dgn worker Telegram.
     ...(env.SOP_PATH ? { sop: createFileSopProvider({ path: env.SOP_PATH, logger: console }) } : {}),
+    profile,
     loop: {
       llm: agentLlm,
-      tools: createSitebuilderToolRegistry(sitebuilder, [buildTool]),
+      tools: createSitebuilderToolRegistry(sitebuilder, [buildTool, createRememberCustomerTool(profile)]),
     },
   });
 }

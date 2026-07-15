@@ -28,6 +28,7 @@ import type {
   TemplatePageContract,
   TemplateSummary,
   TenantId,
+  TenantProfileRepository,
   WebsiteRepository,
 } from '@digimaestro/shared';
 import { needsAdminReview } from '../review/review-gate.js';
@@ -38,6 +39,8 @@ export interface TemplateBuildDeps {
   readonly revisions: RevisionRepository;
   readonly websites: WebsiteRepository;
   readonly catalog: TemplateCatalogPort;
+  // Memori tenant: brief sukses di-auto-capture shell tool (lihat build-site-tool).
+  readonly profile?: TenantProfileRepository;
   // Foto milik tenant — HANYA URL di sini yang boleh dipakai slot gambar (P4).
   // Slot tanpa foto cocok → 'keep' (gambar bawaan template), atau stok (P6) bila
   // resolveImages di-inject.

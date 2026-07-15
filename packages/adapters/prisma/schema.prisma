@@ -133,8 +133,28 @@ model Tenant {
   websites      Website[]
   agentJobs     AgentJob[]
   llmUsages     LlmUsage[]
+  profile       TenantProfile?
 
   @@index([brandId])
+}
+
+// Memori per tenant (permintaan PO 2026-07-15): konteks yang MENGIKAT — nama panggilan
+// pelanggan, brief usaha terakhir, catatan preferensi — disuntikkan ke prompt agent tiap
+// giliran. Riwayat chat hanya 20 pesan terakhir; tanpa ini, sesi edit berikutnya mulai
+// dari nol ("amnesia jangka panjang").
+model TenantProfile {
+  id           String   @id @default(cuid())
+  tenantId     String   @unique
+  // Nama panggilan pelanggan (SOP: tanyakan nama dulu) — diisi tool remember_customer.
+  customerName String?
+  // InterviewBrief terakhir yang berhasil di-build (auto-capture saat build sukses).
+  brief        Json?
+  // Catatan bebas (preferensi, larangan, gaya) — maksimal N terbaru (dipangkas repo).
+  notes        String[] @default([])
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model User {

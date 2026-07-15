@@ -47,6 +47,7 @@ export * from './ports/media.js';
 export * from './ports/onboarding.js';
 export * from './ports/llm-agent.js';
 export * from './ports/preview.js';
+export * from './ports/profile.js';
 export * from './ports/publish.js';
 export * from './ports/publish-queue.js';
 export * from './ports/publish-source.js';
