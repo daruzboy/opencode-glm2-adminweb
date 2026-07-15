@@ -26,6 +26,11 @@ export interface PublishJobRequest {
   readonly rootDomain?: string;
   // Bentuk URL yang dijanjikan ke pengguna → worker memverifikasi URL yang SAMA.
   readonly urlMode?: 'subdomain' | 'path';
+  // 'preview' (P5/P6 UX): unggah ke digimaestro.id/preview/<slug-token>/ (noindex, tanpa
+  // artifact rollback, notifikasi = pesan pratinjau + tombol approval — BUKAN "sudah live").
+  // Kenapa preview statis di hosting publik: VPS hanya terjangkau via tailnet — tautan
+  // /api/preview tak bisa dibuka pelanggan (temuan uji nyata 2026-07-15). Default 'live'.
+  readonly mode?: 'live' | 'preview';
 }
 
 export interface EnqueueResult {

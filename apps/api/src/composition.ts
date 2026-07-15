@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import {
   ConversationRepositoryPrisma,
   createFileSopProvider,
@@ -510,6 +511,19 @@ export function createReviewRoutesDeps(
       return parsed.ok ? { ok: true } : { ok: false, message: parsed.message };
     },
     ...(previewUrl ? { previewUrl } : {}),
+    // Preview PUBLIK (2026-07-15): revisi hasil review diunggah ke hosting → worker
+    // mengirim pesan+tombol. Butuh REDIS_URL (produsen antrean publish).
+    ...(env.REDIS_URL
+      ? {
+          preview: {
+            ...createPublishRequestDeps({ redisUrl: env.REDIS_URL }),
+            previewToken: (websiteId: string) =>
+              secret
+                ? createHmac('sha256', secret).update(`preview:${websiteId}`).digest('hex').slice(0, 12)
+                : websiteId.slice(-12),
+          },
+        }
+      : {}),
     logger: console,
   };
 

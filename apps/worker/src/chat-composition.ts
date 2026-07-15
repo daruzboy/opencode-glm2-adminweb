@@ -6,6 +6,7 @@
 // adalah composition root-nya sendiri (AGENTS.md §2), dan tool/use case yang dirakit
 // semuanya hidup di core — jadi yang "berulang" hanyalah perakitannya, bukan logikanya.
 
+import { createHmac } from 'node:crypto';
 import {
   ChannelBindingPrisma,
   ConversationRepositoryPrisma,
@@ -391,7 +392,19 @@ export function createApprovalDeps(env: ChatWorkerEnv = process.env): ApprovalDe
       urlMode: parsePublishUrlMode(env.PUBLISH_URL_MODE),
     },
     ...(previewUrl ? { previewUrl } : {}),
+    // Preview PUBLIK: token folder pratinjau per website (deterministik & tak tertebak).
+    previewToken: previewDirToken(env),
   };
+}
+
+// HMAC(secret, websiteId) → 12 hex. Tanpa PREVIEW_TOKEN_SECRET jatuh ke potongan websiteId
+// (cuid — sudah tak tertebak; hanya "membocorkan" id internal, bukan celah akses).
+function previewDirToken(env: ChatWorkerEnv): (websiteId: string) => string {
+  const secret = env.PREVIEW_TOKEN_SECRET;
+  return (websiteId: string) =>
+    secret
+      ? createHmac('sha256', secret).update(`preview:${websiteId}`).digest('hex').slice(0, 12)
+      : websiteId.slice(-12);
 }
 
 // T-032tg: pengabar hasil publish → chat. Dipakai worker publish (bukan chat-inbound):
@@ -413,6 +426,13 @@ export function createPublishNotifier(env: ChatWorkerEnv = process.env): Publish
   return {
     async publishSucceeded(tid: string, url: string): Promise<void> {
       await notifyPublishOutcome(deps, { tenantId: tenantId(tid), notice: { kind: 'live', url } });
+    },
+    // Pratinjau publik siap → pesan + tombol approval (pelanggan pemegang akhir, BRU-02).
+    async previewReady(tid: string, url: string, revisionNumber: number): Promise<void> {
+      await notifyPublishOutcome(deps, {
+        tenantId: tenantId(tid),
+        notice: { kind: 'preview', url, revisionNumber },
+      });
     },
     async publishFailed(tid: string, reason: string): Promise<void> {
       await notifyPublishOutcome(deps, {

@@ -23,6 +23,7 @@ import type {
   WebsiteRepository,
 } from '@digimaestro/shared';
 import { approvalButtons } from '../conversation/handle-inbound.js';
+import { requestPreview, type PreviewRequestDeps } from '../publish/request-preview.js';
 
 // Aturan gerbang O(1). null approvedTemplateId = belum pernah ada yang lolos review →
 // build pertama SELALU direview.
@@ -44,8 +45,12 @@ export interface ReviewCompleteDeps {
   readonly channel: ChannelPort;
   // Validasi dokumen editan (mobiriseProjectSchema, di-inject — core tak import sites-kit).
   readonly parseDocument: (value: unknown) => { ok: true } | { ok: false; message: string };
-  // Tautan preview ber-token (opsional — tanpa PREVIEW_TOKEN_SECRET pesan tetap terkirim).
+  // Tautan preview ber-token (FALLBACK — menunjuk API tailnet, tak terbuka utk pelanggan).
   readonly previewUrl?: (revisionId: string) => string;
+  // Preview PUBLIK (2026-07-15): bila di-inject, revisi hasil review di-enqueue mode
+  // 'preview' → worker mengunggah bundel ke hosting publik lalu MENGIRIM pesan+tombol.
+  // notifyCustomer langsung di sini dilewati (satu pesan, bukan dua).
+  readonly preview?: PreviewRequestDeps;
   readonly logger?: { error(msg: string): void };
 }
 
@@ -123,8 +128,25 @@ export async function completeAdminReview(
     if (!upd.ok) deps.logger?.error(`[review] gagal set approvedTemplateId: ${upd.error.message}`);
   }
 
-  // 5. Kabari pelanggan: preview + tombol approval (mesin lama, pelanggan pemegang akhir).
-  const notified = await notifyCustomer(deps, cmd.tenantId, created.value.id, created.value.number);
+  // 5. Kabari pelanggan. Jalur utama: enqueue pratinjau PUBLIK — worker mengunggah bundel
+  //    ke hosting lalu mengirim pesan + tombol approval (pelanggan pemegang akhir).
+  //    Fallback (tanpa deps.preview / enqueue gagal): kirim langsung dgn tautan dinamis.
+  let notified = false;
+  if (deps.preview) {
+    const queued = await requestPreview(deps.preview, {
+      tenantId: cmd.tenantId,
+      websiteId: cmd.websiteId,
+      revisionNumber: created.value.number,
+    });
+    if (queued.ok) {
+      notified = true; // pesan menyusul dari worker publish (previewReady)
+    } else {
+      deps.logger?.error(`[review] enqueue pratinjau gagal: ${queued.message}`);
+      notified = await notifyCustomer(deps, cmd.tenantId, created.value.id, created.value.number);
+    }
+  } else {
+    notified = await notifyCustomer(deps, cmd.tenantId, created.value.id, created.value.number);
+  }
 
   return ok({
     revisionId: created.value.id,

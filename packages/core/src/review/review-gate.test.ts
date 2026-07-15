@@ -123,3 +123,50 @@ describe('completeAdminReview', () => {
     expect(errors.some((e) => e.includes('putus'))).toBe(true);
   });
 });
+
+// Preview PUBLIK (2026-07-15): dengan deps.preview, pesan+tombol dikirim WORKER setelah
+// pratinjau tayang — bukan langsung dari sini (satu pesan, bukan dua).
+describe('completeAdminReview — preview publik', () => {
+  function previewDeps(enqueueErr = false) {
+    const enqueuePublish = vi.fn(async () =>
+      enqueueErr
+        ? { ok: false as const, error: { code: 'QUEUE' as const, message: 'redis down' } }
+        : ok({ jobId: 'job-7' }),
+    );
+    const preview = {
+      source: {
+        getPublishSource: vi.fn(async () =>
+          ok({ websiteId: 'w1', revisionNumber: 4, slug: 'kopi', siteDocument: DOC, renderEngine: 'mobirise-v1' }),
+        ),
+      } as never,
+      queue: { enqueuePublish } as never,
+      rootDomain: 'digimaestro.id',
+      previewToken: () => 'tok9',
+    };
+    return { preview, enqueuePublish };
+  }
+
+  it('enqueue mode preview; TANPA sendButtons langsung; customerNotified=true', async () => {
+    const { preview, enqueuePublish } = previewDeps();
+    const d = deps({ preview });
+
+    const res = await completeAdminReview(d, CMD);
+
+    expect(res.ok && res.value.customerNotified).toBe(true);
+    expect(enqueuePublish).toHaveBeenCalledTimes(1);
+    const job = enqueuePublish.mock.calls[0]?.[0] as { mode?: string; slug?: string };
+    expect(job.mode).toBe('preview');
+    expect(job.slug).toBe('preview/kopi-tok9');
+    expect(d.spies.sendButtons).not.toHaveBeenCalled();
+  });
+
+  it('enqueue GAGAL → fallback notifikasi langsung (tombol tetap terkirim)', async () => {
+    const { preview } = previewDeps(true);
+    const d = deps({ preview });
+
+    const res = await completeAdminReview(d, CMD);
+
+    expect(res.ok && res.value.customerNotified).toBe(true);
+    expect(d.spies.sendButtons).toHaveBeenCalledTimes(1);
+  });
+});

@@ -16,6 +16,7 @@ import type {
   Result,
   TenantId,
 } from '@digimaestro/shared';
+import { approvalButtons } from './handle-inbound.js';
 
 export interface NotifyDeps {
   readonly conversations: ConversationRepository;
@@ -25,6 +26,9 @@ export interface NotifyDeps {
 
 export type PublishOutcomeNotice =
   | { readonly kind: 'live'; readonly url: string }
+  // Pratinjau PUBLIK siap (mode 'preview'): pesan + TOMBOL approval — inilah momen
+  // pelanggan pertama kali melihat situsnya (gerbang akhir BRU-02).
+  | { readonly kind: 'preview'; readonly url: string; readonly revisionNumber: number }
   | { readonly kind: 'failed'; readonly reason: string };
 
 export interface NotifyRequest {
@@ -42,6 +46,13 @@ export interface NotifyResult {
 
 export function livePublishMessage(url: string): string {
   return `Situsmu sudah LIVE 🎉\n\nBuka di sini:\n${url}\n\nMau ubah sesuatu? Tulis aja, nanti aku revisi.`;
+}
+
+export function previewReadyMessage(url: string): string {
+  return (
+    `Situsmu sudah siap! 🎉\n\nIntip dulu di sini:\n${url}\n\n` +
+    'Kalau sudah pas, tekan "Setuju & publish" ya — atau bilang apa yang mau diubah.'
+  );
 }
 
 export function failedPublishMessage(reason: string): string {
@@ -69,9 +80,19 @@ export async function notifyPublishOutcome(
   const text =
     req.notice.kind === 'live'
       ? livePublishMessage(req.notice.url)
-      : failedPublishMessage(req.notice.reason);
+      : req.notice.kind === 'preview'
+        ? previewReadyMessage(req.notice.url)
+        : failedPublishMessage(req.notice.reason);
 
-  const sent = await deps.channel.sendText(target.externalId, text);
+  // Pratinjau membawa tombol persetujuan (gerbang akhir pelanggan, BRU-02).
+  const sent =
+    req.notice.kind === 'preview'
+      ? await deps.channel.sendButtons(
+          target.externalId,
+          text,
+          approvalButtons(req.notice.revisionNumber),
+        )
+      : await deps.channel.sendText(target.externalId, text);
   const status: MessageStatus = sent.ok ? 'SENT' : 'FAILED';
 
   // Notifikasi tetap dicatat sebagai pesan OUT → riwayat chat utuh (pengguna melihat
