@@ -22,6 +22,7 @@ import { registerTelegramWebhook } from './channel/telegram-webhook.js';
 import { registerPreviewRoutes } from './preview/routes.js';
 import { registerPublishRoutes } from './publish/routes.js';
 import { registerReadiness, type ReadinessDeps } from './readiness.js';
+import { redactedRequestSerializer } from './log-redact.js';
 import { registerTemplateAdminRoutes, type TemplateAdminDeps } from './admin/template-routes.js';
 import { registerReviewRoutes, type ReviewRoutesDeps } from './review/routes.js';
 import { registerDashboardRoutes, type DashboardDeps } from './admin/dashboard-routes.js';
@@ -48,7 +49,13 @@ export interface BuildServerOptions {
   reviewGate?: ReviewRoutesDeps;
   dashboard?: DashboardDeps;
   // P1: pino bawaan Fastify. `true`/objek konfigurasi di produksi; test tetap default false.
-  logger?: boolean | { level?: string; redact?: readonly string[] };
+  logger?:
+    | boolean
+    | {
+        level?: string;
+        redact?: readonly string[];
+        serializers?: Record<string, (value: never) => unknown>;
+      };
 }
 
 export async function buildServer(opts: BuildServerOptions = {}): Promise<FastifyInstance> {
@@ -65,8 +72,12 @@ export async function buildServer(opts: BuildServerOptions = {}): Promise<Fastif
   );
   // Endpoint penerbit token dev HANYA aktif bila di-flag (AUTH_DEV_TOKEN=1). Di produksi
   // tak terpasang → tak bisa mencetak token OWNER tanpa kredensial (menutup lubang #45).
+  // adminTenantId ikut disuntik: tenant admin tak boleh dicetak dari sini (audit 2026-07-16).
   if (opts.auth?.devTokenEnabled) {
-    registerAuthRoutes(app, { auth: opts.auth.auth });
+    registerAuthRoutes(app, {
+      auth: opts.auth.auth,
+      ...(opts.auth.adminTenantId ? { adminTenantId: opts.auth.adminTenantId } : {}),
+    });
   }
 
   registerChatRoutes(app, opts.deps ?? createChatDeps());
@@ -110,10 +121,13 @@ export async function start(): Promise<void> {
     ...(dashboard ? { dashboard } : {}),
     ready: createReadinessDeps(),
     // P1: log terstruktur (pino bawaan Fastify). Token/authorization diredaksi — log
-    // adalah tempat paling umum kredensial bocor tanpa sengaja.
+    // adalah tempat paling umum kredensial bocor tanpa sengaja. `redact` menutup header;
+    // serializer `req` menutup token di query string WS/preview (redact tak bisa
+    // menyunting substring req.url — audit 2026-07-16).
     logger: {
       level: process.env.LOG_LEVEL ?? 'info',
       redact: ['req.headers.authorization', 'req.headers.cookie'],
+      serializers: { req: redactedRequestSerializer },
     },
   });
   const port = Number(process.env.PORT ?? '3000');

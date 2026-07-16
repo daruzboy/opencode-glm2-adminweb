@@ -70,6 +70,43 @@ describe('POST /api/auth/token (T-002auth)', () => {
   });
 });
 
+describe('POST /api/auth/token — tenant admin diblok (audit 2026-07-16)', () => {
+  it('403 saat tenantSlug = adminTenantId (token admin membuka rute lintas-tenant)', async () => {
+    const auth = makeAuth();
+    const app = await buildServer({
+      auth: { auth, allowHeaderFallback: true, devTokenEnabled: true, adminTenantId: 'digimaestro-admin' },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/token',
+      payload: { tenantSlug: 'digimaestro-admin' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).accessToken).toBeUndefined();
+
+    await app.close();
+  });
+
+  it('slug lain tetap 200 walau adminTenantId dikonfigurasi', async () => {
+    const auth = makeAuth();
+    const app = await buildServer({
+      auth: { auth, allowHeaderFallback: true, devTokenEnabled: true, adminTenantId: 'digimaestro-admin' },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/token',
+      payload: { tenantSlug: 'warung-demo' },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    await app.close();
+  });
+});
+
 describe('/healthz remains public (no auth needed)', () => {
   it('GET /healthz → 200 without auth', async () => {
     const app = await makeApp();
