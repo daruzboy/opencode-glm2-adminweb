@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ok, tenantId, type LlmJsonSchema, type LlmUsageLoggerPort } from '@digimaestro/shared';
 
-import { createLlmJsonPort } from './composition.js';
+import { createAuthDeps, createLlmJsonPort } from './composition.js';
 import type { RuntimeFetch } from '@digimaestro/adapters';
 
 const schema: LlmJsonSchema<{ readonly title: string }> = {
@@ -78,5 +78,36 @@ describe('composition LLM', () => {
       'https://open.bigmodel.cn/api/paas/v4/chat/completions',
       expect.any(Object),
     );
+  });
+});
+
+describe('createAuthDeps — sabuk AUTH_DEV_TOKEN (audit 2026-07-16)', () => {
+  it('menolak start bila AUTH_DEV_TOKEN=1 di NODE_ENV=production', () => {
+    expect(() =>
+      createAuthDeps({
+        JWT_SECRET: 's3cret',
+        AUTH_DEV_TOKEN: '1',
+        NODE_ENV: 'production',
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/AUTH_DEV_TOKEN/);
+  });
+
+  it('AUTH_DEV_TOKEN=1 di luar produksi tetap boleh; ADMIN_TENANT_ID diteruskan', () => {
+    const deps = createAuthDeps({
+      JWT_SECRET: 's3cret',
+      AUTH_DEV_TOKEN: '1',
+      NODE_ENV: 'development',
+      ADMIN_TENANT_ID: 'digimaestro-admin',
+    } as NodeJS.ProcessEnv);
+    expect(deps?.devTokenEnabled).toBe(true);
+    expect(deps?.adminTenantId).toBe('digimaestro-admin');
+  });
+
+  it('produksi TANPA flag dev → aman (devTokenEnabled=false, tanpa throw)', () => {
+    const deps = createAuthDeps({
+      JWT_SECRET: 's3cret',
+      NODE_ENV: 'production',
+    } as NodeJS.ProcessEnv);
+    expect(deps?.devTokenEnabled).toBe(false);
   });
 });

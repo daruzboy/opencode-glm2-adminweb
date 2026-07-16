@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import jwt from 'jsonwebtoken';
 import { tenantId } from '@digimaestro/shared';
 import { JwtAuthPort, extractBearerToken } from './jwt-auth.js';
 
@@ -79,5 +80,16 @@ describe('extractBearerToken', () => {
 
   it('returns null for non-Bearer header', () => {
     expect(extractBearerToken('Basic abc123')).toBeNull();
+  });
+});
+
+describe('JwtAuthPort — pinning algoritma HS256 (audit 2026-07-16)', () => {
+  it('menolak token ber-alg lain walau secret sama (HS512)', async () => {
+    const auth = new JwtAuthPort({ secret: SECRET });
+    const foreign = jwt.sign({ tid: 'warung-demo', uid: 'u1' }, SECRET, { algorithm: 'HS512' });
+
+    const verified = await auth.verifyToken(foreign);
+    expect(verified.ok).toBe(false);
+    if (!verified.ok) expect(verified.error.code).toBe('INVALID_TOKEN');
   });
 });

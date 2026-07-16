@@ -14,6 +14,9 @@ const tokenBodySchema = z.object({
 
 export interface AuthRouteDeps {
   readonly auth: AuthPort;
+  // Tenant admin (ADMIN_TENANT_ID). Token OWNER tenant ini membuka rute lintas-tenant —
+  // endpoint dev tak boleh mencetaknya (audit 2026-07-16).
+  readonly adminTenantId?: string;
 }
 
 export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): void {
@@ -23,6 +26,10 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
       const parsed = tokenBodySchema.safeParse(req.body);
       if (!parsed.success) {
         return reply.code(400).send({ error: 'tenantSlug wajib (string)' });
+      }
+
+      if (deps.adminTenantId && parsed.data.tenantSlug === deps.adminTenantId) {
+        return reply.code(403).send({ error: 'tenant admin tidak bisa dicetak dari endpoint dev' });
       }
 
       // v0: terbitkan token langsung dari slug. TIDAK ADA verifikasi password/OTP.
