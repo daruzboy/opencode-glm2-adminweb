@@ -25,6 +25,11 @@ import {
   createQueueCounter,
   createBullMqChatInboundQueue,
   createBullMqRedisClient,
+  createRedisInboundRateLimiter,
+  DEFAULT_INBOUND_LIMIT,
+  DEFAULT_INBOUND_WINDOW_MS,
+  QuotaPrisma,
+  type OnboardingClient,
   createPreviewToken,
   createRuntimeLlmConfigStore,
   createRuntimeBillingConfigStore,
@@ -89,6 +94,7 @@ import type {
   AgentToolDefinition,
   AuthPort,
   ConversationRepository,
+  InboundRateLimiterPort,
   LlmAgentResponse,
   LlmJsonPort,
   LlmUsageLoggerPort,
@@ -104,6 +110,12 @@ export type LlmProviderName = 'deepseek' | 'glm';
 export interface LlmEnv {
   readonly DIGIMAESTRO_LLM_PROVIDER?: string;
   readonly DIGIMAESTRO_AGENT_LOOP?: string;
+  // Gerbang biaya web chat (audit 2026-07-16) — paritas dgn worker Telegram:
+  // REDIS_URL → rate limit pesan masuk; DATABASE_URL → kuota pesan per tenant.
+  readonly DATABASE_URL?: string;
+  readonly REDIS_URL?: string;
+  readonly INBOUND_RATE_LIMIT?: string;
+  readonly INBOUND_RATE_WINDOW_MS?: string;
   readonly DEEPSEEK_API_KEY?: string;
   readonly DEEPSEEK_MODEL?: string;
   readonly DEEPSEEK_BASE_URL?: string;
@@ -156,19 +168,52 @@ export function createChatDeps(options: CreateChatDepsOptions = {}): ChatDeps {
   );
   const messages = new MessageRepositoryPrisma(prisma.message as unknown as MessageDelegate);
 
+  // Gerbang biaya (audit 2026-07-16): rate limit + kuota SEBELUM LLM, sama seperti jalur
+  // Telegram (worker createInboundDeps). Tanpa Redis/DB (dev) → tanpa gerbang, chat tetap
+  // jalan; limiter sendiri fail-open saat Redis tersendat.
+  const rateLimiter = createWebInboundRateLimiter(env);
+  const quota = env.DATABASE_URL
+    ? new QuotaPrisma(prisma as unknown as OnboardingClient)
+    : undefined;
+  const gates = {
+    ...(rateLimiter ? { rateLimiter } : {}),
+    ...(quota ? { quota } : {}),
+  };
+
   const enableAgentLoop = options.enableAgentLoop ?? env.DIGIMAESTRO_AGENT_LOOP === '1';
-  if (!enableAgentLoop) return { conversations, messages };
+  if (!enableAgentLoop) return { conversations, messages, ...gates };
 
   // T-053c: bila API key tersedia → gunakan adapter HTTP produksi (DeepSeek/GLM).
   // Bila tidak → fallback deterministik (dev tanpa key).
   const apiKey = env.DIGIMAESTRO_LLM_PROVIDER === 'glm' ? env.GLM_API_KEY : env.DEEPSEEK_API_KEY;
   if (apiKey && apiKey.length > 0) {
     const reply = createProductionAgentReplier(conversations, prisma, env);
-    return { conversations, messages, reply };
+    return { conversations, messages, reply, ...gates };
   }
 
   const reply = createDeterministicAgentReplier(conversations);
-  return { conversations, messages, reply };
+  return { conversations, messages, reply, ...gates };
+}
+
+// Rate limit pesan masuk web (per tenant, state Redis — benar saat api >1 replika).
+// Batas & jendela berbagi env yang sama dengan worker (INBOUND_RATE_LIMIT/_WINDOW_MS).
+function createWebInboundRateLimiter(env: LlmEnv): InboundRateLimiterPort | undefined {
+  if (!env.REDIS_URL) return undefined;
+  const url = new URL(env.REDIS_URL);
+  return createRedisInboundRateLimiter(
+    {
+      host: url.hostname,
+      port: url.port ? Number(url.port) : 6379,
+      username: url.username || undefined,
+      password: url.password || undefined,
+      maxRetriesPerRequest: null,
+    },
+    {
+      limit: Number(env.INBOUND_RATE_LIMIT ?? DEFAULT_INBOUND_LIMIT),
+      windowMs: Number(env.INBOUND_RATE_WINDOW_MS ?? DEFAULT_INBOUND_WINDOW_MS),
+      logger: console,
+    },
+  );
 }
 
 export interface CreatePreviewDepsOptions {
