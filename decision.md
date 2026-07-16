@@ -917,6 +917,23 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   "hold" = status+pesan; berkas situs di hosting TIDAK diturunkan otomatis (tindakan
   manual PO bila perlu) — kandidat lanjutan `send_payment_link` tool + takedown job.
 
+- ✅ **Audit keamanan repo** (**PR #100 + PR audit-auth**, 2026-07-16; audit menyeluruh
+  kebersihan/SOLID/keamanan): (1) **tenant-guard bolong utk model pasca-T-020** —
+  `TENANT_SCOPED_MODELS` + TenantProfile/Ticket/Feedback/MediaAsset; tingkat baru
+  `TENANT_WRITE_SCOPED_MODELS` (Invoice/ChannelBinding/AdminActing: tulis wajib tenantId,
+  baca via identitas non-tenant by design); bug laten cek `upsert` (baca `create`, bukan
+  `data`). (2) **Web chat WS tanpa gerbang biaya** — rate limit + kuota SEBELUM LLM
+  (paritas jalur Telegram P0/#6), fail-open saat Redis tersendat, env INBOUND_RATE_* sama
+  dgn worker. (3) **Sabuk AUTH_DEV_TOKEN** — start DITOLAK bila `AUTH_DEV_TOKEN=1` +
+  `NODE_ENV=production`; endpoint dev menolak mencetak token utk `ADMIN_TENANT_ID` (403).
+  (4) **Pinning JWT HS256** (verify + sign eksplisit — tutup alg-confusion). (5) **Redaksi
+  token di log akses** — serializer `req` pino meredaksi `?token=`/`?t=` (redact pino tak
+  bisa menyunting substring `req.url`; token WS wajib lewat query krn browser tak bisa set
+  header Authorization di WS). _Temuan tersisa (kebersihan, terjadwal):_ satu PrismaClient
+  bersama (kini ±8 pool/proses api), konsolidasi helper preview-token & timing-safe compare
+  (3 salinan), pecah DashboardDataPort (ISP) & chat-composition.ts (1.040 baris), throttle
+  percobaan x-admin-token.
+
 ### Gerbang keluar Fase 0
 - ✅ **T-083 — DEMO E2E TERCAPAI** (2026-07-11, produksi nyata, tanpa intervensi manual):
   **chat Telegram → wawancara (agent ingat konteks) → agent bangun situs → tombol approval →

@@ -30,7 +30,9 @@ export class JwtAuthPort implements AuthPort {
 
   async verifyToken(token: string): Promise<Result<AuthPayload, AuthError>> {
     try {
-      const decoded = jwt.verify(token, this.secret) as JwtClaim;
+      // Pinning algoritma (audit 2026-07-16): kita hanya menerbitkan HS256 — token ber-alg
+      // lain (termasuk keluarga HMAC lain) ditolak, menutup kelas serangan alg-confusion.
+      const decoded = jwt.verify(token, this.secret, { algorithms: ['HS256'] }) as JwtClaim;
       if (!decoded.tid || !decoded.uid) {
         return err({ code: 'INVALID_TOKEN', message: 'claim tidak lengkap' });
       }
@@ -57,7 +59,10 @@ export class JwtAuthPort implements AuthPort {
         uid: payload.userId,
         role: payload.role,
       };
-      const options: SignOptions = { expiresIn: this.expiresIn as unknown as SignOptions['expiresIn'] };
+      const options: SignOptions = {
+        algorithm: 'HS256',
+        expiresIn: this.expiresIn as unknown as SignOptions['expiresIn'],
+      };
       const token = jwt.sign(claim, this.secret, options);
       return ok(token);
     } catch (e) {

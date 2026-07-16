@@ -494,15 +494,28 @@ export interface AuthDeps {
   // Endpoint dev /api/auth/token (cetak token dari slug, TANPA kredensial) — hanya bila
   // AUTH_DEV_TOKEN=1. Produksi biarkan kosong agar endpoint tak terpasang (keamanan #45).
   readonly devTokenEnabled: boolean;
+  // Tenant admin (ADMIN_TENANT_ID) TIDAK boleh dicetak dari endpoint dev — token OWNER
+  // tenant itu membuka rute lintas-tenant (/api/admin/usage, re-trigger review).
+  readonly adminTenantId?: string;
 }
 
 export function createAuthDeps(env: NodeJS.ProcessEnv = process.env): AuthDeps | undefined {
   const secret = env.JWT_SECRET;
   if (!secret) return undefined;
+  const devTokenEnabled = env.AUTH_DEV_TOKEN === '1';
+  // Audit 2026-07-16: sabuk kedua. Endpoint dev menerbitkan token OWNER tanpa kredensial —
+  // satu flag env salah di produksi = pengambilalihan penuh. Menolak start lebih baik
+  // daripada diam-diam memasang endpoint itu (pola yang sama dgn TELEGRAM_WEBHOOK_SECRET).
+  if (devTokenEnabled && env.NODE_ENV === 'production') {
+    throw new Error(
+      'AUTH_DEV_TOKEN=1 dilarang saat NODE_ENV=production — endpoint /api/auth/token mencetak token OWNER tanpa kredensial',
+    );
+  }
   return {
     auth: new JwtAuthPort({ secret }),
     allowHeaderFallback: env.AUTH_DISABLED === '1',
-    devTokenEnabled: env.AUTH_DEV_TOKEN === '1',
+    devTokenEnabled,
+    ...(env.ADMIN_TENANT_ID ? { adminTenantId: env.ADMIN_TENANT_ID } : {}),
   };
 }
 
