@@ -19,8 +19,23 @@ export const TENANT_SCOPED_MODELS = [
   'AgentJob',
   'LlmUsage',
   'AuditLog',
+  // Audit 2026-07-16: model pasca-T-020 yang sempat LOLOS guard — ber-tenantId di schema
+  // dan semua jalur bacanya memang tenant-scoped, jadi masuk tingkat penuh (where + data).
+  'TenantProfile',
+  'Ticket',
+  'Feedback',
+  'MediaAsset',
 ] as const;
 export type TenantScopedModel = (typeof TENANT_SCOPED_MODELS)[number];
+
+// Tingkat kedua (audit 2026-07-16): ber-tenantId di schema, WAJIB tenantId saat MENULIS
+// baris baru, tapi DIBACA/di-update lewat identitas non-tenant BY DESIGN — mewajibkan
+// tenantId di `where` justru mematahkan use case-nya:
+//   - Invoice: poller billing membaca semua PENDING lintas-tenant & menandai status by id.
+//   - ChannelBinding: resolusi tenant DARI (channel, externalId) — tenant belum diketahui.
+//   - AdminActing: state konsol admin ber-kunci chatId admin; tenantId adalah NILAI target.
+export const TENANT_WRITE_SCOPED_MODELS = ['Invoice', 'ChannelBinding', 'AdminActing'] as const;
+export type TenantWriteScopedModel = (typeof TENANT_WRITE_SCOPED_MODELS)[number];
 
 export class TenantGuardError extends Error {
   readonly code = 'TENANT_GUARD_VIOLATION' as const;
@@ -56,6 +71,10 @@ export function isTenantScopedModel(model: string): model is TenantScopedModel {
   return (TENANT_SCOPED_MODELS as readonly string[]).includes(model);
 }
 
+export function isTenantWriteScopedModel(model: string): model is TenantWriteScopedModel {
+  return (TENANT_WRITE_SCOPED_MODELS as readonly string[]).includes(model);
+}
+
 function rowHasTenantId(row: unknown): boolean {
   if (typeof row !== 'object' || row === null) return false;
   const v = (row as Record<string, unknown>).tenantId;
@@ -72,11 +91,12 @@ function hasTenantIdInData(data: unknown): boolean {
 // hilang pada model ter-scope. `args` diterima sebagai unknown agar call-site
 // (Prisma $extends maupun test) bebas dari cast rumit.
 export function assertTenantScoped(model: string, operation: string, args: unknown): void {
-  if (!isTenantScopedModel(model)) return;
+  const fullyScoped = isTenantScopedModel(model);
+  if (!fullyScoped && !isTenantWriteScopedModel(model)) return;
 
   const record = (args ?? {}) as Record<string, unknown>;
 
-  if (WHERE_OPERATIONS.has(operation)) {
+  if (fullyScoped && WHERE_OPERATIONS.has(operation)) {
     const where = (record.where ?? {}) as Record<string, unknown>;
     if (where.tenantId === undefined || where.tenantId === null) {
       throw new TenantGuardError(
@@ -87,12 +107,17 @@ export function assertTenantScoped(model: string, operation: string, args: unkno
     }
   }
 
-  if (DATA_OPERATIONS.has(operation) && !hasTenantIdInData(record.data)) {
-    throw new TenantGuardError(
-      model,
-      operation,
-      `NFR-09: ${model}.${operation} memerlukan tenantId di \`data\` (tidak boleh kosong).`,
-    );
+  if (DATA_OPERATIONS.has(operation)) {
+    // upsert menulis baris BARU lewat `create` (args-nya { where, update, create }) —
+    // memeriksa `data` di sana selalu gagal walau tenantId lengkap.
+    const data = operation === 'upsert' ? record.create : record.data;
+    if (!hasTenantIdInData(data)) {
+      throw new TenantGuardError(
+        model,
+        operation,
+        `NFR-09: ${model}.${operation} memerlukan tenantId di \`${operation === 'upsert' ? 'create' : 'data'}\` (tidak boleh kosong).`,
+      );
+    }
   }
 }
 
