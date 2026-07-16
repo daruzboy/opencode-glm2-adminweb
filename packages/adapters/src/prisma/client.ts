@@ -15,3 +15,13 @@ export function createPrismaClient() {
 }
 
 export type PrismaClientTenanted = ReturnType<typeof createPrismaClient>;
+
+// Satu client per PROSES (audit 2026-07-16): tiap PrismaClient membawa connection pool
+// sendiri (default ±cpu×2+1 koneksi Postgres). Sebelumnya tiap factory composition
+// memanggil createPrismaClient() sendiri → ±9 pool per proses api/worker di VPS kecil.
+// Composition root memakai singleton ini; createPrismaClient tetap diekspor untuk
+// kebutuhan client terpisah (mis. test integrasi dengan cleanup unguarded).
+let shared: PrismaClientTenanted | undefined;
+export function sharedPrismaClient(): PrismaClientTenanted {
+  return (shared ??= createPrismaClient());
+}

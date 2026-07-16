@@ -17,3 +17,12 @@ export function verifyPreviewToken(secret: string, revisionId: string, token: st
   if (expected.length !== actual.length) return false;
   return timingSafeEqual(expected, actual);
 }
+
+// Token folder pratinjau PUBLIK (beda dari token preview draft di atas): HMAC(secret,
+// "preview:" + websiteId) dipotong 12 hex → nama folder /preview/<slug>-<token>/ yang
+// deterministik per website. SATU implementasi (audit 2026-07-16) — dipakai dashboard
+// admin, gerbang review, dan worker publish; tiga salinan inline sebelumnya bisa
+// menyimpang diam-diam (URL pratinjau yang dijanjikan ≠ folder yang diunggah).
+export function createPreviewDirToken(secret: string, websiteId: string): string {
+  return createHmac('sha256', secret).update(`preview:${websiteId}`).digest('hex').slice(0, 12);
+}

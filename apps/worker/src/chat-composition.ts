@@ -6,7 +6,6 @@
 // adalah composition root-nya sendiri (AGENTS.md §2), dan tool/use case yang dirakit
 // semuanya hidup di core — jadi yang "berulang" hanyalah perakitannya, bukan logikanya.
 
-import { createHmac } from 'node:crypto';
 import {
   ChannelBindingPrisma,
   ConversationRepositoryPrisma,
@@ -66,8 +65,10 @@ import {
   createRuntimeLlmConfigStore,
   createHttpImageDownload,
   createPreviewToken,
+  createPreviewDirToken,
   createRedisInboundRateLimiter,
-  createPrismaClient,
+  sharedPrismaClient,
+  type PrismaClientTenanted,
   mediaFilename,
   startTelegramPoller,
   type ConversationDelegate,
@@ -231,7 +232,7 @@ function llmRuntimeOverrides(
 
 function createLlmJsonPort(
   env: ChatWorkerEnv,
-  prisma: ReturnType<typeof createPrismaClient>,
+  prisma: PrismaClientTenanted,
 ): LlmJsonPort {
   const usageLogger = new LlmUsageLoggerPrisma(prisma.llmUsage as unknown as LlmUsageDelegate);
   const isGlm = env.DIGIMAESTRO_LLM_PROVIDER === 'glm';
@@ -265,7 +266,7 @@ function createLlmJsonPort(
 // yang dipakai web chat di apps/api → jawaban bot Telegram identik dengan chat web.
 export function createChatReplier(
   conversations: ConversationRepository,
-  prisma: ReturnType<typeof createPrismaClient>,
+  prisma: PrismaClientTenanted,
   env: ChatWorkerEnv = process.env,
 ): ConversationReplier {
   const isGlm = env.DIGIMAESTRO_LLM_PROVIDER === 'glm';
@@ -426,7 +427,7 @@ function withBuildStartAck(
 export function createApprovalDeps(env: ChatWorkerEnv = process.env): ApprovalDeps | undefined {
   if (!env.REDIS_URL) return undefined;
 
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   const websites = new WebsiteRepositoryPrisma(prisma.website as unknown as WebsiteDelegate);
   const revisions = new RevisionRepositoryPrisma(prisma as unknown as RevisionDelegate);
   const source = new PublishSourcePrisma({
@@ -466,14 +467,13 @@ export function createApprovalDeps(env: ChatWorkerEnv = process.env): ApprovalDe
   };
 }
 
-// HMAC(secret, websiteId) → 12 hex. Tanpa PREVIEW_TOKEN_SECRET jatuh ke potongan websiteId
-// (cuid — sudah tak tertebak; hanya "membocorkan" id internal, bukan celah akses).
+// Token folder pratinjau = createPreviewDirToken (adapters, satu implementasi dgn api).
+// Tanpa PREVIEW_TOKEN_SECRET jatuh ke potongan websiteId (cuid — sudah tak tertebak;
+// hanya "membocorkan" id internal, bukan celah akses).
 function previewDirToken(env: ChatWorkerEnv): (websiteId: string) => string {
   const secret = env.PREVIEW_TOKEN_SECRET;
   return (websiteId: string) =>
-    secret
-      ? createHmac('sha256', secret).update(`preview:${websiteId}`).digest('hex').slice(0, 12)
-      : websiteId.slice(-12);
+    secret ? createPreviewDirToken(secret, websiteId) : websiteId.slice(-12);
 }
 
 // T-032tg: pengabar hasil publish → chat. Dipakai worker publish (bukan chat-inbound):
@@ -485,7 +485,7 @@ export function createPublishNotifier(
 ): PublishNotifier | undefined {
   if (!env.TELEGRAM_BOT_TOKEN) return undefined;
 
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   const deps: NotifyDeps = {
     conversations: new ConversationRepositoryPrisma(
       prisma.conversation as unknown as ConversationDelegate,
@@ -552,7 +552,7 @@ export function createBilling(env: ChatWorkerEnv = process.env): BillingHandle |
     return undefined;
   }
 
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   const gateway = new MidtransGateway({
     serverKey,
     environment: env.MIDTRANS_ENV === 'production' ? 'production' : 'sandbox',
@@ -646,7 +646,7 @@ function createOutboundRateLimiter(
 }
 
 export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps {
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   const conversations = new ConversationRepositoryPrisma(
     prisma.conversation as unknown as ConversationDelegate,
   );
@@ -654,6 +654,7 @@ export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps
   const approval = createApprovalDeps(env);
   const media = createMediaDeps(env);
   const rateLimiter = createInboundRateLimiter(env);
+  const quota = createQuota(env);
 
   return {
     conversations,
@@ -666,7 +667,7 @@ export function createInboundDeps(env: ChatWorkerEnv = process.env): InboundDeps
     ...(approval ? { approval } : {}),
     ...(media ? { media } : {}),
     ...(rateLimiter ? { rateLimiter } : {}),
-    ...(createQuota(env) ? { quota: createQuota(env) } : {}),
+    ...(quota ? { quota } : {}),
   };
 }
 
@@ -762,7 +763,7 @@ function createFtpsStore(env: ChatWorkerEnv): FtpsMediaStore | undefined {
 // ditawari opsi stock — fillSchema menolaknya).
 function createStockImageResolver(
   env: ChatWorkerEnv,
-  prisma: ReturnType<typeof createPrismaClient>,
+  prisma: PrismaClientTenanted,
 ): ((tid: TenantId, pages: readonly PageFills[]) => Promise<readonly PageFills[]>) | undefined {
   const store = createFtpsStore(env);
   if (!store) return undefined;
@@ -795,7 +796,7 @@ export function createMediaDeps(env: ChatWorkerEnv = process.env): MediaDeps | u
   const store = createFtpsStore(env);
   if (!store) return undefined;
 
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   const media = new MediaRepositoryPrisma(prisma.mediaAsset as unknown as MediaDelegate);
 
   const deps = {
@@ -891,7 +892,7 @@ export function createTenantResolver(
   env: ChatWorkerEnv = process.env,
 ): ((externalId: string) => Promise<string | null>) | undefined {
   if (!env.DATABASE_URL) return undefined;
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   const bindings = new ChannelBindingPrisma(prisma as unknown as OnboardingClient);
 
   // Konsol admin: bila chat ADMIN sedang "bertindak sebagai" konsumen → tenant efektif =
@@ -911,7 +912,7 @@ export function createTenantResolver(
 
 export function createQuota(env: ChatWorkerEnv = process.env): QuotaPort | undefined {
   if (!env.DATABASE_URL) return undefined;
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   return new QuotaPrisma(prisma as unknown as OnboardingClient);
 }
 
@@ -921,7 +922,7 @@ export function createRegistrationHandler(
 ): RegistrationHandler | undefined {
   if (!selfServeEnabled(env) || !env.DATABASE_URL || !env.TELEGRAM_BOT_TOKEN) return undefined;
 
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   const db = prisma as unknown as OnboardingClient;
   const channel = rateLimited(createTelegramChannel(env), env);
 
@@ -973,7 +974,7 @@ export function adminChatIdOf(env: ChatWorkerEnv): string | undefined {
 // memakai SOP konsumen. Tanpa satu pun path → tanpa SOP (persona bawaan).
 function createSopSelector(
   env: ChatWorkerEnv,
-  prisma: ReturnType<typeof createPrismaClient>,
+  prisma: PrismaClientTenanted,
   conversations: ConversationRepository,
 ): { sop: (ctx: { tenantId: TenantId; conversationId: string }) => Promise<string | null> } | undefined {
   const customerSop = env.SOP_PATH
@@ -1019,7 +1020,7 @@ export function createAdminConsole(
   const adminChatId = adminChatIdOf(env);
   if (!adminChatId || !env.DATABASE_URL || !env.TELEGRAM_BOT_TOKEN) return undefined;
 
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   const deps = {
     directory: new AdminDirectoryPrisma(prisma as unknown as AdminConsoleClient, deriveSlug),
     acting: new ActingStorePrisma(prisma as unknown as AdminConsoleClient),

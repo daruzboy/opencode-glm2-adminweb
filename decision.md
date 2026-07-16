@@ -929,10 +929,14 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   (4) **Pinning JWT HS256** (verify + sign eksplisit — tutup alg-confusion). (5) **Redaksi
   token di log akses** — serializer `req` pino meredaksi `?token=`/`?t=` (redact pino tak
   bisa menyunting substring `req.url`; token WS wajib lewat query krn browser tak bisa set
-  header Authorization di WS). _Temuan tersisa (kebersihan, terjadwal):_ satu PrismaClient
-  bersama (kini ±8 pool/proses api), konsolidasi helper preview-token & timing-safe compare
-  (3 salinan), pecah DashboardDataPort (ISP) & chat-composition.ts (1.040 baris), throttle
-  percobaan x-admin-token.
+  header Authorization di WS). (6) **Kebersihan (PR lanjutan):** `sharedPrismaClient()`
+  (adapters) — SATU client/pool per proses; sebelumnya tiap factory composition membuat
+  client sendiri (±9 pool per proses api & worker; `createQuota` bahkan terpanggil 2×);
+  `createPreviewDirToken` (adapters) menggantikan 3 salinan inline HMAC-12-hex;
+  `secureTokenEquals` (adapters) menggantikan 3 salinan timing-safe compare; komentar
+  basi "T-082 BUG usageLogger" dihapus (bug-nya sudah lama ditutup). _Temuan tersisa
+  (terjadwal):_ pecah DashboardDataPort (ISP) & chat-composition.ts (1.040 baris),
+  throttle percobaan x-admin-token, dedup resep replier produksi api↔worker.
 
 ### Gerbang keluar Fase 0
 - ✅ **T-083 — DEMO E2E TERCAPAI** (2026-07-11, produksi nyata, tanpa intervensi manual):

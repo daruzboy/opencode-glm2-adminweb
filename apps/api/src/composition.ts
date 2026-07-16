@@ -1,4 +1,3 @@
-import { createHmac } from 'node:crypto';
 import {
   ConversationRepositoryPrisma,
   createFileSopProvider,
@@ -20,7 +19,9 @@ import {
   createDeepSeekJsonAdapter,
   createDeterministicLlmAgentAdapter,
   createGlmJsonAdapter,
-  createPrismaClient,
+  sharedPrismaClient,
+  type PrismaClientTenanted,
+  createPreviewDirToken,
   createBullMqPublishQueue,
   createQueueCounter,
   createBullMqChatInboundQueue,
@@ -162,7 +163,7 @@ export interface CreateLlmJsonPortOptions {
 // `as unknown as` di batas adapter ini aman: repo tetap menyuntik tenantId & teruji.
 export function createChatDeps(options: CreateChatDepsOptions = {}): ChatDeps {
   const env = options.env ?? process.env;
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   const conversations = new ConversationRepositoryPrisma(
     prisma.conversation as unknown as ConversationDelegate,
   );
@@ -228,7 +229,7 @@ export interface CreatePreviewDepsOptions {
 export function createPreviewDeps(options: CreatePreviewDepsOptions = {}): PreviewDeps {
   const secret = options.tokenSecret ?? process.env.PREVIEW_TOKEN_SECRET;
   if (!secret) throw new Error('PREVIEW_TOKEN_SECRET wajib diisi untuk mengaktifkan rute preview draft');
-  const prisma = options.prisma ?? createPrismaClient();
+  const prisma = options.prisma ?? sharedPrismaClient();
   const preview = new PreviewPortPrisma(prisma.revision as unknown as RevisionPreviewDelegate, secret);
   return { preview };
 }
@@ -243,7 +244,7 @@ export interface CreatePublishRequestDepsOptions {
 // BullMQ. rootDomain dari PUBLISH_BASE_DOMAIN (default digimaestro.id). Butuh DATABASE_URL +
 // REDIS_URL saat nyata; test menyuntik fake sehingga rute teruji tanpa DB/Redis.
 export function createPublishRequestDeps(options: CreatePublishRequestDepsOptions = {}): PublishRequestDeps {
-  const prisma = options.prisma ?? createPrismaClient();
+  const prisma = options.prisma ?? sharedPrismaClient();
   const source = new PublishSourcePrisma({
     website: prisma.website as unknown as PublishSourceDelegate['website'],
     revision: prisma.revision as unknown as PublishSourceDelegate['revision'],
@@ -266,7 +267,7 @@ export function createPublishRequestDeps(options: CreatePublishRequestDepsOption
 // T-082: laporan biaya AI. Query LINTAS-tenant (laporan admin) → sengaja memakai klien
 // TANPA tenantGuard; pagar aksesnya di rute (role OWNER + ADMIN_TENANT_ID).
 export function createUsageRoutesDeps(env: NodeJS.ProcessEnv = process.env): UsageRoutesDeps {
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   return {
     usage: new LlmUsageQueryPrisma(prisma as unknown as RawQueryClient),
     price: parseTokenPrice(env.LLM_PRICE_INPUT_PER_1M, env.LLM_PRICE_OUTPUT_PER_1M),
@@ -359,7 +360,7 @@ export function createSitebuilderToolRegistry(
 // (ter-guard tenant T-021).
 function createProductionAgentReplier(
   conversations: ConversationRepository,
-  prisma: ReturnType<typeof createPrismaClient>,
+  prisma: PrismaClientTenanted,
   env: LlmEnv,
 ): ConversationReplier {
   const isGlm = env.DIGIMAESTRO_LLM_PROVIDER === 'glm';
@@ -369,9 +370,8 @@ function createProductionAgentReplier(
     ? (env.GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/paas/v4')
     : (env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1');
 
-  // T-082 (BUG): agent adapter TIDAK PERNAH disuntik usageLogger → seluruh percakapan chat
-  // (mayoritas pemakaian!) tak tercatat di LlmUsage. Terbukti di produksi: hanya task
-  // `site_plan` yang punya baris; chat/interview NOL.
+  // T-082: usageLogger WAJIB disuntik ke agent adapter — tanpanya seluruh percakapan chat
+  // (mayoritas pemakaian) tak tercatat di LlmUsage (bug produksi yang sudah ditutup).
   const runtimeStore = createLlmRuntimeStore(env);
   const agentLlm = new OpenAiCompatibleAgentAdapter({
     usageLogger: new LlmUsageLoggerPrisma(prisma.llmUsage as unknown as LlmUsageDelegate),
@@ -478,7 +478,7 @@ export function createLlmJsonPort(options: CreateLlmJsonPortOptions = {}): LlmJs
 }
 
 function createPrismaLlmUsageLogger(): LlmUsageLoggerPort {
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   return new LlmUsageLoggerPrisma(prisma.llmUsage as unknown as LlmUsageDelegate);
 }
 
@@ -529,7 +529,7 @@ function sectionCatalog(): Record<string, readonly string[]> {
 // Dashboard admin (PO 2026-07-15): fail-closed tanpa ADMIN_DASHBOARD_TOKEN.
 export function createDashboardDeps(env: NodeJS.ProcessEnv = process.env): DashboardDeps | undefined {
   if (!env.ADMIN_DASHBOARD_TOKEN || !env.DATABASE_URL) return undefined;
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   const price = parseTokenPrice(env.LLM_PRICE_INPUT_PER_1M, env.LLM_PRICE_OUTPUT_PER_1M);
   const model =
     env.DIGIMAESTRO_LLM_PROVIDER === 'glm'
@@ -554,10 +554,7 @@ export function createDashboardDeps(env: NodeJS.ProcessEnv = process.env): Dashb
     rootDomain: env.PUBLISH_BASE_DOMAIN ?? 'digimaestro.id',
     urlMode: parsePublishUrlMode(env.PUBLISH_URL_MODE),
     ...(previewSecret
-      ? {
-          previewToken: (websiteId: string) =>
-            createHmac('sha256', previewSecret).update(`preview:${websiteId}`).digest('hex').slice(0, 12),
-        }
+      ? { previewToken: (websiteId: string) => createPreviewDirToken(previewSecret, websiteId) }
       : {}),
   };
 
@@ -625,7 +622,7 @@ export function createTemplateAdminDeps(
 ): TemplateAdminDeps | undefined {
   if (!env.TEMPLATES_DIR || !env.DATABASE_URL || !env.ADMIN_TENANT_ID) return undefined;
   const templatesDir = env.TEMPLATES_DIR;
-  const prisma = createPrismaClient() as unknown as { template: TemplateDelegate };
+  const prisma = sharedPrismaClient() as unknown as { template: TemplateDelegate };
   return {
     adminTenantId: env.ADMIN_TENANT_ID,
     reindex: () => indexTemplates({ templatesDir, delegate: prisma.template }),
@@ -639,7 +636,7 @@ export function createReadinessDeps(env: NodeJS.ProcessEnv = process.env): Readi
   const deps: { db?: () => Promise<void>; redis?: () => Promise<void> } = {};
 
   if (env.DATABASE_URL) {
-    const prisma = createPrismaClient() as unknown as {
+    const prisma = sharedPrismaClient() as unknown as {
       $queryRawUnsafe(query: string): Promise<unknown>;
     };
     deps.db = async () => {
@@ -675,7 +672,7 @@ export function createReviewRoutesDeps(
     return undefined;
   }
 
-  const prisma = createPrismaClient();
+  const prisma = sharedPrismaClient();
   const revisions = new RevisionRepositoryPrisma(prisma as unknown as RevisionDelegate);
   const websites = new WebsiteRepositoryPrisma(prisma.website as unknown as WebsiteDelegate);
   const channel = new TelegramChannel({
@@ -712,9 +709,7 @@ export function createReviewRoutesDeps(
           preview: {
             ...createPublishRequestDeps({ redisUrl: env.REDIS_URL }),
             previewToken: (websiteId: string) =>
-              secret
-                ? createHmac('sha256', secret).update(`preview:${websiteId}`).digest('hex').slice(0, 12)
-                : websiteId.slice(-12),
+              secret ? createPreviewDirToken(secret, websiteId) : websiteId.slice(-12),
           },
         }
       : {}),
