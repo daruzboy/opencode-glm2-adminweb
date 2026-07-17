@@ -3,8 +3,44 @@
 > **Baca paling awal** (bersama `decision.md` & `AGENTS.md`) agar tidak kehilangan
 > konteks saat memulai sesi baru. Perbarui di akhir tiap sesi kerja berarti.
 
-- Sesi terakhir: **kanal Telegram → produk HIDUP & dipakai PO** · Tanggal: **2026-07-11**
-- Cabang aktif: `main` (trunk) @ `82a0776`. Branch feature dihapus post-merge.
+- Sesi terakhir: **audit keamanan repo → 3 PR merged & DEPLOY LIVE** · Tanggal: **2026-07-17**
+- Cabang aktif: `main` (trunk) @ `2ab718b`. Branch audit/cleanup dihapus post-merge.
+
+---
+
+## ⭐ RINGKASAN 2026-07-16/17 — Audit keamanan repo + deploy ulang LIVE (PR #100–#102)
+
+Audit menyeluruh (kebersihan / SOLID / keamanan) → **3 PR merged berurutan #100→#101→#102**,
+CI hijau tiap tahap, lalu **rebuild image + recreate kontainer live TERVERIFIKASI**.
+
+**Yang diperbaiki (kini AKTIF di produksi):**
+1. **Tenant-guard bolong utk model pasca-T-020** (#100) — `TENANT_SCOPED_MODELS` +
+   TenantProfile/Ticket/Feedback/MediaAsset; tingkat baru `TENANT_WRITE_SCOPED_MODELS`
+   (Invoice/ChannelBinding/AdminActing: tulis wajib tenantId, baca via identitas non-tenant
+   by design); bug laten cek `upsert` (baca `create`, bukan `data`).
+2. **Web chat WS tanpa gerbang biaya** (#100) — rate limit + kuota SEBELUM LLM, paritas jalur
+   Telegram (P0/#6); satu tenant bisa membakar token LLM tanpa batas via WebSocket. Fail-open
+   saat Redis tersendat; env `INBOUND_RATE_*` sama dgn worker.
+3. **Sabuk AUTH_DEV_TOKEN** (#101) — start DITOLAK bila `AUTH_DEV_TOKEN=1` + `NODE_ENV=production`;
+   endpoint dev menolak cetak token utk `ADMIN_TENANT_ID` (403).
+4. **Pinning JWT HS256** (#101) — verify+sign eksplisit; tutup kelas alg-confusion.
+5. **Redaksi token di log** (#101) — serializer `req` pino meredaksi `?token=`/`?t=` (redact pino
+   tak bisa menyunting substring `req.url`; token WS wajib lewat query).
+6. **Kebersihan** (#102) — `sharedPrismaClient()` SATU client/pool per proses (sebelumnya ±9
+   pool/proses di api & worker); `createPreviewDirToken` & `secureTokenEquals` (adapters)
+   menggantikan masing-masing 3 salinan inline; komentar basi "T-082 BUG" dihapus.
+
+**Deploy live TERVERIFIKASI (2026-07-17):** image `glm2:staging` rebuild dari `2ab718b` (exit 0)
+→ `docker compose up -d glm2-api glm2-worker` → api **healthy**, `/readyz`=`{status:ready,db:ok,
+redis:ok}`, migrasi "No pending", worker: poller Telegram + konsumen `publish`/`chat-inbound`
+aktif. Kode audit dibuktikan hidup di kontainer (`secureTokenEquals`/`sharedPrismaClient` ADA di
+dist). Dockerfile TIDAK menyisipkan git SHA → verifikasi commit via keberadaan artefak, bukan
+penanda. Build cache Docker di-prune (klaim ~13,6 GB; disk / 51%→41%).
+
+**Temuan audit TERSISA (terjadwal, decision.md §2):** throttle percobaan `x-admin-token`, pecah
+`DashboardDataPort` (ISP) & `chat-composition.ts` (1.040 baris), dedup resep replier produksi
+api↔worker. **Utang PO (non-kode):** rotasi kredensial ter-ekspos, `BACKUP_OFFSITE_PASSPHRASE`,
+matikan `can_join_groups` bot di BotFather.
 
 ---
 
