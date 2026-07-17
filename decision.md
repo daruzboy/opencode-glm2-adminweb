@@ -1088,8 +1088,18 @@ Ditemukan saat analisa gap 2026-07-12 — **bukan** bagian dari backlog Fase 0, 
 ### Utang yang harus dibayar sebelum klaim "siap jual"
 - **Rotasi kredensial ter-ekspos** (DeepSeek, token bot, FTP, cPanel — plaintext di chat). PO.
 - **T-080** integration test yang selalu di-skip (CI hijau yang bohong).
-- **Off-site backup belum menyala** — backup kini HANYA di VPS yang sama dgn DB-nya; kalau VPS
-  hilang, backup ikut hilang. Butuh `BACKUP_OFFSITE_PASSPHRASE` dari PO.
+- ✅ **Off-site backup MENYALA & TERVERIFIKASI** (2026-07-17). _Koreksi:_ jalur Google Drive
+  (rclone, PR #72) sebenarnya SUDAH jalan tiap malam (log membuktikan 3 hari berturut) — klaim
+  lama "hanya di VPS" basi. Yang baru diaktifkan hari ini: salinan **kedua terenkripsi AES-256
+  ke cPanel FTPS** (`BACKUP_OFFSITE_PASSPHRASE` di-generate 32-byte, ditulis ke `.env` deploy —
+  **PO WAJIB simpan di password manager**, tanpa itu `.enc` di cPanel tak bisa dipulihkan).
+  Round-trip DIBUKTIKAN: enkripsi → upload FTPS → unduh → dekripsi → `pg_restore --list` OK.
+  Hardening: `.htaccess` deny di folder `_backups` (akses publik → **403**, file `.enc` pun 403);
+  enkripsi = pertahanan utama, .htaccess lapis kedua.
+  **Bug laten diperbaiki:** `backup-cron.sh` memuat `.env` via `. .env` (bash source) → nilai
+  ber-karakter-shell-spesial RUSAK; `CPANEL_FTP_PASSWORD` memuatnya → login FTPS gagal `530`
+  (deploy publish tak terpengaruh: docker `env_file` membaca literal). Wrapper kini memuat `.env`
+  literal (KEY=VALUE tanpa interpretasi shell); skrip di-versionkan ke `ops/backup/backup-cron.sh`.
 - **P2 audit Telegram**: `can_join_groups` masih aktif (matikan di BotFather).
 - **Auto-provision tenant + kuota** (ADR-12 menyiapkan jalannya, belum dibuka).
 
