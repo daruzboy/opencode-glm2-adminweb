@@ -714,8 +714,10 @@ Legenda: ✅ selesai · 🔧 berjalan · ⏳ pending · 🚫 blocked
   (2) **Tidak ada kuota media** → satu tenant bisa memenuhi kuota hosting SHARED (dipakai semua situs
   klien). → `MEDIA_MAX_PER_TENANT`=50, dicek SEBELUM unduh; error `QUOTA` + balasan yang menyebut sebab.
   (3) **Rate limit keluar** dipindah ke Redis (memori proses → N×limit saat >1 replika → 429 Telegram).
-- ⏳ **P2 (butuh PO, non-kode):** `can_join_groups` masih aktif → matikan di BotFather
-  (`/setjoingroups` → Disable). Chat grup sudah ditolak allowlist, tapi permukaan tak perlu.
+- ✅ **P2 (2026-07-17):** `can_join_groups` **DIMATIKAN** oleh PO di BotFather
+  (`/setjoingroups` → Disable); diverifikasi via `getMe` → `can_join_groups:false`
+  (`can_read_all_group_messages` juga false — privacy mode). Chat grup sudah ditolak
+  allowlist; ini memperkecil permukaan serangan.
 - ✅ **Terverifikasi aman** (audit jujur dua arah): token bot **tak pernah bocor ke log** (0 kemunculan);
   webhook **fail-closed** (tanpa secret → rute tak dipasang, terbukti 404 di live); allowlist fail-closed;
   idempotensi bertumpu constraint DB; `callback_data` divalidasi ketat; TLS diverifikasi penuh.
@@ -1090,7 +1092,7 @@ Ditemukan saat analisa gap 2026-07-12 — **bukan** bagian dari backlog Fase 0, 
 - **T-080** integration test yang selalu di-skip (CI hijau yang bohong).
 - **Off-site backup belum menyala** — backup kini HANYA di VPS yang sama dgn DB-nya; kalau VPS
   hilang, backup ikut hilang. Butuh `BACKUP_OFFSITE_PASSPHRASE` dari PO.
-- **P2 audit Telegram**: `can_join_groups` masih aktif (matikan di BotFather).
+- ✅ **P2 audit Telegram**: `can_join_groups` dimatikan di BotFather (2026-07-17, verified getMe).
 - **Auto-provision tenant + kuota** (ADR-12 menyiapkan jalannya, belum dibuka).
 
 ---
