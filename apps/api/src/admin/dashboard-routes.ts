@@ -6,8 +6,8 @@
 // token statis ADMIN_DASHBOARD_TOKEN (header x-admin-token, timing-safe). Tanpa env →
 // SELURUH rute tak dipasang (fail-closed). Data lintas-tenant hanya lewat sini.
 
-import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { secureTokenEquals } from '@digimaestro/adapters';
 
 // ── Port data (di-inject dari composition; test memakai fake) ────────────────
 
@@ -164,19 +164,12 @@ const TICKET_STATUSES = ['OPEN', 'IN_PROGRESS', 'DONE'];
 const TICKET_TOPICS = ['konten', 'tampilan', 'ganti-tema', 'fitur', 'akun', 'gangguan', 'teknis'];
 const TICKET_PRIORITIES = ['normal', 'tinggi'];
 
-function tokenMatches(provided: unknown, expected: string): boolean {
-  if (typeof provided !== 'string' || !provided) return false;
-  const a = Buffer.from(provided);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
 export function registerDashboardRoutes(app: FastifyInstance, deps: DashboardDeps): void {
   // Halaman: publik-baca TIDAK — halaman sendiri tanpa data; data butuh token.
   app.get('/admin', async (_req, reply) => reply.type('text/html; charset=utf-8').send(deps.page));
 
   const guard = (req: FastifyRequest, reply: FastifyReply): boolean => {
-    if (tokenMatches(req.headers['x-admin-token'], deps.token)) return true;
+    if (secureTokenEquals(req.headers['x-admin-token'], deps.token)) return true;
     void reply.code(401).send({ error: 'token admin salah' });
     return false;
   };

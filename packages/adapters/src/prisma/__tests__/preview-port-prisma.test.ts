@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { PreviewPortPrisma, type RevisionPreviewDelegate } from '../preview-port-prisma.js';
-import { createPreviewToken, verifyPreviewToken } from '../preview-token.js';
+import { createPreviewDirToken, createPreviewToken, verifyPreviewToken } from '../preview-token.js';
 
 const SECRET = 'rahasia-preview-uji';
 const REV = { id: 'rev-1', websiteId: 'web-1', siteDoc: { website: { name: 'Warung Demo' } } };
@@ -22,6 +22,15 @@ describe('preview-token', () => {
     expect(verifyPreviewToken('secret-lain', 'rev-1', t)).toBe(false);
     expect(verifyPreviewToken(SECRET, 'rev-2', t)).toBe(false);
     expect(verifyPreviewToken(SECRET, 'rev-1', '')).toBe(false);
+  });
+
+  // Satu implementasi utk tiga pemakai (dashboard, review gate, worker) — audit 2026-07-16.
+  it('createPreviewDirToken deterministik, 12 hex, peka secret & websiteId', () => {
+    const t = createPreviewDirToken(SECRET, 'web-1');
+    expect(t).toBe(createPreviewDirToken(SECRET, 'web-1'));
+    expect(t).toMatch(/^[0-9a-f]{12}$/);
+    expect(createPreviewDirToken('secret-lain', 'web-1')).not.toBe(t);
+    expect(createPreviewDirToken(SECRET, 'web-2')).not.toBe(t);
   });
 });
 

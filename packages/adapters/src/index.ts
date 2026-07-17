@@ -78,6 +78,7 @@ export * from './publish/bullmq-queue-counter.js';
 export * from './publish/publish-job-options.js';
 export * from './builder/sitebuilder-tool-adapter.js';
 export * from './auth/jwt-auth.js';
+export * from './auth/token-equals.js';
 // Alert operasional (T-070).
 export * from './alert/telegram-alert.js';
 export * from './alert/throttled-alert.js';

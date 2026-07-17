@@ -9,9 +9,9 @@
 // POST /api/admin/review/:revisionId/handoff — pemicu ULANG handoff (pemulihan saat
 //   handoff pertama gagal). Pagar admin yang sama dgn /api/admin/usage.
 
-import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { completeAdminReview, type ReviewCompleteDeps } from '@digimaestro/core';
+import { secureTokenEquals } from '@digimaestro/adapters';
 import { tenantId as asTenantId } from '@digimaestro/shared';
 
 export interface ReviewRoutesDeps {
@@ -34,17 +34,9 @@ interface CompleteBody {
   document?: unknown;
 }
 
-function tokenMatches(provided: string | undefined, expected: string): boolean {
-  if (!provided) return false;
-  const a = Buffer.from(provided);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
 export function registerReviewRoutes(app: FastifyInstance, deps: ReviewRoutesDeps): void {
   app.post('/api/internal/review/complete', async (req: FastifyRequest, reply: FastifyReply) => {
-    const token = req.headers['x-service-token'];
-    if (!tokenMatches(typeof token === 'string' ? token : undefined, deps.serviceToken)) {
+    if (!secureTokenEquals(req.headers['x-service-token'], deps.serviceToken)) {
       return reply.code(401).send({ error: 'unauthorized' });
     }
 
